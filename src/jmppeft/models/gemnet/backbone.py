@@ -13,10 +13,11 @@ from ll.util.typed import TypedModuleList
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo
 
+from ...modules.lora import LoraConfig
 from ...modules.scaling.compat import load_scales_compat
 from ...utils.goc_graph import graphs_from_batch
 from .bases import Bases, BasesOutput
-from .config import BackboneConfig, BasesConfig, LoraConfig
+from .config import BackboneConfig, BasesConfig
 from .interaction_indices import get_mixed_triplets, get_quadruplets, get_triplets
 from .layers.atom_update_block import OutputBlock
 from .layers.base_layers import Dense, ResidualLayer

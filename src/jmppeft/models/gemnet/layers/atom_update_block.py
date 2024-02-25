@@ -9,9 +9,8 @@ import math
 import torch
 from torch_scatter import scatter
 
+from ....modules.lora import LoraConfig
 from ....modules.scaling import ScaleFactor
-
-from ..config import LoraConfig
 from .base_layers import Dense, ResidualLayer
 
 

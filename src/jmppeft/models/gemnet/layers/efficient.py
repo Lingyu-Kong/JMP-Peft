@@ -6,8 +6,7 @@ LICENSE file in the root directory of this source tree.
 
 import torch
 
-from ..config import LoraConfig
-
+from ....modules.lora import LoraConfig
 from ..initializers import he_orthogonal_init
 from .base_layers import Dense
 

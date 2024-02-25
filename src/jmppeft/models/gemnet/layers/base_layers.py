@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float
 
-from ..config import LoraConfig
+from ....modules.lora import LoraConfig
 from ..initializers import he_orthogonal_init
 
 try:

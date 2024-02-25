@@ -2,12 +2,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 from jaxtyping import Float
-from jmppeft.models.gemnet.config import LoraConfig
 from loralib import LoRALayer
 from typing_extensions import override
 
+from ....modules.lora import LoraConfig
 from ....typing_utils import tassert
-
 from .efficient import BasisEmbedding
 
 

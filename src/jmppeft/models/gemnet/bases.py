@@ -6,9 +6,9 @@ import torch.nn as nn
 from torch_geometric.data import Batch
 from torch_sparse import SparseTensor
 
-from .config import BasesConfig, LoraConfig
+from ...modules.lora import LoraConfig
+from .config import BasesConfig
 from .layers.base_layers import Dense
-from .layers.efficient import BasisEmbedding
 from .layers.embedding_block import EdgeEmbedding
 from .layers.radial_basis_dynamic_cutoff import GaussianBasis, RadialBasis
 from .layers.spherical_basis_dynamic_cutoff import (
@@ -265,13 +265,13 @@ class Bases(nn.Module):
                 dropout=self.dropout,
                 lora=lora,
             )
-            self.mlp_cbf_qint = LoraConfig.basis_embedding_cls(lora)(
+            self.mlp_cbf_qint = LoraConfig.gemnet_basis_embedding_cls(lora)(
                 self.config.num_radial,
                 self.config.emb_size_cbf,
                 self.config.num_spherical,
                 lora=lora,
             )
-            self.mlp_sbf_qint = LoraConfig.basis_embedding_cls(lora)(
+            self.mlp_sbf_qint = LoraConfig.gemnet_basis_embedding_cls(lora)(
                 self.config.num_radial,
                 self.config.emb_size_sbf,
                 self.config.num_spherical**2,
@@ -287,7 +287,7 @@ class Bases(nn.Module):
                 dropout=self.dropout,
                 lora=lora,
             )
-            self.mlp_cbf_aeint = LoraConfig.basis_embedding_cls(lora)(
+            self.mlp_cbf_aeint = LoraConfig.gemnet_basis_embedding_cls(lora)(
                 self.config.num_radial,
                 self.config.emb_size_cbf,
                 self.config.num_spherical,
@@ -302,14 +302,14 @@ class Bases(nn.Module):
                 dropout=self.dropout,
                 lora=lora,
             )
-            self.mlp_cbf_eaint = LoraConfig.basis_embedding_cls(lora)(
+            self.mlp_cbf_eaint = LoraConfig.gemnet_basis_embedding_cls(lora)(
                 self.config.num_radial,
                 self.config.emb_size_cbf,
                 self.config.num_spherical,
                 lora=lora,
             )
         if self.config.atom_interaction:
-            self.mlp_rbf_aint = LoraConfig.basis_embedding_cls(lora)(
+            self.mlp_rbf_aint = LoraConfig.gemnet_basis_embedding_cls(lora)(
                 self.config.num_radial,
                 self.config.emb_size_rbf,
                 lora=lora,
@@ -323,7 +323,7 @@ class Bases(nn.Module):
             dropout=self.dropout,
             lora=lora,
         )
-        self.mlp_cbf_tint = LoraConfig.basis_embedding_cls(lora)(
+        self.mlp_cbf_tint = LoraConfig.gemnet_basis_embedding_cls(lora)(
             self.config.num_radial,
             self.config.emb_size_cbf,
             self.config.num_spherical,

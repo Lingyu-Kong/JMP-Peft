@@ -8,9 +8,8 @@ import math
 
 import torch
 
+from ....modules.lora import LoraConfig
 from ....modules.scaling import ScaleFactor
-
-from ..config import LoraConfig
 from .atom_update_block import AtomUpdateBlock
 from .base_layers import Dense, ResidualLayer
 from .efficient import EfficientInteractionBilinear

@@ -7,7 +7,7 @@ LICENSE file in the root directory of this source tree.
 import numpy as np
 import torch
 
-from ..config import LoraConfig
+from ....modules.lora import LoraConfig
 from .base_layers import Dense
 
 
