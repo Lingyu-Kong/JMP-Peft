@@ -7,7 +7,9 @@ LICENSE file in the root directory of this source tree.
 import math
 from collections.abc import Callable
 
+import torch
 import torch.nn as nn
+from jaxtyping import Float
 
 from ..initializers import he_orthogonal_init
 
@@ -41,6 +43,8 @@ class Dense(nn.Module):
         super().__init__()
 
         self.scale_dim = scale_dim
+        self.in_features = in_features
+        self.out_features = out_features
 
         self.linear = nn.Linear(in_features, out_features, bias=bias)
         self.reset_parameters()
@@ -68,7 +72,9 @@ class Dense(nn.Module):
         if self.linear.bias is not None:
             _ = self.linear.bias.data.fill_(0)
 
-    def forward(self, x):
+    def forward(
+        self, x: Float[torch.Tensor, "... {self.in_features}"]
+    ) -> Float[torch.Tensor, "... {self.out_features}"]:
         x = self.linear(x)
         x = self.activation(x)
         x = self.dropout(x)
