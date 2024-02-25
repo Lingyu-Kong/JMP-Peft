@@ -5,13 +5,18 @@ LICENSE file in the root directory of this source tree.
 """
 
 import math
-from collections.abc import Callable
 
 import torch
 import torch.nn as nn
 from jaxtyping import Float
 
+from ..config import LoraConfig
 from ..initializers import he_orthogonal_init
+
+try:
+    import loralib
+except ImportError:
+    loralib = None
 
 
 class Dense(nn.Module):
@@ -38,6 +43,7 @@ class Dense(nn.Module):
         activation=None,
         scale_dim: bool = False,
         *,
+        lora: LoraConfig | None,
         dropout: float | None,
     ):
         super().__init__()
@@ -46,7 +52,18 @@ class Dense(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
 
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
+        if lora:
+            assert loralib is not None, "Loralib is not installed."
+
+            self.linear = loralib.Linear(
+                in_features,
+                out_features,
+                bias=bias,
+                **lora.as_kwargs(),
+            )
+        else:
+            self.linear = nn.Linear(in_features, out_features, bias=bias)
+
         self.reset_parameters()
 
         if isinstance(activation, str):
@@ -113,14 +130,24 @@ class ResidualLayer(nn.Module):
         self,
         units: int,
         nLayers: int = 2,
-        layer: Callable[..., nn.Module] = Dense,
+        layer: type[Dense] = Dense,
+        *,
+        lora: LoraConfig | None,
         **layer_kwargs,
     ):
         super().__init__()
 
+        assert layer is Dense, "Only Dense layers are supported for now."
+
         self.dense_mlp = nn.Sequential(
             *[
-                layer(in_features=units, out_features=units, bias=False, **layer_kwargs)
+                layer(
+                    in_features=units,
+                    out_features=units,
+                    bias=False,
+                    lora=lora,
+                    **layer_kwargs,
+                )
                 for _ in range(nLayers)
             ]
         )

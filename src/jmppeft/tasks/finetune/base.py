@@ -1,3 +1,4 @@
+import copy
 import fnmatch
 import itertools
 import math
@@ -30,7 +31,7 @@ from ...datasets.finetune_lmdb import (
 )
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
-from ...models.gemnet.config import BackboneConfig
+from ...models.gemnet.config import BackboneConfig, LoraConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
 from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
@@ -340,6 +341,8 @@ class FinetuneConfigBase(BaseConfig):
     """Configuration for the backbone."""
     output: OutputConfig = OutputConfig(num_mlps=5)
     """Configuration for the output head."""
+    lora: LoraConfig | None = None
+    """Low-rank Adaptation (LoRA) configuration"""
 
     batch_size: int
     """Batch size to use."""
@@ -754,7 +757,11 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
     def _construct_backbone(self):
         log.critical("Using regular backbone")
 
-        backbone = GemNetOCBackbone(self.config.backbone, **dict(self.config.backbone))
+        backbone = GemNetOCBackbone(
+            self.config.backbone,
+            **dict(self.config.backbone),
+            lora=self.config.lora,
+        )
 
         return backbone
 
@@ -1020,7 +1027,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         embedding: Mapping[str, Any],
         strict: bool = True,
     ):
-        ignored_key_patterns = self.config.ckpt_load.ignored_key_patterns
+        ignored_key_patterns = copy.deepcopy(self.config.ckpt_load.ignored_key_patterns)
         # If we're dumping the backbone's force out heads, then we need to ignore
         #   the unexpected keys for the force out MLPs and force out heads.
         if (
@@ -1033,6 +1040,10 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 ignored_key_patterns.append(f"out_blocks.{block_idx}.dense_rbf_F.*")
                 ignored_key_patterns.append(f"out_blocks.{block_idx}.seq_forces.*")
 
+        # Ignore non-existant LoRA parameters
+        def should_ignore_missing_key_fn(k: str):
+            return k.endswith(".lora_A") or k.endswith(".lora_B")
+
         load_state_dict(
             self.backbone,
             backbone,
@@ -1040,6 +1051,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             ignored_key_patterns=ignored_key_patterns,
             ignored_missing_keys=self.config.ckpt_load.ignored_missing_keys,
             ignored_unexpected_keys=self.config.ckpt_load.ignored_unexpected_keys,
+            should_ignore_missing_key_fn=should_ignore_missing_key_fn,
         )
         if not self.config.ckpt_load.reset_embeddings:
             load_state_dict(self.embedding, embedding, strict=strict)

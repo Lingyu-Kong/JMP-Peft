@@ -1,11 +1,8 @@
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
-
-import torch
-from typing_extensions import override
+from functools import partial
+from typing import TypedDict
 
 from ll import TypedConfig
+from typing_extensions import override
 
 
 class BackboneConfig(TypedConfig):
@@ -116,30 +113,6 @@ class BackboneConfig(TypedConfig):
         )
 
     @classmethod
-    def download_base(cls, **kwargs):
-        """Load GemNetOCBackbone config from github"""
-        import requests
-        import yaml
-
-        # read config from url
-        response = requests.get(
-            "https://raw.githubusercontent.com/Open-Catalyst-Project/ocp/main/configs/s2ef/all/gemnet/gemnet-oc.yml"
-        )
-        config_dict = yaml.safe_load(response.text)
-
-        model_config: dict = {**config_dict["model"]}
-        _ = model_config.pop("name", None)
-        _ = model_config.pop("scale_file", None)
-
-        for key in list(model_config.keys()):
-            if any([key.startswith(prefix) for prefix in ["cutoff", "max_neighbors"]]):
-                _ = model_config.pop(key)
-
-        model_config.update(kwargs)
-        config = cls.from_dict(model_config)
-        return config
-
-    @classmethod
     def large(cls):
         return cls(
             **{
@@ -195,42 +168,6 @@ class BackboneConfig(TypedConfig):
             dropout=None,
             edge_dropout=None,
         )
-
-    @classmethod
-    def download_large(cls, **kwargs):
-        """Load GemNetOCBackbone config from github"""
-        import requests
-        import yaml
-
-        # read config from url
-        response = requests.get(
-            "https://raw.githubusercontent.com/Open-Catalyst-Project/ocp/main/configs/s2ef/all/gemnet/gemnet-oc-large.yml"
-        )
-        config_dict = yaml.safe_load(response.text)
-
-        model_config: dict = {**config_dict["model"]}
-        _ = model_config.pop("name", None)
-        _ = model_config.pop("scale_file", None)
-
-        for key in list(model_config.keys()):
-            if any([key.startswith(prefix) for prefix in ["cutoff", "max_neighbors"]]):
-                _ = model_config.pop(key)
-
-        model_config.update(kwargs)
-        config = cls.from_dict(model_config)
-        return config
-
-    @classmethod
-    def from_ckpt(
-        cls,
-        ckpt_path: Path | str,
-        transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-    ):
-        ckpt = torch.load(ckpt_path, map_location="cpu")
-        config = ckpt["config"]
-        if transform is not None:
-            config = transform(config)
-        return cls(**config)
 
 
 class BasesConfig(TypedConfig):
@@ -302,3 +239,41 @@ class BasesConfig(TypedConfig):
         if self.learnable_rbf_stds:
             self.rbf["trainable_stds"] = True
             self.rbf_spherical["trainable_stds"] = True
+
+
+class _LoraKwargs(TypedDict):
+    r: int
+    lora_alpha: int
+    lora_dropout: float
+    merge_weights: bool
+
+
+class LoraConfig(TypedConfig):
+    enabled: bool = True
+
+    r: int
+    alpha: int = 1
+    dropout: float = 0.0
+    merge_weights: bool = False
+
+    def as_kwargs(self):
+        return _LoraKwargs(
+            r=self.r,
+            lora_alpha=self.alpha,
+            lora_dropout=self.dropout,
+            merge_weights=self.merge_weights,
+        )
+
+    def __bool__(self):
+        return self.enabled
+
+    @staticmethod
+    def basis_embedding_cls(config: "LoraConfig | None"):
+        if config is None:
+            from .layers.efficient import BasisEmbedding
+
+            return BasisEmbedding
+        else:
+            from .layers.lora_efficient import LoRABasisEmbedding
+
+            return partial(LoRABasisEmbedding, lora=config)

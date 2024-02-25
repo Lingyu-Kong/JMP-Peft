@@ -7,6 +7,7 @@ LICENSE file in the root directory of this source tree.
 import numpy as np
 import torch
 
+from ..config import LoraConfig
 from .base_layers import Dense
 
 
@@ -64,6 +65,7 @@ class EdgeEmbedding(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
         in_features = 2 * atom_features + edge_features
@@ -73,6 +75,7 @@ class EdgeEmbedding(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
 
     def forward(

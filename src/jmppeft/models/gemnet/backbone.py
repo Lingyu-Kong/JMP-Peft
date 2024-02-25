@@ -8,15 +8,15 @@ from typing import TypedDict
 
 import torch
 import torch.nn as nn
-from torch_geometric.data.data import BaseData
-from torch_scatter import segment_coo
 
 from ll.util.typed import TypedModuleList
+from torch_geometric.data.data import BaseData
+from torch_scatter import segment_coo
 
 from ...modules.scaling.compat import load_scales_compat
 from ...utils.goc_graph import graphs_from_batch
 from .bases import Bases, BasesOutput
-from .config import BackboneConfig, BasesConfig
+from .config import BackboneConfig, BasesConfig, LoraConfig
 from .interaction_indices import get_mixed_triplets, get_quadruplets, get_triplets
 from .layers.atom_update_block import OutputBlock
 from .layers.base_layers import Dense, ResidualLayer
@@ -50,6 +50,7 @@ class FinalMLP(nn.Module):
         num_global_out_layers: int,
         activation: str | None = None,
         dropout: float | None = None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
 
@@ -59,26 +60,25 @@ class FinalMLP(nn.Module):
                 emb_size,
                 activation=activation,
                 dropout=dropout,
+                lora=lora,
             )
         ]
         out_mlp += [
-            ResidualLayer(emb_size, activation=activation, dropout=dropout)
+            ResidualLayer(
+                emb_size,
+                lora=lora,
+                activation=activation,
+                dropout=dropout,
+            )
             for _ in range(num_global_out_layers)
         ]
         self.out_mlp = nn.Sequential(*out_mlp)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        *,
-        data: BaseData,
-        edge_index: torch.Tensor,
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.out_mlp(x)
 
 
 class GemNetOCBackbone(nn.Module):
-
     """
     Arguments
     ---------
@@ -239,11 +239,12 @@ class GemNetOCBackbone(nn.Module):
         otf_graph: bool = False,
         scale_file: str | None = None,
         absolute_rbf_cutoff: float | None = None,
+        lora: LoraConfig | None = None,
         **kwargs,
     ):
         super().__init__()
 
-        self.shared_parameters: list[tuple[nn.Parameter, int]] = []
+        self.shared_parameters: list[tuple[torch.Tensor | nn.Parameter, int]] = []
 
         print("Unrecognized arguments: ", kwargs.keys())
 
@@ -274,13 +275,19 @@ class GemNetOCBackbone(nn.Module):
         self.regress_energy = regress_energy
         self.force_scaler = ForceScaler(enabled=scale_backprop_forces)
 
-        self.bases = Bases(BasesConfig.from_backbone_config(self.config))
+        self.bases = Bases(
+            BasesConfig.from_backbone_config(self.config),
+            lora=lora,
+        )
         if not self.config.unique_basis_per_layer:
             self.shared_parameters.extend(self.bases.shared_parameters)
         else:
             self.per_layer_bases = TypedModuleList(
                 [
-                    Bases(BasesConfig.from_backbone_config(self.config))
+                    Bases(
+                        BasesConfig.from_backbone_config(self.config),
+                        lora=lora,
+                    )
                     for _ in range(self.num_blocks)
                 ]
             )
@@ -318,6 +325,7 @@ class GemNetOCBackbone(nn.Module):
                     atom_interaction=atom_interaction,
                     activation=activation,
                     dropout=self.config.dropout,
+                    lora=lora,
                 )
             )
         self.int_blocks = nn.ModuleList(int_blocks)
@@ -334,6 +342,7 @@ class GemNetOCBackbone(nn.Module):
                     direct_forces=direct_forces,
                     edge_dropout=self.config.edge_dropout,
                     dropout=self.config.dropout,
+                    lora=lora,
                 )
             )
         self.out_blocks = nn.ModuleList(out_blocks)
@@ -358,6 +367,7 @@ class GemNetOCBackbone(nn.Module):
             num_blocks=num_blocks,
             num_global_out_layers=num_global_out_layers,
             activation=activation,
+            lora=lora,
         )
         if direct_forces:
             # out_mlp_F = [
@@ -381,6 +391,7 @@ class GemNetOCBackbone(nn.Module):
                 num_global_out_layers=num_global_out_layers,
                 activation=activation,
                 dropout=self.config.dropout,
+                lora=lora,
             )
 
         load_scales_compat(self, scale_file)
@@ -752,16 +763,12 @@ class GemNetOCBackbone(nn.Module):
         # Global output block for final predictions
         if self.regress_forces:
             assert self.direct_forces, "Only direct forces are supported for now."
-            x_F = self.out_mlp_F(
-                torch.cat(xs_F, dim=-1), data=data, edge_index=main_graph["edge_index"]
-            )
+            x_F = self.out_mlp_F(torch.cat(xs_F, dim=-1))
         else:
             x_F = None
 
         if self.regress_energy:
-            x_E = self.out_mlp_E(
-                torch.cat(xs_E, dim=-1), data=data, edge_index=main_graph["edge_index"]
-            )
+            x_E = self.out_mlp_E(torch.cat(xs_E, dim=-1))
         else:
             x_E = None
 

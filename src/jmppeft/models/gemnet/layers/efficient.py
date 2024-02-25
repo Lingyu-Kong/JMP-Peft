@@ -4,9 +4,9 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
-from typing import Optional
-
 import torch
+
+from ..config import LoraConfig
 
 from ..initializers import he_orthogonal_init
 from .base_layers import Dense
@@ -31,9 +31,14 @@ class BasisEmbedding(torch.nn.Module):
         self,
         num_radial: int,
         emb_size_interm: int,
-        num_spherical: Optional[int] = None,
+        num_spherical: int | None = None,
+        *,
+        lora: LoraConfig | None,
     ):
         super().__init__()
+
+        assert lora is None
+
         self.num_radial = num_radial
         self.num_spherical = num_spherical
         if num_spherical is None:
@@ -172,6 +177,7 @@ class EfficientInteractionBilinear(torch.nn.Module):
         emb_size_out: int,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
         self.emb_size_in = emb_size_in
@@ -184,6 +190,7 @@ class EfficientInteractionBilinear(torch.nn.Module):
             bias=False,
             activation=None,
             dropout=dropout,
+            lora=lora,
         )
 
     def forward(

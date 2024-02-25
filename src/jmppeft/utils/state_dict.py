@@ -1,6 +1,6 @@
 import fnmatch
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from logging import getLogger
 
 import torch
@@ -48,6 +48,8 @@ def load_state_dict(
     ignored_key_patterns: list[str] | None = None,
     ignored_missing_keys: list[str] | None = None,
     ignored_unexpected_keys: list[str] | None = None,
+    should_ignore_missing_key_fn: Callable[[str], bool] | None = None,
+    should_ignore_unexpected_key_fn: Callable[[str], bool] | None = None,
     strict: bool = True,
 ):
     if ignored_key_patterns:
@@ -84,12 +86,19 @@ def load_state_dict(
             for k in missing_keys
             if not any(fnmatch.fnmatch(k, pattern) for pattern in ignored_key_patterns)
         ]
+
     if ignored_missing_keys:
         missing_keys = [k for k in missing_keys if k not in ignored_missing_keys]
+    if should_ignore_missing_key_fn:
+        missing_keys = [k for k in missing_keys if not should_ignore_missing_key_fn(k)]
 
     if ignored_unexpected_keys:
         unexpected_keys = [
             k for k in unexpected_keys if k not in ignored_unexpected_keys
+        ]
+    if should_ignore_unexpected_key_fn:
+        unexpected_keys = [
+            k for k in unexpected_keys if not should_ignore_unexpected_key_fn(k)
         ]
 
     _report_incompat_keys(module, missing_keys, unexpected_keys, strict=strict)

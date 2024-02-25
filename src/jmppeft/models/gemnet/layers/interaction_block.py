@@ -9,6 +9,8 @@ import math
 import torch
 
 from ....modules.scaling import ScaleFactor
+
+from ..config import LoraConfig
 from .atom_update_block import AtomUpdateBlock
 from .base_layers import Dense, ResidualLayer
 from .efficient import EfficientInteractionBilinear
@@ -94,6 +96,7 @@ class InteractionBlock(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
 
@@ -105,6 +108,7 @@ class InteractionBlock(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
 
         # Triplet Interaction
@@ -119,6 +123,7 @@ class InteractionBlock(torch.nn.Module):
             swap_output=True,
             activation=activation,
             dropout=dropout,
+            lora=lora,
         )
 
         # Quadruplet Interaction
@@ -133,6 +138,7 @@ class InteractionBlock(torch.nn.Module):
                 symmetric_mp=True,
                 activation=activation,
                 dropout=dropout,
+                lora=lora,
             )
         else:
             self.quad_interaction = None
@@ -149,6 +155,7 @@ class InteractionBlock(torch.nn.Module):
                 swap_output=True,
                 activation=activation,
                 dropout=dropout,
+                lora=lora,
             )
         else:
             self.atom_edge_interaction = None
@@ -164,6 +171,7 @@ class InteractionBlock(torch.nn.Module):
                 swap_output=False,
                 activation=activation,
                 dropout=dropout,
+                lora=lora,
             )
         else:
             self.edge_atom_interaction = None
@@ -175,6 +183,7 @@ class InteractionBlock(torch.nn.Module):
                 emb_size_rbf=emb_size_rbf,
                 activation=activation,
                 dropout=dropout,
+                lora=lora,
             )
         else:
             self.atom_interaction = None
@@ -183,7 +192,9 @@ class InteractionBlock(torch.nn.Module):
         # Residual layers before skip connection
         self.layers_before_skip = torch.nn.ModuleList(
             [
-                ResidualLayer(emb_size_edge, activation=activation, dropout=dropout)
+                ResidualLayer(
+                    emb_size_edge, activation=activation, dropout=dropout, lora=lora
+                )
                 for i in range(num_before_skip)
             ]
         )
@@ -191,7 +202,9 @@ class InteractionBlock(torch.nn.Module):
         # Residual layers after skip connection
         self.layers_after_skip = torch.nn.ModuleList(
             [
-                ResidualLayer(emb_size_edge, activation=activation, dropout=dropout)
+                ResidualLayer(
+                    emb_size_edge, activation=activation, dropout=dropout, lora=lora
+                )
                 for i in range(num_after_skip)
             ]
         )
@@ -199,7 +212,9 @@ class InteractionBlock(torch.nn.Module):
         ## -------------------- Update Atom Embeddings -------------------- ##
         self.atom_emb_layers = torch.nn.ModuleList(
             [
-                ResidualLayer(emb_size_atom, activation=activation, dropout=dropout)
+                ResidualLayer(
+                    emb_size_atom, activation=activation, dropout=dropout, lora=lora
+                )
                 for _ in range(num_atom_emb_layers)
             ]
         )
@@ -211,6 +226,7 @@ class InteractionBlock(torch.nn.Module):
             nHidden=num_atom,
             activation=activation,
             dropout=dropout,
+            lora=lora,
         )
 
         ## ---------- Update Edge Embeddings with Atom Embeddings --------- ##
@@ -220,10 +236,13 @@ class InteractionBlock(torch.nn.Module):
             emb_size_edge,
             activation=activation,
             dropout=dropout,
+            lora=lora,
         )
         self.residual_m = torch.nn.ModuleList(
             [
-                ResidualLayer(emb_size_edge, activation=activation, dropout=dropout)
+                ResidualLayer(
+                    emb_size_edge, activation=activation, dropout=dropout, lora=lora
+                )
                 for _ in range(num_concat)
             ]
         )
@@ -395,6 +414,7 @@ class QuadrupletInteraction(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
         self.symmetric_mp = symmetric_mp
@@ -406,6 +426,7 @@ class QuadrupletInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
 
         # Up projections of basis representations,
@@ -416,6 +437,7 @@ class QuadrupletInteraction(torch.nn.Module):
             activation=None,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_rbf = ScaleFactor()
 
@@ -425,6 +447,7 @@ class QuadrupletInteraction(torch.nn.Module):
             activation=None,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_cbf = ScaleFactor()
 
@@ -433,6 +456,7 @@ class QuadrupletInteraction(torch.nn.Module):
             emb_size_sbf,
             emb_size_quad_out,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_sbf_sum = ScaleFactor()
         # combines scaling for bilinear layer and summation
@@ -444,6 +468,7 @@ class QuadrupletInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.up_projection_ca = Dense(
             emb_size_quad_out,
@@ -451,6 +476,7 @@ class QuadrupletInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         if self.symmetric_mp:
             self.up_projection_ac = Dense(
@@ -459,6 +485,7 @@ class QuadrupletInteraction(torch.nn.Module):
                 activation=activation,
                 bias=False,
                 dropout=dropout,
+                lora=lora,
             )
 
         self.inv_sqrt_2 = 1 / math.sqrt(2.0)
@@ -564,6 +591,7 @@ class TripletInteraction(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
         self.symmetric_mp = symmetric_mp
@@ -576,6 +604,7 @@ class TripletInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
 
         # Up projections of basis representations, bilinear layer and scaling factors
@@ -585,6 +614,7 @@ class TripletInteraction(torch.nn.Module):
             activation=None,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_rbf = ScaleFactor()
 
@@ -593,6 +623,7 @@ class TripletInteraction(torch.nn.Module):
             emb_size_cbf,
             emb_size_trip_out,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_cbf_sum = ScaleFactor()
         # combines scaling for bilinear layer and summation
@@ -604,6 +635,7 @@ class TripletInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.up_projection_ca = Dense(
             emb_size_trip_out,
@@ -611,6 +643,7 @@ class TripletInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         if self.symmetric_mp:
             self.up_projection_ac = Dense(
@@ -619,6 +652,7 @@ class TripletInteraction(torch.nn.Module):
                 activation=activation,
                 bias=False,
                 dropout=dropout,
+                lora=lora,
             )
 
         self.inv_sqrt_2 = 1 / math.sqrt(2.0)
@@ -718,6 +752,7 @@ class PairInteraction(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
 
@@ -728,6 +763,7 @@ class PairInteraction(torch.nn.Module):
             activation=None,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_rbf_sum = ScaleFactor()
 
@@ -738,6 +774,7 @@ class PairInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.up_projection = Dense(
             emb_size_pair_out,
@@ -745,6 +782,7 @@ class PairInteraction(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
 
         self.inv_sqrt_2 = 1 / math.sqrt(2.0)

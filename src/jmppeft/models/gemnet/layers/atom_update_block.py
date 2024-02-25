@@ -10,6 +10,8 @@ import torch
 from torch_scatter import scatter
 
 from ....modules.scaling import ScaleFactor
+
+from ..config import LoraConfig
 from .base_layers import Dense, ResidualLayer
 
 
@@ -40,6 +42,7 @@ class AtomUpdateBlock(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__()
 
@@ -49,14 +52,28 @@ class AtomUpdateBlock(torch.nn.Module):
             activation=None,
             bias=False,
             dropout=dropout,
+            lora=lora,
         )
         self.scale_sum = ScaleFactor()
 
         self.layers = self.get_mlp(
-            emb_size_edge, emb_size_atom, nHidden, activation, dropout
+            emb_size_edge,
+            emb_size_atom,
+            nHidden,
+            activation,
+            dropout,
+            lora,
         )
 
-    def get_mlp(self, units_in, units, nHidden, activation, dropout: float | None):
+    def get_mlp(
+        self,
+        units_in,
+        units,
+        nHidden,
+        activation,
+        dropout: float | None,
+        lora: LoraConfig | None,
+    ):
         if units_in != units:
             dense1 = Dense(
                 units_in,
@@ -64,12 +81,19 @@ class AtomUpdateBlock(torch.nn.Module):
                 activation=activation,
                 bias=False,
                 dropout=dropout,
+                lora=lora,
             )
             mlp = [dense1]
         else:
             mlp = []
         res = [
-            ResidualLayer(units, nLayers=2, activation=activation, dropout=dropout)
+            ResidualLayer(
+                units,
+                nLayers=2,
+                activation=activation,
+                dropout=dropout,
+                lora=lora,
+            )
             for i in range(nHidden)
         ]
         mlp += res
@@ -133,6 +157,7 @@ class OutputBlock(AtomUpdateBlock):
         *,
         edge_dropout: float | None,
         dropout: float | None,
+        lora: LoraConfig | None,
     ):
         super().__init__(
             emb_size_atom=emb_size_atom,
@@ -141,6 +166,7 @@ class OutputBlock(AtomUpdateBlock):
             nHidden=nHidden,
             activation=activation,
             dropout=dropout,
+            lora=lora,
         )
 
         self.direct_forces = direct_forces
@@ -154,6 +180,7 @@ class OutputBlock(AtomUpdateBlock):
                 nHidden_afteratom,
                 activation,
                 dropout,
+                lora,
             )
             self.inv_sqrt_2 = 1 / math.sqrt(2.0)
         else:
@@ -167,6 +194,7 @@ class OutputBlock(AtomUpdateBlock):
                 nHidden,
                 activation,
                 dropout,
+                lora,
             )
             self.dense_rbf_F = Dense(
                 emb_size_rbf,
@@ -174,6 +202,7 @@ class OutputBlock(AtomUpdateBlock):
                 activation=None,
                 bias=False,
                 dropout=dropout,
+                lora=lora,
             )
 
     def _drop_edge_boost_activations(self, x: torch.Tensor):
