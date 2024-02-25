@@ -7,7 +7,7 @@ LICENSE file in the root directory of this source tree.
 
 import bisect
 import pickle
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -15,11 +15,10 @@ from typing import Any
 import lmdb
 import numpy as np
 import torch
+from ll import TypedConfig
 from torch.utils.data import Dataset
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
-
-from ll import TypedConfig
 
 from ..utils.ocp import pyg2_data_transform
 
@@ -82,7 +81,7 @@ class PretrainLmdbDataset(Dataset[BaseData]):
 
     @property
     @cache
-    def metadata(self) -> dict[str, np.ndarray]:
+    def metadata(self) -> Mapping[str, np.ndarray]:
         metadata_path = getattr(self, "metadata_path", None)
         if not metadata_path or not metadata_path.is_file():
             metadata_path = self.config.metadata_path

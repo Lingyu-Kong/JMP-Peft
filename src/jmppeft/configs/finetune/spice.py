@@ -38,6 +38,7 @@ def jmp_l_spice_config(dataset: DC.SPICEDataset, base_path: Path, ckpt_path: Pat
         config.test_dataset = DC.spice_config(dataset, base_path, "test")
 
         # Spice specific settings
+        config.dataset = dataset
         config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
 
         # Gradient forces

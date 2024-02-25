@@ -3,30 +3,31 @@ import itertools
 import math
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping
-from functools import cache, partial
+from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
+from typing import Annotated, Any, assert_never, cast, Generic, Literal, TypeAlias
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.callbacks import ModelCheckpoint
+
+from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
+from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
-from typing_extensions import TypedDict, TypeVar, override
-from ...modules.ema import EMAConfig
+from typing_extensions import override, TypedDict, TypeVar
 
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
-from ll.util.typed import TypedModuleDict
-
-from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
-from ...datasets.finetune_lmdb import FinetuneLmdbDataset
+from ...datasets.finetune_lmdb import (
+    FinetuneDatasetConfig as FinetuneDatasetConfigBase,
+    FinetuneLmdbDataset,
+)
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
@@ -35,6 +36,7 @@ from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
+from ...modules.ema import EMAConfig
 from ...modules.scheduler.gradual_warmup_lr import GradualWarmupScheduler
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
@@ -42,18 +44,18 @@ from ...modules.scheduler.linear_warmup_cos_rlp import (
 from ...modules.transforms.normalize import NormalizationConfig
 from ...utils.goc_graph import (
     Cutoffs,
+    generate_graph,
     Graph,
     MaxNeighbors,
-    generate_graph,
     subselect_graph,
     tag_mask,
 )
 from ...utils.state_dict import load_state_dict
 from ..config import (
     EmbeddingConfig,
+    optimizer_from_config,
     OptimizerConfig,
     OutputConfig,
-    optimizer_from_config,
 )
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
 
@@ -650,8 +652,7 @@ class NodeVectorOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
 
 class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
     @abstractmethod
-    def metric_prefix(self) -> str:
-        ...
+    def metric_prefix(self) -> str: ...
 
     @override
     def on_test_end(self):
@@ -1019,11 +1020,24 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         embedding: Mapping[str, Any],
         strict: bool = True,
     ):
+        ignored_key_patterns = self.config.ckpt_load.ignored_key_patterns
+        # If we're dumping the backbone's force out heads, then we need to ignore
+        #   the unexpected keys for the force out MLPs and force out heads.
+        if (
+            not self.config.backbone.regress_forces
+            or not self.config.backbone.direct_forces
+        ):
+            ignored_key_patterns.append("out_mlp_F.*")
+            for block_idx in range(self.config.backbone.num_blocks + 1):
+                ignored_key_patterns.append(f"out_blocks.{block_idx}.scale_rbf_F.*")
+                ignored_key_patterns.append(f"out_blocks.{block_idx}.dense_rbf_F.*")
+                ignored_key_patterns.append(f"out_blocks.{block_idx}.seq_forces.*")
+
         load_state_dict(
             self.backbone,
             backbone,
             strict=strict,
-            ignored_key_patterns=self.config.ckpt_load.ignored_key_patterns,
+            ignored_key_patterns=ignored_key_patterns,
             ignored_missing_keys=self.config.ckpt_load.ignored_missing_keys,
             ignored_unexpected_keys=self.config.ckpt_load.ignored_unexpected_keys,
         )
@@ -1418,10 +1432,12 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 param_group_lr_scheduler_settings = [
                     *(
                         self._cos_annealing_hparams(
-                            lr_config
-                            if c.lr_scheduler is None
-                            or not isinstance(c.lr_scheduler, WarmupCosRLPConfig)
-                            else c.lr_scheduler,
+                            (
+                                lr_config
+                                if c.lr_scheduler is None
+                                or not isinstance(c.lr_scheduler, WarmupCosRLPConfig)
+                                else c.lr_scheduler
+                            ),
                             lr_initial=param_group["lr"],
                         )
                         for c, param_group in zip(configs, optimizer.param_groups[:-1])
@@ -1587,7 +1603,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         dataset = DT.transform(dataset, self._transform_cls_data)
         return dataset
 
-    @cache
     def train_dataset(self):
         if (dataset := self.create_dataset("train")) is None:
             return None
@@ -1595,7 +1610,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         dataset = self._apply_dataset_transforms(dataset)
         return dataset
 
-    @cache
     def val_dataset(self):
         if (dataset := self.create_dataset("val")) is None:
             return None
@@ -1603,7 +1617,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         dataset = self._apply_dataset_transforms(dataset)
         return dataset
 
-    @cache
     def test_dataset(self):
         if (dataset := self.create_dataset("test")) is None:
             return None

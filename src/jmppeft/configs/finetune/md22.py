@@ -58,6 +58,7 @@ def jmp_l_md22_config(molecule: DC.MD22Molecule, base_path: Path, ckpt_path: Pat
         config.test_dataset = DC.md22_config(molecule, base_path, "test")
 
         # MD22 specific settings
+        config.molecule = molecule
         config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
 
         # Gradient forces

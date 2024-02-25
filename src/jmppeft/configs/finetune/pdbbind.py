@@ -2,8 +2,7 @@ from pathlib import Path
 
 from ...configs.finetune import jmp_l_ft_config_builder
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import PDBBindConfig, PDBBindModel
-from ...tasks.finetune import dataset_config as DC
+from ...tasks.finetune import dataset_config as DC, PDBBindConfig, PDBBindModel
 from ...tasks.finetune.base import PrimaryMetricConfig
 
 
@@ -24,6 +23,8 @@ def jmp_l_pdbbind_config(
         config.train_dataset = DC.pdbbind_config("train")
         config.val_dataset = DC.pdbbind_config("val")
         config.test_dataset = DC.pdbbind_config("test")
+
+        config.batch_size = 1
 
         # PDBBind specific settings
         config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")

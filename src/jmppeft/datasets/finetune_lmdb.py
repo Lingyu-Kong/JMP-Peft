@@ -1,5 +1,6 @@
 import bisect
 import pickle
+from collections.abc import Mapping
 from functools import cache
 from logging import getLogger
 from pathlib import Path
@@ -7,11 +8,10 @@ from typing import Any, cast
 
 import lmdb
 import numpy as np
+from ll import TypedConfig
 from torch.utils.data import Dataset
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
-
-from ll import TypedConfig
 
 from ..utils.ocp import pyg2_data_transform
 
@@ -69,7 +69,7 @@ class FinetuneLmdbDataset(Dataset[BaseData]):
 
     @property
     @cache
-    def metadata(self) -> dict[str, np.ndarray]:
+    def metadata(self) -> Mapping[str, np.ndarray]:
         metadata_path = self.metadata_path
         if metadata_path and metadata_path.is_file():
             return np.load(metadata_path, allow_pickle=True)

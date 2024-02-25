@@ -1,19 +1,18 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from contextlib import ExitStack
-from functools import cache
 from logging import getLogger
-from typing import Any, Generic, Literal, cast
+from typing import Any, cast, Generic, Literal
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import pack, rearrange, reduce
-from torch_geometric.data.data import BaseData
-from torch_scatter import scatter
-from typing_extensions import TypeVar, override
 
 from ll import TypedConfig
+from torch_geometric.data.data import BaseData
+from torch_scatter import scatter
+from typing_extensions import override, TypeVar
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...models.gemnet.layers.force_scaler import ForceScaler
@@ -90,15 +89,11 @@ class EnergyForcesModelBase(
         *,
         backbone: Mapping[str, Any],
         embedding: Mapping[str, Any],
-        mixture: Mapping[str, Any] | None = None,
         output: Mapping[str, Any] | None = None,
         strict: bool = True,
     ):
         super().load_backbone_state_dict(
-            backbone=backbone,
-            embedding=embedding,
-            mixture=mixture,
-            strict=strict,
+            backbone=backbone, embedding=embedding, strict=strict
         )
 
         if self.config.pretrain_output_head.enabled:
@@ -289,8 +284,7 @@ class EnergyForcesModelBase(
         return loss
 
     @abstractmethod
-    def generate_graphs_transform(self, data: BaseData) -> BaseData:
-        ...
+    def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
 
     def _generate_graphs_transform(self, data: BaseData):
         if self.config.gradient_forces:
@@ -301,7 +295,6 @@ class EnergyForcesModelBase(
         return self.generate_graphs_transform(data)
 
     @override
-    @cache
     def train_dataset(self):
         if (dataset := super().train_dataset()) is None:
             return None
@@ -310,7 +303,6 @@ class EnergyForcesModelBase(
         return dataset
 
     @override
-    @cache
     def val_dataset(self):
         if (dataset := super().val_dataset()) is None:
             return None
@@ -319,7 +311,6 @@ class EnergyForcesModelBase(
         return dataset
 
     @override
-    @cache
     def test_dataset(self):
         if (dataset := super().test_dataset()) is None:
             return None

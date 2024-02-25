@@ -222,7 +222,7 @@ class RadialBasis(nn.Module):
 
         self.scale_basis = scale_basis
         if self.scale_basis:
-            self.scale_rbf = ScaleFactor(num_radial)
+            self.scale_rbf = ScaleFactor()
 
         env_name = envelope["name"].lower()
         env_hparams = envelope.copy()

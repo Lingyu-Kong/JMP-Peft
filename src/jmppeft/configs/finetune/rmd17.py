@@ -3,8 +3,7 @@ from pathlib import Path
 from ...configs.finetune import jmp_l_ft_config_builder
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import RMD17Config, RMD17Model
-from ...tasks.finetune import dataset_config as DC
+from ...tasks.finetune import dataset_config as DC, RMD17Config, RMD17Model
 from ...tasks.finetune.base import (
     EarlyStoppingConfig,
     PrimaryMetricConfig,
@@ -75,6 +74,7 @@ def jmp_l_rmd17_config(molecule: DC.RMD17Molecule, base_path: Path, ckpt_path: P
         config.test_dataset = DC.rmd17_config(molecule, base_path, "test")
 
         # RMD17 specific settings
+        config.molecule = molecule
         config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
 
         # Gradient forces

@@ -3,8 +3,7 @@ from pathlib import Path
 from ...configs.finetune import jmp_l_ft_config_builder
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import MatbenchConfig, MatbenchModel
-from ...tasks.finetune import dataset_config as DC
+from ...tasks.finetune import dataset_config as DC, MatbenchConfig, MatbenchModel
 from ...tasks.finetune.base import PrimaryMetricConfig
 
 STATS: dict[str, dict[str, NC]] = {
@@ -77,6 +76,7 @@ def jmp_l_matbench_config(
         config.normalization = normalization_config
 
         # MatBench specific settings
+        config.dataset = dataset
         config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
 
         return builder(config), MatbenchModel

@@ -1,18 +1,18 @@
 from collections import Counter
 from dataclasses import dataclass
 from logging import getLogger
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import cast, Protocol, runtime_checkable, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torchmetrics
 import torchmetrics.classification
 from frozendict import frozendict
-from torch_geometric.data.batch import Batch
-from typing_extensions import override
 
 from ll import TypedConfig
 from ll.util.typed import TypedModuleDict
+from torch_geometric.data.data import BaseData
+from typing_extensions import override
 
 if TYPE_CHECKING:
     from .base import (
@@ -66,9 +66,8 @@ class MetricPair:
 @runtime_checkable
 class MetricPairProvider(Protocol):
     def __call__(
-        self, prop: str, batch: Batch, preds: dict[str, torch.Tensor]
-    ) -> MetricPair | None:
-        ...
+        self, prop: str, batch: BaseData, preds: dict[str, torch.Tensor]
+    ) -> MetricPair | None: ...
 
 
 class ConflictingMetrics(nn.Module):
@@ -100,7 +99,7 @@ class ConflictingMetrics(nn.Module):
 
         self.provider = provider
 
-    def _compute_mask(self, data: Batch):
+    def _compute_mask(self, data: BaseData):
         n_graphs = int(torch.max(data.batch).item() + 1)
         mask = torch.zeros(n_graphs, dtype=torch.bool, device=data.batch.device)
         for i in range(n_graphs):
@@ -113,7 +112,7 @@ class ConflictingMetrics(nn.Module):
     def _compute_metrics(
         self,
         targets: list[str],
-        batch: Batch,
+        batch: BaseData,
         preds: dict[str, torch.Tensor],
         mask: torch.Tensor,
     ):
@@ -128,7 +127,7 @@ class ConflictingMetrics(nn.Module):
             non_conflicting_mae(mp.predicted[~mask], mp.ground_truth[~mask])
 
     @override
-    def forward(self, batch: Batch, preds: dict[str, torch.Tensor]):
+    def forward(self, batch: BaseData, preds: dict[str, torch.Tensor]):
         mask = self._compute_mask(batch)
 
         self.num_conflicting(mask)
@@ -236,9 +235,7 @@ class FinetuneMetrics(nn.Module):
         config: MetricsConfig,
         provider: MetricPairProvider,
         graph_scalar_targets: list[str],
-        graph_classification_targets: list[
-            "BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig"
-        ],
+        graph_classification_targets: "list[BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig]",
         node_vector_targets: list[str],
     ):
         super().__init__()
@@ -271,9 +268,11 @@ class FinetuneMetrics(nn.Module):
             )
         self.cls_metrics = TypedModuleDict(
             {
-                target.name: BinaryClassificationMetrics(target.num_classes)
-                if isinstance(target, BinaryClassificationTargetConfig)
-                else MulticlassClassificationMetrics(target.num_classes)
+                target.name: (
+                    BinaryClassificationMetrics(target.num_classes)
+                    if isinstance(target, BinaryClassificationTargetConfig)
+                    else MulticlassClassificationMetrics(target.num_classes)
+                )
                 for target in self.graph_classification_targets
             },
             key_prefix="cls_",
@@ -303,7 +302,7 @@ class FinetuneMetrics(nn.Module):
             self.conflicting = TypedModuleDict(metrics_dict)
 
     @override
-    def forward(self, batch: Batch, preds: dict[str, torch.Tensor]):
+    def forward(self, batch: BaseData, preds: dict[str, torch.Tensor]):
         metrics: dict[str, torchmetrics.Metric] = {}
 
         for key, mae in self.maes.items():
