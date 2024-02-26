@@ -245,7 +245,7 @@ class GemNetOCBackbone(nn.Module):
     ):
         super().__init__()
 
-        self.shared_parameters: list[tuple[torch.Tensor | nn.Parameter, int]] = []
+        self.shared_parameters: list[tuple[nn.Parameter, int]] = []
 
         print("Unrecognized arguments: ", kwargs.keys())
 

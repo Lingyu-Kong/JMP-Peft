@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from ...configs.finetune import jmp_l_ft_config_builder
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import dataset_config as DC, MatbenchConfig, MatbenchModel
+from ...tasks.finetune import MatbenchConfig
+from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
 
 STATS: dict[str, dict[str, NC]] = {
@@ -50,33 +50,30 @@ STATS: dict[str, dict[str, NC]] = {
 }
 
 
-def jmp_l_matbench_config(
+def matbench_config_(
+    config: MatbenchConfig,
     dataset: DC.MatbenchDataset,
     fold: DC.MatbenchFold,
     base_path: Path,
-    ckpt_path: Path,
 ):
-    with jmp_l_ft_config_builder(MatbenchConfig, ckpt_path) as (builder, config):
-        # Optimizer settings
-        config.optimizer = AdamWConfig(
-            lr=5.0e-6,
-            amsgrad=False,
-            betas=(0.9, 0.95),
-            weight_decay=0.1,
-        )
+    # Optimizer settings
+    config.optimizer = AdamWConfig(
+        lr=5.0e-6,
+        amsgrad=False,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
+    )
 
-        # Set up dataset
-        config.train_dataset = DC.matbench_config(dataset, base_path, "train", fold)
-        config.val_dataset = DC.matbench_config(dataset, base_path, "val", fold)
-        config.test_dataset = DC.matbench_config(dataset, base_path, "test", fold)
+    # Set up dataset
+    config.train_dataset = DC.matbench_config(dataset, base_path, "train", fold)
+    config.val_dataset = DC.matbench_config(dataset, base_path, "val", fold)
+    config.test_dataset = DC.matbench_config(dataset, base_path, "test", fold)
 
-        # Set up normalization
-        if (normalization_config := STATS.get(f"{dataset}_{fold}")) is None:
-            raise ValueError(f"Normalization for {dataset}_{fold} not found")
-        config.normalization = normalization_config
+    # Set up normalization
+    if (normalization_config := STATS.get(f"{dataset}_{fold}")) is None:
+        raise ValueError(f"Normalization for {dataset}_{fold} not found")
+    config.normalization = normalization_config
 
-        # MatBench specific settings
-        config.dataset = dataset
-        config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
-
-        return builder(config), MatbenchModel
+    # MatBench specific settings
+    config.dataset = dataset
+    config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")

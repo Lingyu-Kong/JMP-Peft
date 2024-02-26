@@ -1,9 +1,8 @@
 from pathlib import Path
 
-from ...configs.finetune import jmp_l_ft_config_builder
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import MD22Config, MD22Model
+from ...tasks.finetune import MD22Config
 from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
 
@@ -39,36 +38,37 @@ STATS: dict[str, dict[str, NC]] = {
 }
 
 
-def jmp_l_md22_config(molecule: DC.MD22Molecule, base_path: Path, ckpt_path: Path):
-    with jmp_l_ft_config_builder(MD22Config, ckpt_path) as (builder, config):
-        # Optimizer settings
-        config.optimizer = AdamWConfig(
-            lr=5.0e-6,
-            amsgrad=False,
-            betas=(0.9, 0.95),
-            weight_decay=0.1,
-        )
+def jmp_l_md22_config_(
+    config: MD22Config,
+    molecule: DC.MD22Molecule,
+    base_path: Path,
+):
+    # Optimizer settings
+    config.optimizer = AdamWConfig(
+        lr=5.0e-6,
+        amsgrad=False,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
+    )
 
-        # Set data config
-        config.batch_size = 4
+    # Set data config
+    config.batch_size = 4
 
-        # Set up dataset
-        config.train_dataset = DC.md22_config(molecule, base_path, "train")
-        config.val_dataset = DC.md22_config(molecule, base_path, "val")
-        config.test_dataset = DC.md22_config(molecule, base_path, "test")
+    # Set up dataset
+    config.train_dataset = DC.md22_config(molecule, base_path, "train")
+    config.val_dataset = DC.md22_config(molecule, base_path, "val")
+    config.test_dataset = DC.md22_config(molecule, base_path, "test")
 
-        # MD22 specific settings
-        config.molecule = molecule
-        config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
+    # MD22 specific settings
+    config.molecule = molecule
+    config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
 
-        # Gradient forces
-        config.model_type = "forces"
-        config.gradient_forces = True
-        config.trainer.inference_mode = False
+    # Gradient forces
+    config.model_type = "forces"
+    config.gradient_forces = True
+    config.trainer.inference_mode = False
 
-        # Set up normalization
-        if (normalization_config := STATS.get(molecule)) is None:
-            raise ValueError(f"Normalization for {molecule} not found")
-        config.normalization = normalization_config
-
-        return builder(config), MD22Model
+    # Set up normalization
+    if (normalization_config := STATS.get(molecule)) is None:
+        raise ValueError(f"Normalization for {molecule} not found")
+    config.normalization = normalization_config

@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from ...configs.finetune import jmp_l_ft_config_builder
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import dataset_config as DC, RMD17Config, RMD17Model
+from ...tasks.finetune import RMD17Config
+from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import (
     EarlyStoppingConfig,
     PrimaryMetricConfig,
@@ -55,58 +55,59 @@ STATS: dict[str, dict[str, NC]] = {
 }
 
 
-def jmp_l_rmd17_config(molecule: DC.RMD17Molecule, base_path: Path, ckpt_path: Path):
-    with jmp_l_ft_config_builder(RMD17Config, ckpt_path) as (builder, config):
-        # Optimizer settings
-        config.optimizer = AdamWConfig(
-            lr=5.0e-6,
-            amsgrad=False,
-            betas=(0.9, 0.95),
-            weight_decay=0.1,
-        )
+def jmp_l_rmd17_config_(
+    config: RMD17Config,
+    molecule: DC.RMD17Molecule,
+    base_path: Path,
+):
+    # Optimizer settings
+    config.optimizer = AdamWConfig(
+        lr=5.0e-6,
+        amsgrad=False,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
+    )
 
-        # Set data config
-        config.batch_size = 4
+    # Set data config
+    config.batch_size = 4
 
-        # Set up dataset
-        config.train_dataset = DC.rmd17_config(molecule, base_path, "train")
-        config.val_dataset = DC.rmd17_config(molecule, base_path, "val")
-        config.test_dataset = DC.rmd17_config(molecule, base_path, "test")
+    # Set up dataset
+    config.train_dataset = DC.rmd17_config(molecule, base_path, "train")
+    config.val_dataset = DC.rmd17_config(molecule, base_path, "val")
+    config.test_dataset = DC.rmd17_config(molecule, base_path, "test")
 
-        # RMD17 specific settings
-        config.molecule = molecule
-        config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
+    # RMD17 specific settings
+    config.molecule = molecule
+    config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
 
-        # Gradient forces
-        config.model_type = "forces"
-        config.gradient_forces = True
-        config.trainer.inference_mode = False
+    # Gradient forces
+    config.model_type = "forces"
+    config.gradient_forces = True
+    config.trainer.inference_mode = False
 
-        # Set up normalization
-        if (normalization_config := STATS.get(molecule)) is None:
-            raise ValueError(f"Normalization for {molecule} not found")
-        config.normalization = normalization_config
+    # Set up normalization
+    if (normalization_config := STATS.get(molecule)) is None:
+        raise ValueError(f"Normalization for {molecule} not found")
+    config.normalization = normalization_config
 
-        # We use more conservative early stopping for rMD17
-        #   (we essentially copy Allegro here).
-        config.trainer.max_epochs = 100_000
-        config.trainer.max_time = "07:00:00:00"
-        config.early_stopping = EarlyStoppingConfig(
-            patience=1000,
-            min_delta=1.0e-8,
-            min_lr=1.0e-10,
-        )
+    # We use more conservative early stopping for rMD17
+    #   (we essentially copy Allegro here).
+    config.trainer.max_epochs = 100_000
+    config.trainer.max_time = "07:00:00:00"
+    config.early_stopping = EarlyStoppingConfig(
+        patience=1000,
+        min_delta=1.0e-8,
+        min_lr=1.0e-10,
+    )
 
-        # We also use a conservative set of hyperparameters
-        #   for ReduceLROnPlateau (again, we copy Allegro here).
-        # The main difference is that we use a larger patience (25 vs 3).
-        config.lr_scheduler = WarmupCosRLPConfig(
-            warmup_epochs=5,
-            warmup_start_lr_factor=1.0e-1,
-            should_restart=False,
-            max_epochs=32,
-            min_lr_factor=0.1,
-            rlp=RLPConfig(patience=25, factor=0.8),
-        )
-
-        return builder(config), RMD17Model
+    # We also use a conservative set of hyperparameters
+    #   for ReduceLROnPlateau (again, we copy Allegro here).
+    # The main difference is that we use a larger patience (25 vs 3).
+    config.lr_scheduler = WarmupCosRLPConfig(
+        warmup_epochs=5,
+        warmup_start_lr_factor=1.0e-1,
+        should_restart=False,
+        max_epochs=32,
+        min_lr_factor=0.1,
+        rlp=RLPConfig(patience=25, factor=0.8),
+    )

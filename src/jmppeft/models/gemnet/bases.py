@@ -87,7 +87,7 @@ class Bases(nn.Module):
 
     def _set_shared_params(self):
         # Set shared parameters for better gradients
-        self.shared_parameters: list[tuple[torch.Tensor, int]] = []
+        self.shared_parameters: list[tuple[nn.Parameter, int]] = []
         self.shared_parameters.extend(
             [
                 (self.mlp_rbf_tint.linear.weight, self.config.num_blocks),

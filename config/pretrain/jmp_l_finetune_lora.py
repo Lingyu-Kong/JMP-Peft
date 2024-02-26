@@ -1,7 +1,8 @@
 # %%
 from pathlib import Path
 
-from jmppeft.configs.finetune.rmd17 import jmp_l_rmd17_config
+from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
+from jmppeft.configs.finetune.rmd17 import jmp_l_rmd17_config_
 from jmppeft.modules.lora import LoraConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
@@ -9,11 +10,15 @@ from jmppeft.tasks.finetune.base import (
     RLPConfig,
     RLPWarmupConfig,
 )
+from jmppeft.tasks.finetune.rmd17 import RMD17Config, RMD17Model
 
 ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
 base_path = Path("/mnt/shared/datasets/rmd17/")
 
-config, model_cls = jmp_l_rmd17_config("aspirin", base_path, ckpt_path)
+config = RMD17Config.draft()
+jmp_l_ft_config_(config, ckpt_path, ema_backbone=True)
+jmp_l_rmd17_config_(config, "aspirin", base_path)
+
 config.parameter_specific_optimizers = None
 config.optimizer.lr = 1.0e-4
 config.lr_scheduler = RLPConfig(
@@ -32,14 +37,15 @@ config.lora = LoraConfig(r=4)
 config.num_workers = 8
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-configs.append((config, model_cls))
+configs.append((config.finalize(), RMD17Model))
 
 # %%
+from ll import Runner, Trainer
+
 from jmppeft.utils.finetune_state_dict import (
     filter_state_dict,
     retreive_state_dict_for_finetuning,
 )
-from ll import Runner, Trainer
 
 
 def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
@@ -60,8 +66,8 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
-# runner = Runner(run)
-# runner.fast_dev_run(configs)
+runner = Runner(run)
+runner.fast_dev_run(configs)
 
 # %%
 runner = Runner(run)

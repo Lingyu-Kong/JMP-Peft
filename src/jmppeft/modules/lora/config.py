@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, ClassVar, TypeAlias, TypedDict, cast
+from typing import Any, ClassVar, TypeAlias, TypedDict
 
 from ll import TypedConfig
 
@@ -64,7 +64,7 @@ class LoraConfig(TypedConfig):
         self._register_path_inplace_(updated_path)
 
         # Update kwargs for the module
-        return cast(LoraConfig, self.pydantic_model().model_copy(update=update))
+        return self.model_copy(update=update)
 
     @classmethod
     def disabled(cls):
