@@ -803,7 +803,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         )
 
         self.backbone = self._construct_backbone()
-        self.register_shared_parameters(self.backbone.shared_parameters)
+        self.register_shared_parameters(
+            [(p, c) for p, c in self.backbone.shared_parameters if p.requires_grad]
+        )
 
         self.construct_output_heads()
 

@@ -11,9 +11,8 @@ base_path = Path("/mnt/shared/datasets/rmd17/")
 config, model_cls = jmp_l_rmd17_config("aspirin", base_path, ckpt_path)
 print(config)
 
-config.trainer.python_logging.log_level = "INFO"
 config.lora = LoraConfig(r=4)
-config.num_workers = 0
+config.num_workers = 8
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 configs.append((config, model_cls))
@@ -44,13 +43,9 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
+# runner = Runner(run)
+# runner.fast_dev_run(configs)
+
+# %%
 runner = Runner(run)
-runner.fast_dev_run(configs)
-
-# %%
-LoraConfig.pprint_path_tree()
-
-# %%
-import rich
-
-rich.print(LoraConfig._all_paths)
+runner(configs)
