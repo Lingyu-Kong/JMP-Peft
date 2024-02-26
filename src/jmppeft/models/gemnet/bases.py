@@ -63,7 +63,7 @@ class Bases(nn.Module):
         config: BasesConfig,
         dropout: float | None = None,
         *,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__()
 
@@ -79,7 +79,7 @@ class Bases(nn.Module):
             self.config.emb_size_edge,
             activation=self.config.activation,
             dropout=self.dropout,
-            lora=lora,
+            lora=lora("edge_embedding"),
         )
 
         if not self.config.unique_per_layer:
@@ -254,7 +254,7 @@ class Bases(nn.Module):
             scale_basis=self.config.scale_basis,
         )
 
-    def init_shared_basis_layers(self, lora: LoraConfig | None):
+    def init_shared_basis_layers(self, lora: LoraConfig):
         # Share basis down projections across all interaction blocks
         if self.config.quad_interaction:
             self.mlp_rbf_qint = Dense(
@@ -263,19 +263,19 @@ class Bases(nn.Module):
                 activation=None,
                 bias=False,
                 dropout=self.dropout,
-                lora=lora,
+                lora=lora("mlp_rbf_qint"),
             )
-            self.mlp_cbf_qint = LoraConfig.gemnet_basis_embedding_cls(lora)(
+            self.mlp_cbf_qint = lora.gemnet_basis_embedding_cls(
                 self.config.num_radial,
                 self.config.emb_size_cbf,
                 self.config.num_spherical,
-                lora=lora,
+                lora=lora("mlp_cbf_qint"),
             )
-            self.mlp_sbf_qint = LoraConfig.gemnet_basis_embedding_cls(lora)(
+            self.mlp_sbf_qint = lora.gemnet_basis_embedding_cls(
                 self.config.num_radial,
                 self.config.emb_size_sbf,
                 self.config.num_spherical**2,
-                lora=lora,
+                lora=lora("mlp_sbf_qint"),
             )
 
         if self.config.atom_edge_interaction:
@@ -285,13 +285,13 @@ class Bases(nn.Module):
                 activation=None,
                 bias=False,
                 dropout=self.dropout,
-                lora=lora,
+                lora=lora("mlp_rbf_aeint"),
             )
-            self.mlp_cbf_aeint = LoraConfig.gemnet_basis_embedding_cls(lora)(
+            self.mlp_cbf_aeint = lora.gemnet_basis_embedding_cls(
                 self.config.num_radial,
                 self.config.emb_size_cbf,
                 self.config.num_spherical,
-                lora=lora,
+                lora=lora("mlp_cbf_aeint"),
             )
         if self.config.edge_atom_interaction:
             self.mlp_rbf_eaint = Dense(
@@ -300,19 +300,19 @@ class Bases(nn.Module):
                 activation=None,
                 bias=False,
                 dropout=self.dropout,
-                lora=lora,
+                lora=lora("mlp_rbf_eaint"),
             )
-            self.mlp_cbf_eaint = LoraConfig.gemnet_basis_embedding_cls(lora)(
+            self.mlp_cbf_eaint = lora.gemnet_basis_embedding_cls(
                 self.config.num_radial,
                 self.config.emb_size_cbf,
                 self.config.num_spherical,
-                lora=lora,
+                lora=lora("mlp_cbf_eaint"),
             )
         if self.config.atom_interaction:
-            self.mlp_rbf_aint = LoraConfig.gemnet_basis_embedding_cls(lora)(
+            self.mlp_rbf_aint = lora.gemnet_basis_embedding_cls(
                 self.config.num_radial,
                 self.config.emb_size_rbf,
-                lora=lora,
+                lora=lora("mlp_rbf_aint"),
             )
 
         self.mlp_rbf_tint = Dense(
@@ -321,13 +321,13 @@ class Bases(nn.Module):
             activation=None,
             bias=False,
             dropout=self.dropout,
-            lora=lora,
+            lora=lora("mlp_rbf_tint"),
         )
-        self.mlp_cbf_tint = LoraConfig.gemnet_basis_embedding_cls(lora)(
+        self.mlp_cbf_tint = lora.gemnet_basis_embedding_cls(
             self.config.num_radial,
             self.config.emb_size_cbf,
             self.config.num_spherical,
-            lora=lora,
+            lora=lora("mlp_cbf_tint"),
         )
 
         # Share the dense Layer of the atom embedding block accross the interaction blocks
@@ -337,7 +337,7 @@ class Bases(nn.Module):
             activation=None,
             bias=False,
             dropout=self.dropout,
-            lora=lora,
+            lora=lora("mlp_rbf_h"),
         )
         self.mlp_rbf_out = Dense(
             self.config.num_radial,
@@ -345,7 +345,7 @@ class Bases(nn.Module):
             activation=None,
             bias=False,
             dropout=self.dropout,
-            lora=lora,
+            lora=lora("mlp_rbf_out"),
         )
 
     def calculate_quad_angles(

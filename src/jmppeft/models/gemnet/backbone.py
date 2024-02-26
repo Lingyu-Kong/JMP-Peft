@@ -51,7 +51,7 @@ class FinalMLP(nn.Module):
         num_global_out_layers: int,
         activation: str | None = None,
         dropout: float | None = None,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__()
 
@@ -61,17 +61,17 @@ class FinalMLP(nn.Module):
                 emb_size,
                 activation=activation,
                 dropout=dropout,
-                lora=lora,
+                lora=lora("out_mlp_0_dense"),
             )
         ]
         out_mlp += [
             ResidualLayer(
                 emb_size,
-                lora=lora,
                 activation=activation,
                 dropout=dropout,
+                lora=lora(f"out_mlp_res_{i}"),
             )
-            for _ in range(num_global_out_layers)
+            for i in range(num_global_out_layers)
         ]
         self.out_mlp = nn.Sequential(*out_mlp)
 
@@ -240,7 +240,7 @@ class GemNetOCBackbone(nn.Module):
         otf_graph: bool = False,
         scale_file: str | None = None,
         absolute_rbf_cutoff: float | None = None,
-        lora: LoraConfig | None = None,
+        lora: LoraConfig = LoraConfig.disabled(),
         **kwargs,
     ):
         super().__init__()
@@ -278,7 +278,7 @@ class GemNetOCBackbone(nn.Module):
 
         self.bases = Bases(
             BasesConfig.from_backbone_config(self.config),
-            lora=lora,
+            lora=lora("bases"),
         )
         if not self.config.unique_basis_per_layer:
             self.shared_parameters.extend(self.bases.shared_parameters)
@@ -287,7 +287,7 @@ class GemNetOCBackbone(nn.Module):
                 [
                     Bases(
                         BasesConfig.from_backbone_config(self.config),
-                        lora=lora,
+                        lora=lora("per_layer_bases"),
                     )
                     for _ in range(self.num_blocks)
                 ]
@@ -301,7 +301,7 @@ class GemNetOCBackbone(nn.Module):
 
         # Interaction Blocks
         int_blocks = []
-        for _ in range(num_blocks):
+        for idx in range(num_blocks):
             int_blocks.append(
                 InteractionBlock(
                     emb_size_atom=emb_size_atom,
@@ -326,12 +326,12 @@ class GemNetOCBackbone(nn.Module):
                     atom_interaction=atom_interaction,
                     activation=activation,
                     dropout=self.config.dropout,
-                    lora=lora,
+                    lora=lora(f"int_blocks_{idx}"),
                 )
             )
         self.int_blocks = nn.ModuleList(int_blocks)
         out_blocks = []
-        for _ in range(num_blocks + 1):
+        for idx in range(num_blocks + 1):
             out_blocks.append(
                 OutputBlock(
                     emb_size_atom=emb_size_atom,
@@ -343,7 +343,7 @@ class GemNetOCBackbone(nn.Module):
                     direct_forces=direct_forces,
                     edge_dropout=self.config.edge_dropout,
                     dropout=self.config.dropout,
-                    lora=lora,
+                    lora=lora(f"out_blocks_{idx}"),
                 )
             )
         self.out_blocks = nn.ModuleList(out_blocks)
@@ -368,7 +368,7 @@ class GemNetOCBackbone(nn.Module):
             num_blocks=num_blocks,
             num_global_out_layers=num_global_out_layers,
             activation=activation,
-            lora=lora,
+            lora=lora("out_mlp_E"),
         )
         if direct_forces:
             # out_mlp_F = [
@@ -392,7 +392,7 @@ class GemNetOCBackbone(nn.Module):
                 num_global_out_layers=num_global_out_layers,
                 activation=activation,
                 dropout=self.config.dropout,
-                lora=lora,
+                lora=lora("out_mlp_F"),
             )
 
         load_scales_compat(self, scale_file)

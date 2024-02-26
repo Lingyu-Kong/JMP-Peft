@@ -342,7 +342,7 @@ class FinetuneConfigBase(BaseConfig):
     """Configuration for the backbone."""
     output: OutputConfig = OutputConfig(num_mlps=5)
     """Configuration for the output head."""
-    lora: LoraConfig | None = None
+    lora: LoraConfig = LoraConfig.disabled()
     """Low-rank Adaptation (LoRA) configuration"""
 
     batch_size: int

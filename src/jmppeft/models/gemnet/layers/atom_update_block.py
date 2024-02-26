@@ -41,7 +41,7 @@ class AtomUpdateBlock(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__()
 
@@ -51,7 +51,7 @@ class AtomUpdateBlock(torch.nn.Module):
             activation=None,
             bias=False,
             dropout=dropout,
-            lora=lora,
+            lora=lora("dense_rbf"),
         )
         self.scale_sum = ScaleFactor()
 
@@ -61,7 +61,7 @@ class AtomUpdateBlock(torch.nn.Module):
             nHidden,
             activation,
             dropout,
-            lora,
+            lora("layers"),
         )
 
     def get_mlp(
@@ -71,7 +71,7 @@ class AtomUpdateBlock(torch.nn.Module):
         nHidden,
         activation,
         dropout: float | None,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         if units_in != units:
             dense1 = Dense(
@@ -80,7 +80,7 @@ class AtomUpdateBlock(torch.nn.Module):
                 activation=activation,
                 bias=False,
                 dropout=dropout,
-                lora=lora,
+                lora=lora("dense1"),
             )
             mlp = [dense1]
         else:
@@ -91,7 +91,7 @@ class AtomUpdateBlock(torch.nn.Module):
                 nLayers=2,
                 activation=activation,
                 dropout=dropout,
-                lora=lora,
+                lora=lora(f"res_{i}"),
             )
             for i in range(nHidden)
         ]
@@ -156,7 +156,7 @@ class OutputBlock(AtomUpdateBlock):
         *,
         edge_dropout: float | None,
         dropout: float | None,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__(
             emb_size_atom=emb_size_atom,
@@ -165,7 +165,7 @@ class OutputBlock(AtomUpdateBlock):
             nHidden=nHidden,
             activation=activation,
             dropout=dropout,
-            lora=lora,
+            lora=lora("atom_update_block"),
         )
 
         self.direct_forces = direct_forces
@@ -179,7 +179,7 @@ class OutputBlock(AtomUpdateBlock):
                 nHidden_afteratom,
                 activation,
                 dropout,
-                lora,
+                lora("seq_energy2"),
             )
             self.inv_sqrt_2 = 1 / math.sqrt(2.0)
         else:
@@ -193,7 +193,7 @@ class OutputBlock(AtomUpdateBlock):
                 nHidden,
                 activation,
                 dropout,
-                lora,
+                lora("seq_forces"),
             )
             self.dense_rbf_F = Dense(
                 emb_size_rbf,
@@ -201,7 +201,7 @@ class OutputBlock(AtomUpdateBlock):
                 activation=None,
                 bias=False,
                 dropout=dropout,
-                lora=lora,
+                lora=lora("dense_rbf_F"),
             )
 
     def _drop_edge_boost_activations(self, x: torch.Tensor):

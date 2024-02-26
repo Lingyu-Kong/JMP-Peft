@@ -65,7 +65,7 @@ class EdgeEmbedding(torch.nn.Module):
         activation=None,
         *,
         dropout: float | None,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__()
         in_features = 2 * atom_features + edge_features
@@ -75,7 +75,7 @@ class EdgeEmbedding(torch.nn.Module):
             activation=activation,
             bias=False,
             dropout=dropout,
-            lora=lora,
+            lora=lora("dense"),
         )
 
     def forward(

@@ -18,7 +18,7 @@ class LoRABasisEmbedding(BasisEmbedding, LoRALayer):
         emb_size_interm: int,
         num_spherical: int | None = None,
         *,
-        lora: LoraConfig | None
+        lora: LoraConfig,
     ):
         assert lora is not None, "LoRABasisEmbedding requires a LoraConfig"
         assert lora.r > 0, "LoRABasisEmbedding requires a positive r"
@@ -28,7 +28,7 @@ class LoRABasisEmbedding(BasisEmbedding, LoRALayer):
             num_radial,
             emb_size_interm,
             num_spherical,
-            lora=None,
+            lora=LoraConfig.disabled(),
         )
         LoRALayer.__init__(self, **lora.as_kwargs())
 

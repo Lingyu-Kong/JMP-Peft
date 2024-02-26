@@ -32,11 +32,11 @@ class BasisEmbedding(torch.nn.Module):
         emb_size_interm: int,
         num_spherical: int | None = None,
         *,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__()
 
-        assert lora is None
+        assert not lora
 
         self.num_radial = num_radial
         self.num_spherical = num_spherical
@@ -176,7 +176,7 @@ class EfficientInteractionBilinear(torch.nn.Module):
         emb_size_out: int,
         *,
         dropout: float | None,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
     ):
         super().__init__()
         self.emb_size_in = emb_size_in
@@ -189,7 +189,7 @@ class EfficientInteractionBilinear(torch.nn.Module):
             bias=False,
             activation=None,
             dropout=dropout,
-            lora=lora,
+            lora=lora("bilinear"),
         )
 
     def forward(

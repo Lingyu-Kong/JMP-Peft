@@ -43,7 +43,7 @@ class Dense(nn.Module):
         activation=None,
         scale_dim: bool = False,
         *,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
         dropout: float | None,
     ):
         super().__init__()
@@ -132,7 +132,7 @@ class ResidualLayer(nn.Module):
         nLayers: int = 2,
         layer: type[Dense] = Dense,
         *,
-        lora: LoraConfig | None,
+        lora: LoraConfig,
         **layer_kwargs,
     ):
         super().__init__()
@@ -145,10 +145,10 @@ class ResidualLayer(nn.Module):
                     in_features=units,
                     out_features=units,
                     bias=False,
-                    lora=lora,
+                    lora=lora(f"linear_{idx}"),
                     **layer_kwargs,
                 )
-                for _ in range(nLayers)
+                for idx in range(nLayers)
             ]
         )
         self.inv_sqrt_2 = 1 / math.sqrt(2)
