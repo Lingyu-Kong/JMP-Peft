@@ -66,9 +66,9 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
-runner = Runner(run)
-runner.fast_dev_run(configs)
+# runner = Runner(run)
+# runner.fast_dev_run(configs)
 
 # %%
 runner = Runner(run)
-runner(configs)
+runner.local_session_per_gpu(configs, snapshot=True)
