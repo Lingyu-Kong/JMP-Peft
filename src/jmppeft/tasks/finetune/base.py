@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.core.optimizer import LightningOptimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
@@ -37,7 +38,6 @@ from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
 from ...modules.lora import LoraConfig
-from ...modules.scheduler.gradual_warmup_lr import GradualWarmupScheduler
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
 )
@@ -65,6 +65,9 @@ DatasetType: TypeAlias = FinetuneLmdbDataset
 
 
 class RLPWarmupConfig(TypedConfig):
+    step_type: Literal["step", "epoch"]
+    """The type of step to use for the warmup"""
+
     steps: int
     """Number of steps for the warmup"""
 
@@ -76,15 +79,15 @@ class RLPConfig(TypedConfig):
     name: Literal["rlp"] = "rlp"
 
     monitor: str | None = None
-    mode: str | None = None
+    mode: Literal["min", "max"] | None = None
     patience: int = 10
     factor: float = 0.1
     min_lr: float = 0.0
     eps: float = 1.0e-8
     cooldown: int = 0
     threshold: float = 1.0e-4
-    threshold_mode: str = "rel"
-    interval: str = "epoch"
+    threshold_mode: Literal["rel", "abs"] = "rel"
+    interval: Literal["epoch", "step"] = "epoch"
     frequency: int = 1
     warmup: RLPWarmupConfig | None = None
 
@@ -1277,14 +1280,33 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         main_params = [p for p in main_params if p not in head_params_set]
         return main_params, head_params
 
+    def _warmup_step(
+        self,
+        config: RLPWarmupConfig,
+        optimizer: torch.optim.Optimizer | LightningOptimizer,
+    ):
+        # Compute the current step
+        match config.step_type:
+            case "step":
+                current_step = self.global_step
+            case "epoch":
+                current_step = self.current_epoch
+            case _:
+                assert_never(config.step_type)
+
+        if current_step > config.steps:
+            return
+
+        initial_lr = self.config.optimizer.lr
+        lr_scale = min(1.0, float(current_step + 1) / config.steps)
+        for pg in optimizer.param_groups:
+            pg["lr"] = initial_lr * lr_scale
+
     @override
     def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure=None):
         match self.config.lr_scheduler:
-            case RLPConfig(warmup=RLPWarmupConfig()):
-                lr_scheduler = self.lr_schedulers()
-                assert isinstance(lr_scheduler, GradualWarmupScheduler)
-                if not lr_scheduler.finished:
-                    lr_scheduler.step()
+            case RLPConfig(warmup=RLPWarmupConfig() as warmup):
+                self._warmup_step(warmup, optimizer)
             case _:
                 pass
 
@@ -1380,32 +1402,14 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             eps=config.eps,
             verbose=True,
         )
-        if config.warmup is not None:
-            optim_lr = float(optimizer.param_groups[0]["lr"])
-            warmup_start_lr = optim_lr * config.warmup.start_lr_factor
 
-            lr_scheduler = GradualWarmupScheduler(
-                optimizer,
-                warmup_start_lr=warmup_start_lr,
-                warmup_steps=config.warmup.steps,
-                after_scheduler=lr_scheduler,
-            )
-            return {
-                "scheduler": lr_scheduler,
-                "monitor": config.monitor,
-                "interval": config.interval,
-                "frequency": config.frequency,
-                "strict": False,
-                "reduce_on_plateau": True,
-            }
-        else:
-            return {
-                "scheduler": lr_scheduler,
-                "monitor": config.monitor,
-                "interval": config.interval,
-                "frequency": config.frequency,
-                "strict": True,
-            }
+        return {
+            "scheduler": lr_scheduler,
+            "monitor": config.monitor,
+            "interval": config.interval,
+            "frequency": config.frequency,
+            "strict": True,
+        }
 
     def configure_optimizers_param_specific_optimizers(
         self, configs: list[ParamSpecificOptimizerConfig]

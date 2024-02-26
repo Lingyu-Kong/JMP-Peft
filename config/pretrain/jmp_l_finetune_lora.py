@@ -3,12 +3,29 @@ from pathlib import Path
 
 from jmppeft.configs.finetune.rmd17 import jmp_l_rmd17_config
 from jmppeft.modules.lora import LoraConfig
-from jmppeft.tasks.finetune.base import FinetuneConfigBase, FinetuneModelBase
+from jmppeft.tasks.finetune.base import (
+    FinetuneConfigBase,
+    FinetuneModelBase,
+    RLPConfig,
+    RLPWarmupConfig,
+)
 
 ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
 base_path = Path("/mnt/shared/datasets/rmd17/")
 
 config, model_cls = jmp_l_rmd17_config("aspirin", base_path, ckpt_path)
+config.parameter_specific_optimizers = None
+config.optimizer.lr = 1.0e-4
+config.lr_scheduler = RLPConfig(
+    patience=25,
+    factor=0.8,
+    interval="epoch",
+    warmup=RLPWarmupConfig(
+        step_type="epoch",
+        steps=5,
+        start_lr_factor=1.0e-1,
+    ),
+)
 print(config)
 
 config.lora = LoraConfig(r=4)
