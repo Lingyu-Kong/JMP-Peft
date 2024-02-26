@@ -2,17 +2,17 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from contextlib import ExitStack
 from logging import getLogger
-from typing import Any, cast, Generic, Literal
+from typing import Any, Generic, Literal, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import pack, rearrange, reduce
-
 from ll import TypedConfig
+from ll.nn import MLP
 from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
-from typing_extensions import override, TypeVar
+from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...models.gemnet.layers.force_scaler import ForceScaler
@@ -111,7 +111,7 @@ class EnergyForcesModelBase(
         ):
             return ([emb_size] * num_mlps) + [num_targets]
 
-        self.out_energy = self.mlp(
+        self.out_energy = MLP(
             dims(self.config.backbone.emb_size_atom),
             activation=self.config.activation_cls,
             bias=False,
@@ -139,7 +139,7 @@ class EnergyForcesModelBase(
             self.config.model_type in ("forces", "energy_forces")
             and not self.config.gradient_forces
         ):
-            self.out_forces = self.mlp(
+            self.out_forces = MLP(
                 dims(self.config.backbone.emb_size_edge),
                 activation=self.config.activation_cls,
             )
@@ -284,7 +284,8 @@ class EnergyForcesModelBase(
         return loss
 
     @abstractmethod
-    def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
+    def generate_graphs_transform(self, data: BaseData) -> BaseData:
+        ...
 
     def _generate_graphs_transform(self, data: BaseData):
         if self.config.gradient_forces:

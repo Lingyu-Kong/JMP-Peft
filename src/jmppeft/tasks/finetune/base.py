@@ -7,7 +7,8 @@ from collections.abc import Iterable, Mapping
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
+from typing import (Annotated, Any, Generic, Literal, TypeAlias, assert_never,
+                    cast)
 
 import torch
 import torch.nn as nn
@@ -15,6 +16,11 @@ import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.core.optimizer import LightningOptimizer
+from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll.data.balanced_batch_sampler import (BalancedBatchSampler,
+                                            DatasetWithSizes)
+from ll.nn import MLP
+from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
@@ -22,11 +28,8 @@ from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
 from typing_extensions import TypedDict, TypeVar, override
 
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
-from ll.util.typed import TypedModuleDict
-
-from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
+from ...datasets.finetune_lmdb import \
+    FinetuneDatasetConfig as FinetuneDatasetConfigBase
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
@@ -38,25 +41,14 @@ from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
 from ...modules.lora import LoraConfig
-from ...modules.scheduler.linear_warmup_cos_rlp import (
-    PerParamGroupLinearWarmupCosineAnnealingRLPLR,
-)
+from ...modules.scheduler.linear_warmup_cos_rlp import \
+    PerParamGroupLinearWarmupCosineAnnealingRLPLR
 from ...modules.transforms.normalize import NormalizationConfig
-from ...utils.goc_graph import (
-    Cutoffs,
-    Graph,
-    MaxNeighbors,
-    generate_graph,
-    subselect_graph,
-    tag_mask,
-)
+from ...utils.goc_graph import (Cutoffs, Graph, MaxNeighbors, generate_graph,
+                                subselect_graph, tag_mask)
 from ...utils.state_dict import load_state_dict
-from ..config import (
-    EmbeddingConfig,
-    OptimizerConfig,
-    OutputConfig,
-    optimizer_from_config,
-)
+from ..config import (EmbeddingConfig, OptimizerConfig, OutputConfig,
+                      optimizer_from_config)
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
 
 log = getLogger(__name__)
@@ -490,7 +482,7 @@ class GraphScalarOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
         if reduction is None:
             reduction = self.config.graph_scalar_reduction_default
 
-        self.out_mlp = self.mlp(
+        self.out_mlp = MLP(
             ([self.config.backbone.emb_size_atom] * self.config.output.num_mlps)
             + [self.config.backbone.num_targets],
             activation=self.config.activation_cls,
@@ -544,7 +536,7 @@ class GraphBinaryClassificationOutputHead(Base[TConfig], nn.Module, Generic[TCon
         if reduction is None:
             reduction = self.config.graph_scalar_reduction_default
 
-        self.out_mlp = self.mlp(
+        self.out_mlp = MLP(
             ([self.config.backbone.emb_size_atom] * self.config.output.num_mlps) + [1],
             activation=self.config.activation_cls,
         )
@@ -585,7 +577,7 @@ class GraphMulticlassClassificationOutputHead(
         if reduction is None:
             reduction = self.config.graph_scalar_reduction_default
 
-        self.out_mlp = self.mlp(
+        self.out_mlp = MLP(
             ([self.config.backbone.emb_size_atom] * self.config.output.num_mlps)
             + [classification_config.num_classes],
             activation=self.config.activation_cls,
@@ -629,7 +621,7 @@ class NodeVectorOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
         if reduction is None:
             reduction = self.config.graph_scalar_reduction_default
 
-        self.out_mlp = self.mlp(
+        self.out_mlp = MLP(
             ([self.config.backbone.emb_size_edge] * self.config.output.num_mlps)
             + [self.config.backbone.num_targets],
             activation=self.config.activation_cls,

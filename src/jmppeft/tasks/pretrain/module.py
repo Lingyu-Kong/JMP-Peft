@@ -12,6 +12,10 @@ from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
     OptimizerLRSchedulerConfig,
 )
+from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll.data.balanced_batch_sampler import BalancedBatchSampler
+from ll.nn import MLP
+from ll.util.typed import TypedModuleDict, TypedModuleList
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
@@ -19,10 +23,6 @@ from torch_geometric.utils import dropout_edge
 from torch_scatter import scatter
 from torchmetrics import SumMetric
 from typing_extensions import TypeVar, override
-
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import BalancedBatchSampler
-from ll.util.typed import TypedModuleDict, TypedModuleList
 
 from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetConfigBase
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset
@@ -125,12 +125,9 @@ class PretrainConfig(BaseConfig):
     edge_dropout: float | None = None
     """The percentage of edges to drop. If None, no edges are dropped."""
 
-    embedding: EmbeddingConfig = EmbeddingConfig(
-        num_elements=BackboneConfig.base().num_elements,
-        embedding_size=BackboneConfig.base().emb_size_atom,
-    )
+    embedding: EmbeddingConfig = TypedConfig.MISSING
     """Configuration for the embedding layer."""
-    backbone: BackboneConfig = BackboneConfig.base()
+    backbone: BackboneConfig
     """Configuration for the backbone."""
     output: OutputConfig = OutputConfig(num_mlps=5)
     """Configuration for the output head."""
@@ -217,6 +214,12 @@ class PretrainConfig(BaseConfig):
         self.backbone.dropout = self.dropout
         self.backbone.edge_dropout = self.edge_dropout
 
+        if self.embedding is self.MISSING:
+            self.embedding = EmbeddingConfig(
+                num_elements=self.backbone.num_elements,
+                embedding_size=self.backbone.emb_size_atom,
+            )
+
 
 class Embedding(Base[PretrainConfig], nn.Module):
     @override
@@ -250,7 +253,7 @@ class Output(Base[PretrainConfig], nn.Module):
 
         self.out_energy = TypedModuleList(
             [
-                self.mlp(
+                MLP(
                     dims(self.config.backbone.emb_size_atom),
                     activation=self.config.activation_cls,
                 )
@@ -259,7 +262,7 @@ class Output(Base[PretrainConfig], nn.Module):
         )
         self.out_forces = TypedModuleList(
             [
-                self.mlp(
+                MLP(
                     dims(self.config.backbone.emb_size_edge),
                     activation=self.config.activation_cls,
                 )
