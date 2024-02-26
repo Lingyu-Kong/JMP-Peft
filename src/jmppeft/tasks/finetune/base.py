@@ -7,28 +7,26 @@ from collections.abc import Iterable, Mapping
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Annotated, Any, assert_never, cast, Generic, Literal, TypeAlias
+from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.callbacks import ModelCheckpoint
-
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
-from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
-from typing_extensions import override, TypedDict, TypeVar
+from typing_extensions import TypedDict, TypeVar, override
 
-from ...datasets.finetune_lmdb import (
-    FinetuneDatasetConfig as FinetuneDatasetConfigBase,
-    FinetuneLmdbDataset,
-)
+from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
+from ll.util.typed import TypedModuleDict
+
+from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
+from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
@@ -46,18 +44,18 @@ from ...modules.scheduler.linear_warmup_cos_rlp import (
 from ...modules.transforms.normalize import NormalizationConfig
 from ...utils.goc_graph import (
     Cutoffs,
-    generate_graph,
     Graph,
     MaxNeighbors,
+    generate_graph,
     subselect_graph,
     tag_mask,
 )
 from ...utils.state_dict import load_state_dict
 from ..config import (
     EmbeddingConfig,
-    optimizer_from_config,
     OptimizerConfig,
     OutputConfig,
+    optimizer_from_config,
 )
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
 
@@ -656,7 +654,8 @@ class NodeVectorOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
 
 class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
     @abstractmethod
-    def metric_prefix(self) -> str: ...
+    def metric_prefix(self) -> str:
+        ...
 
     @override
     def on_test_end(self):
@@ -833,11 +832,13 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         # Sanity check: ensure all named_parameters have requires_grad=True,
         #   otherwise add them to ignored_parameters.
         self.ignored_parameters = set[nn.Parameter]()
+        ignored_parameters_list: list[str] = []
         for name, param in self.named_parameters():
             if param.requires_grad:
                 continue
             self.ignored_parameters.add(param)
-            log.info(f"Adding {name} to ignored_parameters")
+            ignored_parameters_list.append(name)
+        log.info(f"List of ignored parameters: {ignored_parameters_list}")
 
         self.process_freezing()
 

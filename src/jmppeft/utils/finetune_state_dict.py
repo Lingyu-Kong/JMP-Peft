@@ -103,6 +103,7 @@ def retreive_ft_state_dict_from_loaded_ckpt(
             parameters_list
         ), f"{len(ema)=} != {len(parameters_list)=}"
 
+        ema_loaded_list: list[str] = []
         for i, (param, ema) in enumerate(zip(parameters_list, ema)):
             existing_param = state_dict[param]
             assert (
@@ -112,9 +113,11 @@ def retreive_ft_state_dict_from_loaded_ckpt(
                 existing_param.dtype == ema.dtype
             ), f"{existing_param.dtype=} != {ema.dtype=} for {param=} at index {i}"
             state_dict[param] = ema
-            log.info(f"Loaded EMA for {param}")
+            # log.info(f"Loaded EMA for {param}")
+            ema_loaded_list.append(param)
 
         log.critical(f"Loaded {len(parameters_list)} EMA parameters")
+        log.info(f"Loaded EMA for {ema_loaded_list}")
 
     return state_dict
 
