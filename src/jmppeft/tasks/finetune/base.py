@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.core.optimizer import LightningOptimizer
-from ll import BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll import AllowMissing, BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -55,6 +55,7 @@ from ..config import (
 )
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
 from .output_head import (
+    GradientForcesTargetConfig,
     GraphBinaryClassificationTargetConfig,
     GraphMulticlassClassificationTargetConfig,
     GraphScalarTargetConfig,
@@ -300,7 +301,7 @@ class FinetuneConfigBase(BaseConfig):
     lr_scheduler: LRSchedulerConfig | None = None
     """Learning rate scheduler configuration. If None, no learning rate scheduler is used."""
 
-    embedding: EmbeddingConfig = TypedConfig.MISSING
+    embedding: AllowMissing[EmbeddingConfig] = TypedConfig.MISSING
     """Configuration for the embedding layer."""
     backbone: BackboneConfig
     """Configuration for the backbone."""
@@ -352,40 +353,6 @@ class FinetuneConfigBase(BaseConfig):
     def targets(self):
         """List of all targets, i.e., graph and node targets"""
         return self.graph_targets + self.node_targets
-
-    # graph_scalar_targets: list[str] = []
-    # """List of graph scalar targets (e.g., energy)"""
-    # graph_classification_targets: list[
-    #     BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig
-    # ] = []
-    # """List of graph classification targets (e.g., is_metal)"""
-    # node_vector_targets: list[str] = []
-    # """List of node vector targets (e.g., force)"""
-
-    # graph_scalar_loss_coefficient_default: float = 1.0
-    # """Default loss coefficient for graph scalar targets, if not specified in `graph_scalar_loss_coefficients`"""
-    # node_vector_loss_coefficient_default: float = 1.0
-    # """Default loss coefficient for node vector targets, if not specified in `node_vector_loss_coefficients`"""
-    # graph_scalar_loss_coefficients: dict[str, float] = {}
-    # """Loss coefficients for graph scalar targets"""
-    # graph_classification_loss_coefficients: dict[str, float] = {}
-    # """Loss coefficients for graph classification targets"""
-    # node_vector_loss_coefficients: dict[str, float] = {}
-    # """Loss coefficients for node vector targets"""
-
-    # graph_scalar_reduction_default: Literal["sum", "mean", "max"] = "sum"
-    # """Default reduction method, if not specified in `graph_scalar_reduction`, for computing graph scalar targets from each node's scalar prediction"""
-    # graph_classification_reduction_default: Literal["sum", "mean", "max"] = "sum"
-    # """Default reduction method, if  method fornot specified in `graph_classification_reduction`, graph classification targets from each node's classification prediction"""
-    # node_vector_reduction_default: Literal["sum", "mean", "max"] = "sum"
-    # """Default reduction method, if not specified in `node_vector_reduction`, for computing node vector targets from each edge's vector prediction"""
-
-    # graph_scalar_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
-    # """Reduction methods for computing graph scalar targets from each node's scalar prediction"""
-    # graph_classification_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
-    # """Reduction methods for computing graph classification targets from each node's classification prediction"""
-    # node_vector_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
-    # """Reduction methods for computing node vector targets from each edge's vector prediction"""
 
     normalization: dict[str, NormalizationConfig] = {}
     """Normalization parameters for each target"""
@@ -821,7 +788,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         for target in self.config.node_targets:
             match target:
-                case NodeVectorTargetConfig():
+                case NodeVectorTargetConfig() | GradientForcesTargetConfig():
                     assert preds[target.name].shape[-1] == 3
                     loss = F.pairwise_distance(
                         preds[target.name], batch[target.name], p=2.0

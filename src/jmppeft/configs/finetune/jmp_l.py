@@ -28,7 +28,6 @@ def jmp_l_ft_config_(
 
     # Set backbone config
     config.backbone = BackboneConfig.large()
-    config.embedding.embedding_size = config.backbone.emb_size_atom
     config.backbone.scale_basis = False
 
     # Optimizer settings

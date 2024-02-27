@@ -21,12 +21,6 @@ MD22Molecule: TypeAlias = Literal[
 class MD22Config(EnergyForcesConfigBase):
     molecule: MD22Molecule
 
-    graph_scalar_targets: list[str] = ["y"]
-    node_vector_targets: list[str] = ["force"]
-
-    graph_scalar_loss_coefficients: dict[str, float] = {"y": 1.0}
-    node_vector_loss_coefficients: dict[str, float] = {"force": 100.0}
-
 
 @final
 class MD22Model(EnergyForcesModelBase[MD22Config]):

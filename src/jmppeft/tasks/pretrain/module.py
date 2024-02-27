@@ -12,7 +12,7 @@ from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
     OptimizerLRSchedulerConfig,
 )
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll import AllowMissing, Base, BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler
 from ll.nn import MLP
 from ll.util.typed import TypedModuleDict, TypedModuleList
@@ -117,7 +117,7 @@ class PretrainConfig(BaseConfig):
     edge_dropout: float | None = None
     """The percentage of edges to drop. If None, no edges are dropped."""
 
-    embedding: EmbeddingConfig = TypedConfig.MISSING
+    embedding: AllowMissing[EmbeddingConfig] = TypedConfig.MISSING
     """Configuration for the embedding layer."""
     backbone: BackboneConfig
     """Configuration for the backbone."""

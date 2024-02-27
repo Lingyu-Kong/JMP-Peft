@@ -31,7 +31,6 @@ config.lr_scheduler = RLPConfig(
         start_lr_factor=1.0e-1,
     ),
 )
-print(config)
 
 config.lora = LoraConfig(r=4)
 config.num_workers = 8
@@ -66,8 +65,8 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
-# runner = Runner(run)
-# runner.fast_dev_run(configs)
+runner = Runner(run)
+runner.fast_dev_run(configs)
 
 # %%
 runner = Runner(run)

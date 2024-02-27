@@ -25,9 +25,6 @@ RMD17Molecule: TypeAlias = Literal[
 class RMD17Config(EnergyForcesConfigBase):
     molecule: RMD17Molecule
 
-    graph_scalar_loss_coefficients: dict[str, float] = {"y": 0.0}
-    node_vector_loss_coefficients: dict[str, float] = {"force": 10.0}
-
     cutoff: float = 7.0
     max_neighbors: int = 100
 

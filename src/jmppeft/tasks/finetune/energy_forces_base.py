@@ -1,43 +1,28 @@
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from contextlib import ExitStack
 from logging import getLogger
-from typing import Any, Generic, Literal, cast
+from typing import Generic, cast
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from einops import pack, rearrange, reduce
-from ll import TypedConfig
-from ll.nn import MLP
+from ll.nn import TypedModuleDict
 from torch_geometric.data.data import BaseData
-from torch_scatter import scatter
 from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
-from ...models.gemnet.layers.force_scaler import ForceScaler
 from ...modules.dataset import dataset_transform as DT
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
+    GradientForcesTargetConfig,
+    GradientOutputHeadInput,
     GraphScalarTargetConfig,
     GraphTargetConfig,
     NodeTargetConfig,
     NodeVectorTargetConfig,
+    OutputHeadInput,
 )
 
 log = getLogger(__name__)
-
-
-class PretrainOutputHeadConfig(TypedConfig):
-    enabled: bool = False
-
-    num_pretrain_heads: int = 4
-    energy_reduction: str = "sum"
-
-    direct_forces: bool = False
-    gradient_forces: bool = False
-
-    combine_strategy: str = "mean"
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
@@ -45,248 +30,163 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
     ]
     node_targets: list[NodeTargetConfig] = [
-        NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
+        GradientForcesTargetConfig(
+            name="force",
+            energy_name="y",
+            loss_coefficient=100.0,
+        ),
     ]
 
-    gradient_forces: bool = False
-    model_type: Literal["energy", "forces", "energy_forces"] = "energy_forces"
+    def energy_config_(self):
+        self.graph_targets = [
+            GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
+        ]
+        self.node_targets = []
 
-    pretrain_output_head: PretrainOutputHeadConfig = PretrainOutputHeadConfig()
+    def forces_config_(self, *, gradient: bool):
+        self.graph_targets = [
+            GraphScalarTargetConfig(name="y", loss_coefficient=0.0),
+        ]
+        self.node_targets = [
+            GradientForcesTargetConfig(
+                name="force",
+                energy_name="y",
+                loss_coefficient=100.0,
+            )
+            if gradient
+            else NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
+        ]
+
+    def energy_forces_config_(self, *, gradient: bool):
+        self.graph_targets = [
+            GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
+        ]
+        self.node_targets = [
+            GradientForcesTargetConfig(
+                name="force",
+                energy_name="y",
+                loss_coefficient=100.0,
+            )
+            if gradient
+            else NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
+        ]
+
+    def should_compute_graph_in_forward(self):
+        return any(t.should_compute_graph_in_forward() for t in self.node_targets)
+
+    def supports_inference_mode(self):
+        return all(t.supports_inference_mode() for t in self.node_targets)
+
+    @property
+    def gradient_force_target(self):
+        return next(
+            (
+                target
+                for target in self.node_targets
+                if isinstance(target, GradientForcesTargetConfig)
+            ),
+            None,
+        )
 
     @override
     def __post_init__(self):
         super().__post_init__()
 
-        if self.gradient_forces:
+        if not self.supports_inference_mode():
             assert (
                 not self.trainer.inference_mode
-            ), "Gradient forces requires trainer.inference_mode = False"
-
-        assert self.model_type in ("energy", "forces", "energy_forces"), (
-            f"{self.model_type=} must be one of these values: "
-            "energy, forces, energy_forces"
-        )
+            ), "`config.trainer.inference_mode` is True, but the model does not support inference mode."
 
 
 TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
 
 
 class EnergyForcesModelBase(
-    FinetuneModelBase[TConfig], nn.Module, ABC, Generic[TConfig]
+    FinetuneModelBase[TConfig],
+    nn.Module,
+    ABC,
+    Generic[TConfig],
 ):
     @override
-    def __init__(self, hparams: TConfig):
-        super().__init__(hparams)
-
-        if self.config.gradient_forces:
-            self.force_scaler = ForceScaler()
-
-    @override
-    def load_backbone_state_dict(
-        self,
-        *,
-        backbone: Mapping[str, Any],
-        embedding: Mapping[str, Any],
-        output: Mapping[str, Any] | None = None,
-        strict: bool = True,
-    ):
-        super().load_backbone_state_dict(
-            backbone=backbone, embedding=embedding, strict=strict
-        )
-
-        if self.config.pretrain_output_head.enabled:
-            assert (
-                output is not None
-            ), "output must be provided when pretrain_output_head is enabled"
-            self._load_pretrain_output_state_dict(output)
-
-    def construct_energy_head(self):
-        def dims(
-            emb_size: int,
-            *,
-            num_targets: int = self.config.backbone.num_targets,
-            num_mlps: int = self.config.output.num_mlps,
-        ):
-            return ([emb_size] * num_mlps) + [num_targets]
-
-        self.out_energy = MLP(
-            dims(self.config.backbone.emb_size_atom),
-            activation=self.config.activation_cls,
-            bias=False,
-        )
-
-    @override
     def construct_output_heads(self):
-        def dims(
-            emb_size: int,
-            *,
-            num_targets: int = self.config.backbone.num_targets,
-            num_mlps: int = self.config.output.num_mlps,
-        ):
-            return ([emb_size] * num_mlps) + [num_targets]
-
-        self.out_energy = None
-        if (
-            self.config.model_type in ("energy", "energy_forces")
-            or self.config.gradient_forces
-        ):
-            self.construct_energy_head()
-
-        self.out_forces = None
-        if (
-            self.config.model_type in ("forces", "energy_forces")
-            and not self.config.gradient_forces
-        ):
-            self.out_forces = MLP(
-                dims(self.config.backbone.emb_size_edge),
-                activation=self.config.activation_cls,
-            )
-
-    @override
-    def outhead_parameters(self):
-        head_params: list[nn.Parameter] = []
-        if self.out_energy is not None:
-            head_params.extend(self.out_energy.parameters())
-        if self.out_forces is not None:
-            head_params.extend(self.out_forces.parameters())
-        return head_params
-
-    def combine_outputs(
-        self,
-        energy_list: list[torch.Tensor],
-        forces_list: list[torch.Tensor],
-    ):
-        energy, _ = pack(energy_list, "b *")  # (bsz, T)
-        forces, _ = pack(forces_list, "n p *")  # (N, 3, T)
-
-        match self.config.pretrain_output_head.combine_strategy:
-            case "mean":
-                energy = reduce(energy, "b T -> b", "mean")
-                forces = reduce(forces, "n p T -> n p", "mean")
-            case _:
-                raise ValueError(
-                    f"Unknown combine strategy: {self.config.pretrain_output_head.combine_strategy}"
+        self.graph_outputs = TypedModuleDict(
+            {
+                target.name: target.construct_output_head(
+                    self.config.output,
+                    self.config.backbone.emb_size_atom,
+                    self.config.backbone.emb_size_edge,
+                    self.config.activation_cls,
                 )
-
-        return energy, forces
+                for target in self.config.graph_targets
+            },
+            key_prefix="ft_mlp_",
+        )
+        self.node_outputs = TypedModuleDict(
+            {
+                target.name: target.construct_output_head(
+                    self.config.output,
+                    self.config.backbone.emb_size_atom,
+                    self.config.backbone.emb_size_edge,
+                    self.config.activation_cls,
+                )
+                for target in self.config.node_targets
+            },
+            key_prefix="ft_mlp_",
+        )
 
     @override
     def forward(self, data: BaseData):
         preds: dict[str, torch.Tensor] = {}
         with ExitStack() as stack:
-            if self.config.gradient_forces or (
-                self.config.pretrain_output_head.enabled
-                and self.config.pretrain_output_head.gradient_forces
-            ):
-                stack.enter_context(torch.inference_mode(mode=False))
-                stack.enter_context(torch.enable_grad())
+            # Enter all the necessary contexts for output heads.
+            # Right now, this is only for gradient forces, which
+            #   requires torch.inference_mode(False), torch.enable_grad,
+            #   and data.pos.requires_grad_(True).
+            for target in self.config.targets:
+                stack.enter_context(target.model_forward_context(data))
 
-                data.pos.requires_grad_(True)
+            if self.config.should_compute_graph_in_forward():
                 data = self.generate_graphs_transform(data)
 
+            # Run the backbone
             atomic_numbers = data.atomic_numbers - 1
-            h = self.embedding(atomic_numbers)
-            out: GOCBackboneOutput = self.backbone(data, h=h)
+            h = self.embedding(atomic_numbers)  # (N, d_model)
+            out = cast(GOCBackboneOutput, self.backbone(data, h=h))
 
-            n_molecules = int(torch.max(data.batch).item() + 1)
-            n_atoms = data.atomic_numbers.shape[0]
+            output_head_input: OutputHeadInput = {
+                "backbone_output": out,
+                "data": data,
+            }
+            graph_preds = {
+                target: module(output_head_input)
+                for target, module in self.graph_outputs.items()
+            }
+            preds.update(graph_preds)
 
-            if self.out_energy is not None:
-                output = self.out_energy(out["energy"])  # (n_atoms, 1)
-
-                # TODO: set reduce to config
-                output = scatter(
-                    output,
-                    data.batch,
-                    dim=0,
-                    dim_size=n_molecules,
-                    reduce="sum",
-                )
-                preds["y"] = rearrange(output, "b 1 -> b")
-
-            if self.out_forces is not None:
-                output = self.out_forces(out["forces"])
-                output = output * out["V_st"]
-                output = scatter(
-                    output, out["idx_t"], dim=0, dim_size=n_atoms, reduce="sum"
-                )
-                preds["force"] = output
-
-            if self.config.gradient_forces:
-                assert "force" not in preds, f"force already in preds: {preds.keys()}"
-                assert (
-                    energy := preds.get("y")
-                ) is not None, f"energy not in preds: {preds.keys()}"
-                preds["force"] = self.force_scaler.calc_forces_and_update(
-                    energy, data.pos
-                )
-
-            if self.config.pretrain_output_head.enabled:
-                pretrain_energies, pretrain_forces = self.pretrain_output(
-                    data, out
-                )  # (bsz, T), (N, 3, T)
-
-                pretrain_energies = cast(list[torch.Tensor], pretrain_energies)
-                pretrain_forces = cast(list[torch.Tensor], pretrain_forces)
-
-                gradient_forces: list[torch.Tensor] = []
-                if self.config.pretrain_output_head.gradient_forces:
-                    for energy in pretrain_energies:
-                        # energy: (bsz)
-                        forces = self.force_scaler.calc_forces_and_update(
-                            energy, data.pos
-                        )  # (N, 3)
-                        gradient_forces.append(forces)
-
-                all_energies = [preds["y"]] + pretrain_energies
-                all_forces = [preds["force"]] + pretrain_forces + gradient_forces
-
-                preds["y"], preds["force"] = self.combine_outputs(
-                    all_energies, all_forces
-                )
+            # We need to send the graph predictions to the node output heads
+            #   in case they need to use the graph predictions to compute the
+            #   node predictions.
+            # Currently, this is only the case for the gradient forces target,
+            #   which needs to use the energy to compute the forces.
+            node_output_head_input: GradientOutputHeadInput = {
+                "backbone_output": out,
+                "data": data,
+                "graph_preds": graph_preds,
+            }
+            node_preds = {
+                target: module(node_output_head_input)
+                for target, module in self.node_outputs.items()
+            }
+            preds.update(node_preds)
 
         return preds
-
-    @override
-    def compute_losses(self, batch: BaseData, preds: dict[str, torch.Tensor]):
-        losses: list[torch.Tensor] = []
-
-        if self.config.model_type in ("energy", "energy_forces"):
-            loss = F.l1_loss(preds["y"], batch["y"])
-            self.log("y_loss", loss)
-
-            coef = self.config.graph_scalar_loss_coefficients.get(
-                "y", self.config.graph_scalar_loss_coefficient_default
-            )
-            loss = coef * loss
-            self.log("y_loss_scaled", loss)
-            losses.append(loss)
-
-        if self.config.model_type in ("forces", "energy_forces"):
-            assert preds["force"].shape[-1] == 3, f"{preds['force'].shape=}"
-
-            loss = F.pairwise_distance(preds["force"], batch["force"], p=2.0).mean()
-            self.log("force_loss", loss)
-
-            coef = self.config.node_vector_loss_coefficients.get(
-                "force", self.config.node_vector_loss_coefficient_default
-            )
-            loss = coef * loss
-            self.log("force_loss_scaled", loss)
-
-            losses.append(loss)
-
-        loss = sum(losses)
-        self.log("loss", loss)
-
-        return loss
 
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData:
         ...
 
     def _generate_graphs_transform(self, data: BaseData):
-        if self.config.gradient_forces:
+        if self.config.should_compute_graph_in_forward():
             # We need to compute the graphs in the forward method
             # so that we can compute the forces using the energy
             # and the positions.

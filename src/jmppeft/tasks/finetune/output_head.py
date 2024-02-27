@@ -1,3 +1,4 @@
+import contextlib
 from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Annotated, Literal, TypeAlias
@@ -12,6 +13,7 @@ from torch_scatter import scatter
 from typing_extensions import TypedDict, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
+from ...models.gemnet.layers.force_scaler import ForceScaler
 from ..config import OutputConfig
 
 log = getLogger(__name__)
@@ -40,6 +42,16 @@ class BaseTargetConfig(TypedConfig, ABC):
         activation_cls: type[nn.Module],
     ) -> nn.Module:
         ...
+
+    @contextlib.contextmanager
+    def model_forward_context(self, data: BaseData):
+        yield
+
+    def should_compute_graph_in_forward(self) -> bool:
+        return False
+
+    def supports_inference_mode(self) -> bool:
+        return True
 
 
 class GraphScalarTargetConfig(BaseTargetConfig):
@@ -150,8 +162,47 @@ class NodeVectorTargetConfig(BaseTargetConfig):
         )
 
 
+class GradientForcesTargetConfig(BaseTargetConfig):
+    kind: Literal["gradient_forces"] = "gradient_forces"
+
+    energy_name: str
+    """
+    The name of the energy target. This target must
+    be registered as a graph scalar target.
+    """
+
+    @override
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return GradientForcesOutputHead(self)
+
+    @override
+    @contextlib.contextmanager
+    def model_forward_context(self, data: BaseData):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(torch.inference_mode(mode=False))
+            stack.enter_context(torch.enable_grad())
+
+            data.pos.requires_grad_(True)
+            yield
+
+    @override
+    def should_compute_graph_in_forward(self):
+        return True
+
+    @override
+    def supports_inference_mode(self):
+        return False
+
+
 NodeTargetConfig: TypeAlias = Annotated[
-    NodeVectorTargetConfig, Field(discriminator="kind")
+    NodeVectorTargetConfig | GradientForcesTargetConfig,
+    Field(discriminator="kind"),
 ]
 
 
@@ -329,3 +380,25 @@ class NodeVectorOutputHead(nn.Module):
             reduce=self.target_config.reduction,
         )
         return output
+
+
+class GradientOutputHeadInput(TypedDict):
+    data: BaseData
+    backbone_output: GOCBackboneOutput
+    graph_preds: dict[str, torch.Tensor]
+
+
+class GradientForcesOutputHead(nn.Module):
+    @override
+    def __init__(self, target_config: GradientForcesTargetConfig):
+        super().__init__()
+
+        self.target_config = target_config
+        self.force_scaler = ForceScaler()
+
+    @override
+    def forward(self, input: GradientOutputHeadInput) -> torch.Tensor:
+        data = input["data"]
+        assert (graph_preds := input.get("graph_preds")), "Graph predictions not found"
+        energy = graph_preds[self.target_config.energy_name]
+        return self.force_scaler.calc_forces_and_update(energy, data.pos)
