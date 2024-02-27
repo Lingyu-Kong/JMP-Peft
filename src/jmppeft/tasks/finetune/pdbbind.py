@@ -1,9 +1,8 @@
 import copy
 from dataclasses import replace
-from typing import final
+from typing import ClassVar, final
 
 import torch
-from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
@@ -14,10 +13,9 @@ from .metrics import MetricPair
 
 
 class PDBBindConfig(FinetuneConfigBase):
-    pbdbind_task: PDBBindTask
+    ALL_PDBBIND_TASKS: ClassVar[list[PDBBindTask]] = ["-logKd/Ki"]
 
-    graph_scalar_targets: list[str] = ["y"]
-    node_vector_targets: list[str] = []
+    pbdbind_task: PDBBindTask
 
     cutoff: float = 12.0
     max_neighbors: int = 30
@@ -26,6 +24,10 @@ class PDBBindConfig(FinetuneConfigBase):
     @override
     def __post_init__(self):
         super().__post_init__()
+
+        assert (
+            self.pbdbind_task in self.ALL_PDBBIND_TASKS
+        ), f"{self.pbdbind_task=} is not valid"
 
         all_datasets: list[FinetunePDBBindDatasetConfig] = []
         if self.train_dataset is not None:
@@ -68,7 +70,7 @@ class PDBBindModel(FinetuneModelBase[PDBBindConfig]):
     def metrics_provider(
         self,
         prop: str,
-        batch: Batch,
+        batch: BaseData,
         preds: dict[str, torch.Tensor],
     ) -> MetricPair | None:
         """

@@ -1,5 +1,5 @@
 import copy
-from typing import Literal, final
+from typing import final
 
 import torch
 from torch_geometric.data.data import BaseData
@@ -10,10 +10,7 @@ from .base import FinetuneConfigBase, FinetuneModelBase
 
 
 class QMOFConfig(FinetuneConfigBase):
-    graph_scalar_targets: list[str] = ["y"]
-    node_vector_targets: list[str] = []
-
-    graph_scalar_reduction_default: Literal["sum", "mean", "max"] = "mean"
+    pass
 
 
 @final
@@ -26,16 +23,6 @@ class QMOFModel(FinetuneModelBase[QMOFConfig]):
     @override
     def metric_prefix(self) -> str:
         return "qmof"
-
-    @override
-    def training_step(self, batch, batch_idx):
-        with self.log_context(prefix=f"train/{self.metric_prefix()}/"):
-            preds = self(batch)
-
-            loss = self.compute_losses(batch, preds)
-            self.log_dict(self.train_metrics(batch, preds))
-
-        return loss
 
     @override
     def process_aint_graph(self, aint_graph: Graph):

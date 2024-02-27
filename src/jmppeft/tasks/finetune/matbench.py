@@ -1,11 +1,11 @@
-from typing import Literal, TypeAlias, final
+from typing import ClassVar, Literal, TypeAlias, final
 
 import torch
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
 from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors
-from . import base
+from .base import FinetuneConfigBase, FinetuneModelBase
 
 MatbenchDataset: TypeAlias = Literal[
     "jdft2d",
@@ -20,21 +20,37 @@ MatbenchDataset: TypeAlias = Literal[
 ]
 
 
-class MatbenchConfig(base.FinetuneConfigBase):
-    dataset: MatbenchDataset
-    graph_scalar_targets: list[str] = ["y"]
-    node_vector_targets: list[str] = []
+class MatbenchConfig(FinetuneConfigBase):
+    ALL_MATBENCH_DATASETS: ClassVar[list[MatbenchDataset]] = [
+        "jdft2d",
+        "phonons",
+        "dielectric",
+        "log_gvrh",
+        "log_kvrh",
+        "perovskites",
+        "mp_gap",
+        "mp_e_form",
+        "mp_is_metal",
+    ]
 
-    graph_scalar_reduction_default: Literal["sum", "mean", "max"] = "mean"
+    dataset: MatbenchDataset
 
     fold: int = 0
     mp_e_form_dev: bool = True
 
     conditional_max_neighbors: bool = False
 
+    @override
+    def __post_init__(self):
+        super().__post_init__()
+
+        assert (
+            self.dataset in self.ALL_MATBENCH_DATASETS
+        ), f"{self.dataset=} is not valid"
+
 
 @final
-class MatbenchModel(base.FinetuneModelBase[MatbenchConfig]):
+class MatbenchModel(FinetuneModelBase[MatbenchConfig]):
     @classmethod
     @override
     def config_cls(cls):

@@ -1,17 +1,15 @@
-from collections.abc import Callable
-from typing import Annotated, Literal, TypeAlias, assert_never, final
+from typing import ClassVar, Literal, TypeAlias, final
 
 import torch
-import torch.nn as nn
 from ase.data import atomic_masses
 from einops import rearrange
-from ll import Field, TypedConfig
 from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
 from typing_extensions import override
 
 from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors
 from .base import FinetuneConfigBase, FinetuneModelBase, OutputHeadInput
+from .output_head import GraphScalarOutputHead, GraphScalarTargetConfig
 
 QM9Target: TypeAlias = Literal[
     "mu",  # dipole_moment
@@ -36,76 +34,45 @@ QM9Target: TypeAlias = Literal[
 ]
 
 
-class DefaultOutputHeadConfig(TypedConfig):
-    name: Literal["default"] = "default"
-
-
-class SpatialExtentConfig(TypedConfig):
-    name: Literal["spatial_extent"] = "spatial_extent"
-
-
-OutputHeadConfig: TypeAlias = Annotated[
-    DefaultOutputHeadConfig | SpatialExtentConfig,
-    Field(discriminator="name"),
-]
-
-
-class QM9Config(FinetuneConfigBase):
-    graph_scalar_targets: list[str] = []
-    node_vector_targets: list[str] = []
-
-    graph_scalar_reduction: dict[str, Literal["sum", "mean", "max"]] = {
-        "mu": "sum",
-        "alpha": "sum",
-        "eps_HOMO": "sum",
-        "eps_LUMO": "sum",
-        "delta_eps": "sum",
-        "R_2_Abs": "sum",
-        "ZPVE": "sum",
-        "U_0": "sum",
-        "U": "sum",
-        "H": "sum",
-        "G": "sum",
-        "c_v": "sum",
-    }
-
-    output_head: OutputHeadConfig
-
-    max_neighbors: int = 30
+class GraphSpatialExtentScalarTargetConfig(GraphScalarTargetConfig):
+    kind: Literal[  # pyright: ignore[reportIncompatibleVariableOverride]
+        "spatial_extent_scalar"
+    ] = "spatial_extent_scalar"
 
     @override
-    def __post_init__(self):
-        super().__post_init__()
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return GraphSpatialExtentScalarOutputHead(
+            self,
+            output_config,
+            d_model_node,
+            activation_cls,
+        )
 
-        for target in self.targets:
-            assert target.name in self.targets, f"{target=} is not a valid QM9 target"
 
-
-class SpatialExtentOutputHead(nn.Module):
+class GraphSpatialExtentScalarOutputHead(GraphScalarOutputHead):
     @override
-    def __init__(self, atomic_masses: Callable[[], torch.Tensor], reduction: str):
-        super().__init__()
-
-        if reduction is None:
-            reduction = self.config.graph_scalar_reduction_default
-        assert reduction == "sum", f"reduction must be sum, got {self.reduction=}"
-
-        dim = self.config.backbone.emb_size_atom
-        scalar_mlp_layers: list[nn.Module] = []
-        for _ in range(self.config.output.num_mlps):
-            scalar_mlp_layers.append(nn.Linear(dim, dim, bias=False))
-            scalar_mlp_layers.append(self.config.activation_cls())
-        scalar_mlp_layers.append(nn.Linear(dim, 1, bias=False))
-        self.scalar_mlp = nn.Sequential(*scalar_mlp_layers)
-
-        self.atomic_masses = atomic_masses
-        self.reduction = reduction
-
-    @override
-    def forward(self, input: OutputHeadInput):
+    def forward(
+        self,
+        input: OutputHeadInput,
+        *,
+        scale: torch.Tensor | None = None,
+        shift: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         data = input["data"]
         backbone_output = input["backbone_output"]
-        x = self.scalar_mlp(backbone_output["energy"])  # n 1
+
+        # Run the MLP
+        x = self.out_mlp(backbone_output["energy"])  # (n_atoms, 1)
+        if scale is not None:
+            x = x * scale
+        if shift is not None:
+            x = x + shift
 
         batch_size = int(torch.max(data.batch).item() + 1)
 
@@ -150,9 +117,8 @@ class SpatialExtentOutputHead(nn.Module):
         return x
 
 
-@final
-class QM9Model(FinetuneModelBase[QM9Config]):
-    targets: list[QM9Target] = [
+class QM9Config(FinetuneConfigBase):
+    QM9_TARGETS: ClassVar[list[QM9Target]] = [
         "mu",
         "alpha",
         "eps_HOMO",
@@ -174,6 +140,20 @@ class QM9Model(FinetuneModelBase[QM9Config]):
         "C",
     ]
 
+    max_neighbors: int = 30
+
+    @override
+    def __post_init__(self):
+        super().__post_init__()
+
+        for target in self.targets:
+            assert (
+                target.name in self.QM9_TARGETS
+            ), f"{target=} is not a valid QM9 target"
+
+
+@final
+class QM9Model(FinetuneModelBase[QM9Config]):
     atomic_masses: torch.Tensor
 
     @override
@@ -194,24 +174,6 @@ class QM9Model(FinetuneModelBase[QM9Config]):
     @override
     def metric_prefix(self) -> str:
         return "qm9"
-
-    @override
-    def construct_graph_scalar_output_head(self, target: str):
-        reduction = self.config.graph_scalar_reduction.get(
-            target, self.config.graph_scalar_reduction_default
-        )
-        match self.config.output_head:
-            case SpatialExtentConfig():
-                # This is only supported for R_2_Abs
-                assert (
-                    target == "R_2_Abs"
-                ), f"{target} is not supported for spatial extent"
-
-                return SpatialExtentOutputHead(lambda: self.atomic_masses, reduction)
-            case DefaultOutputHeadConfig():
-                return super().construct_graph_scalar_output_head(target)
-            case _:
-                assert_never(self.config.output_head)
 
     @override
     def process_aint_graph(self, aint_graph: Graph):

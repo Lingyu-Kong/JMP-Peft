@@ -362,24 +362,8 @@ class FinetuneConfigBase(BaseConfig):
     # node_vector_targets: list[str] = []
     # """List of node vector targets (e.g., force)"""
 
-    # @property
-    # def regression_targets(self):
-    #     """List of all regression targets, i.e., graph scalar and node vector targets"""
-    #     return self.node_vector_targets + self.graph_scalar_targets
-
-    # @property
-    # def all_targets(self):
-    #     """List of all targets, i.e., graph scalar, graph classification, and node vector targets"""
-    #     return (
-    #         self.node_vector_targets
-    #         + self.graph_scalar_targets
-    #         + [target.name for target in self.graph_classification_targets]
-    #     )
-
     # graph_scalar_loss_coefficient_default: float = 1.0
     # """Default loss coefficient for graph scalar targets, if not specified in `graph_scalar_loss_coefficients`"""
-    # graph_classification_loss_coefficient_default: float = 1.0
-    # """Default loss coefficient for graph classification targets, if not specified in `graph_classification_loss_coefficients`"""
     # node_vector_loss_coefficient_default: float = 1.0
     # """Default loss coefficient for node vector targets, if not specified in `node_vector_loss_coefficients`"""
     # graph_scalar_loss_coefficients: dict[str, float] = {}
