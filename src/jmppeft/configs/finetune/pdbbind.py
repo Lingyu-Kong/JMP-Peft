@@ -1,7 +1,5 @@
-from pathlib import Path
-
 from ...tasks.config import AdamWConfig
-from ...tasks.finetune import PDBBindConfig, PDBBindModel
+from ...tasks.finetune import PDBBindConfig
 from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
 
