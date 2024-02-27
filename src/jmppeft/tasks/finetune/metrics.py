@@ -15,7 +15,7 @@ from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from .base import BaseTargetConfig, GraphTargetConfig, NodeTargetConfig
+    from .output_head import BaseTargetConfig, GraphTargetConfig, NodeTargetConfig
 
 log = getLogger(__name__)
 
@@ -79,7 +79,11 @@ class ConflictingMetrics(nn.Module):
     ):
         super().__init__()
 
-        from .base import GraphScalarTargetConfig, NodeVectorTargetConfig
+        from .base import (
+            GradientForcesTargetConfig,
+            GraphScalarTargetConfig,
+            NodeVectorTargetConfig,
+        )
 
         self.graph_targets = graph_targets
         self.node_targets = node_targets
@@ -90,14 +94,28 @@ class ConflictingMetrics(nn.Module):
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.targets
-                if isinstance(target, (GraphScalarTargetConfig, NodeVectorTargetConfig))
+                if isinstance(
+                    target,
+                    (
+                        GraphScalarTargetConfig,
+                        NodeVectorTargetConfig,
+                        GradientForcesTargetConfig,
+                    ),
+                )
             }
         )
         self.non_conflicting_maes = TypedModuleDict(
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.targets
-                if isinstance(target, (GraphScalarTargetConfig, NodeVectorTargetConfig))
+                if isinstance(
+                    target,
+                    (
+                        GraphScalarTargetConfig,
+                        NodeVectorTargetConfig,
+                        GradientForcesTargetConfig,
+                    ),
+                )
             }
         )
 
@@ -245,6 +263,7 @@ class FinetuneMetrics(nn.Module):
         super().__init__()
 
         from .base import (
+            GradientForcesTargetConfig,
             GraphBinaryClassificationTargetConfig,
             GraphMulticlassClassificationTargetConfig,
             GraphScalarTargetConfig,
@@ -265,7 +284,14 @@ class FinetuneMetrics(nn.Module):
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.graph_targets + self.node_targets
-                if isinstance(target, (GraphScalarTargetConfig, NodeVectorTargetConfig))
+                if isinstance(
+                    target,
+                    (
+                        GraphScalarTargetConfig,
+                        NodeVectorTargetConfig,
+                        GradientForcesTargetConfig,
+                    ),
+                )
             },
             key_prefix="mae_",
         )
@@ -275,7 +301,12 @@ class FinetuneMetrics(nn.Module):
                     target.name: torchmetrics.MeanSquaredError(squared=False)
                     for target in self.graph_targets + self.node_targets
                     if isinstance(
-                        target, (GraphScalarTargetConfig, NodeVectorTargetConfig)
+                        target,
+                        (
+                            GraphScalarTargetConfig,
+                            NodeVectorTargetConfig,
+                            GradientForcesTargetConfig,
+                        ),
                     )
                 },
                 key_prefix="rmse_",

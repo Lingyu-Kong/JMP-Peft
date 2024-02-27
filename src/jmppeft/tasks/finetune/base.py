@@ -801,7 +801,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
             # Multiply by the loss coefficient and log the scaled loss
             loss = target.loss_coefficient * loss
-            self.log(f"{target}_loss_scaled", loss)
+            self.log(f"{target.name}_loss_scaled", loss)
 
             losses.append(loss)
 
