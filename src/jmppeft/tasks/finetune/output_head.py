@@ -1,71 +1,18 @@
-import copy
-import fnmatch
-import math
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping
-from functools import partial
 from logging import getLogger
-from pathlib import Path
-from typing import (
-    Annotated,
-    Any,
-    Generic,
-    Literal,
-    TypeAlias,
-    assert_never,
-    cast,
-    final,
-)
+from typing import Annotated, Literal, TypeAlias, final
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from einops import rearrange
-from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.core.optimizer import LightningOptimizer
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
+from ll import Field, TypedConfig
 from ll.nn import MLP
-from ll.util.typed import TypedModuleDict
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, Dataset, DistributedSampler
-from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
-from typing_extensions import TypedDict, TypeVar, override
+from typing_extensions import TypedDict, override
 
-from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
-from ...datasets.finetune_lmdb import FinetuneLmdbDataset
-from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
-from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
-from ...models.gemnet.config import BackboneConfig
-from ...models.gemnet.layers.base_layers import ScaledSiLU
-from ...modules import transforms as T
-from ...modules.dataset import dataset_transform as DT
-from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
-from ...modules.early_stopping import EarlyStoppingWithMinLR
-from ...modules.ema import EMAConfig
-from ...modules.lora import LoraConfig
-from ...modules.scheduler.linear_warmup_cos_rlp import (
-    PerParamGroupLinearWarmupCosineAnnealingRLPLR,
-)
-from ...modules.transforms.normalize import NormalizationConfig
-from ...utils.goc_graph import (
-    Cutoffs,
-    Graph,
-    MaxNeighbors,
-    generate_graph,
-    subselect_graph,
-    tag_mask,
-)
-from ...utils.state_dict import load_state_dict
-from ..config import (
-    EmbeddingConfig,
-    OptimizerConfig,
-    OutputConfig,
-    optimizer_from_config,
-)
-from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
+from ...models.gemnet.backbone import GOCBackboneOutput
+from ..config import OutputConfig
 
 log = getLogger(__name__)
 
@@ -85,7 +32,13 @@ class BaseTargetConfig(TypedConfig, ABC):
     """
 
     @abstractmethod
-    def construct_output_head(self) -> nn.Module:
+    def construct_output_head(
+        self,
+        output_config: OutputConfig,
+        d_model_node: int,
+        d_model_edge: int,
+        activation_cls: type[nn.Module],
+    ) -> nn.Module:
         ...
 
 
@@ -94,8 +47,19 @@ class GraphScalarTargetConfig(BaseTargetConfig):
     kind: Literal["scalar"] = "scalar"
 
     @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return GraphScalarOutputHead(
+            self,
+            output_config,
+            d_model_node,
+            activation_cls,
+        )
 
 
 @final
@@ -118,8 +82,19 @@ class GraphBinaryClassificationTargetConfig(BaseTargetConfig):
             )
 
     @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return GraphBinaryClassificationOutputHead(
+            self,
+            output_config,
+            d_model_node,
+            activation_cls,
+        )
 
 
 @final
@@ -136,8 +111,19 @@ class GraphMulticlassClassificationTargetConfig(BaseTargetConfig):
     """The dropout probability to use before the output layer"""
 
     @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return GraphMulticlassClassificationOutputHead(
+            self,
+            output_config,
+            d_model_node,
+            activation_cls,
+        )
 
 
 GraphTargetConfig: TypeAlias = Annotated[
@@ -153,10 +139,197 @@ class NodeVectorTargetConfig(BaseTargetConfig):
     kind: Literal["vector"] = "vector"
 
     @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return NodeVectorOutputHead(
+            self,
+            output_config,
+            d_model_edge,
+            activation_cls,
+        )
 
 
 NodeTargetConfig: TypeAlias = Annotated[
     NodeVectorTargetConfig, Field(discriminator="kind")
 ]
+
+
+class OutputHeadInput(TypedDict):
+    data: BaseData
+    backbone_output: GOCBackboneOutput
+
+
+class GraphScalarOutputHead(nn.Module):
+    @override
+    def __init__(
+        self,
+        target_config: GraphScalarTargetConfig,
+        output_config: OutputConfig,
+        d_model: int,
+        activation_cls: type[nn.Module],
+    ):
+        super().__init__()
+
+        self.target_config = target_config
+        self.output_config = output_config
+        self.d_model = d_model
+        self.out_mlp = MLP(
+            ([self.d_model] * self.output_config.num_mlps) + [1],
+            activation=activation_cls,
+        )
+
+    @override
+    def forward(
+        self,
+        input: OutputHeadInput,
+        *,
+        scale: torch.Tensor | None = None,
+        shift: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        data = input["data"]
+        backbone_output = input["backbone_output"]
+
+        n_molecules = int(torch.max(data.batch).item() + 1)
+
+        output = self.out_mlp(backbone_output["energy"])  # (n_atoms, 1)
+        if scale is not None:
+            output = output * scale
+        if shift is not None:
+            output = output + shift
+
+        output = scatter(
+            output,
+            data.batch,
+            dim=0,
+            dim_size=n_molecules,
+            reduce=self.target_config.reduction,
+        )  # (bsz, 1)
+        output = rearrange(output, "b 1 -> b")
+        return output
+
+
+class GraphBinaryClassificationOutputHead(nn.Module):
+    @override
+    def __init__(
+        self,
+        target_config: GraphBinaryClassificationTargetConfig,
+        output_config: OutputConfig,
+        d_model: int,
+        activation_cls: type[nn.Module],
+    ):
+        super().__init__()
+
+        assert target_config.num_classes == 2, "Only binary classification supported"
+
+        self.target_config = target_config
+        self.output_config = output_config
+        self.d_model = d_model
+        self.out_mlp = MLP(
+            ([self.d_model] * self.output_config.num_mlps) + [1],
+            activation=activation_cls,
+        )
+
+    @override
+    def forward(self, input: OutputHeadInput) -> torch.Tensor:
+        data = input["data"]
+        backbone_output = input["backbone_output"]
+
+        n_molecules = int(torch.max(data.batch).item() + 1)
+
+        output = self.out_mlp(backbone_output["energy"])  # (n, num_classes)
+        output = scatter(
+            output,
+            data.batch,
+            dim=0,
+            dim_size=n_molecules,
+            reduce=self.target_config.reduction,
+        )  # (bsz, num_classes)
+        output = rearrange(output, "b 1 -> b")
+        return output
+
+
+class GraphMulticlassClassificationOutputHead(nn.Module):
+    @override
+    def __init__(
+        self,
+        target_config: GraphMulticlassClassificationTargetConfig,
+        output_config: OutputConfig,
+        d_model: int,
+        activation_cls: type[nn.Module],
+    ):
+        super().__init__()
+
+        self.target_config = target_config
+        self.output_config = output_config
+        self.d_model = d_model
+        self.out_mlp = MLP(
+            ([self.d_model] * self.output_config.num_mlps)
+            + [self.target_config.num_classes],
+            activation=activation_cls,
+        )
+
+        self.dropout = None
+        if self.target_config.dropout:
+            self.dropout = nn.Dropout(self.target_config.dropout)
+
+    @override
+    def forward(self, input: OutputHeadInput) -> torch.Tensor:
+        data = input["data"]
+        n_molecules = int(torch.max(data.batch).item() + 1)
+
+        x = input["backbone_output"]["energy"]
+        if self.dropout is not None:
+            x = self.dropout(x)
+
+        x = self.out_mlp(x)  # (n, num_classes)
+        x = scatter(
+            x,
+            data.batch,
+            dim=0,
+            dim_size=n_molecules,
+            reduce=self.target_config.reduction,
+        )  # (bsz, num_classes)
+        return x
+
+
+class NodeVectorOutputHead(nn.Module):
+    @override
+    def __init__(
+        self,
+        target_config: NodeVectorTargetConfig,
+        output_config: OutputConfig,
+        d_model: int,
+        activation_cls: type[nn.Module],
+    ):
+        super().__init__()
+
+        self.target_config = target_config
+        self.output_config = output_config
+        self.d_model = d_model
+        self.out_mlp = MLP(
+            ([self.d_model] * self.output_config.num_mlps) + [1],
+            activation=activation_cls,
+        )
+
+    @override
+    def forward(self, input: OutputHeadInput) -> torch.Tensor:
+        data = input["data"]
+        backbone_output = input["backbone_output"]
+
+        n_atoms = data.atomic_numbers.shape[0]
+
+        output = self.out_mlp(backbone_output["forces"])
+        output = output * backbone_output["V_st"]  # (n_edges, 3)
+        output = scatter(
+            output,
+            backbone_output["idx_t"],
+            dim=0,
+            dim_size=n_atoms,
+            reduce=self.target_config.reduction,
+        )
+        return output

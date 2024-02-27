@@ -66,6 +66,14 @@ from ..config import (
     optimizer_from_config,
 )
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
+from .output_head import (
+    GraphBinaryClassificationTargetConfig,
+    GraphMulticlassClassificationTargetConfig,
+    GraphScalarTargetConfig,
+    GraphTargetConfig,
+    NodeTargetConfig,
+    NodeVectorTargetConfig,
+)
 
 log = getLogger(__name__)
 
@@ -249,98 +257,6 @@ class EarlyStoppingConfig(TypedConfig):
     Whether to enforce that the monitored quantity must improve by at least `min_delta`
     to qualify as an improvement.
     """
-
-
-class BaseTargetConfig(TypedConfig, ABC):
-    name: str
-    """The name of the target"""
-
-    loss_coefficient: float = 1.0
-    """The loss coefficient for the target"""
-
-    reduction: Literal["sum", "mean", "max"] = "sum"
-    """
-    The reduction method for the target. This refers to how the target is computed.
-    For example, for graph scalar targets, this refers to how the scalar targets are
-    computed from each node's scalar prediction.
-    """
-
-    @abstractmethod
-    def construct_output_head(self) -> nn.Module:
-        ...
-
-
-@final
-class GraphScalarTargetConfig(BaseTargetConfig):
-    kind: Literal["scalar"] = "scalar"
-
-    @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
-
-
-@final
-class GraphBinaryClassificationTargetConfig(BaseTargetConfig):
-    kind: Literal["binary"] = "binary"
-
-    num_classes: int
-    """The number of classes for the target"""
-
-    pos_weight: float | None = None
-    """The positive weight for the target"""
-
-    @override
-    def __post_init__(self):
-        super().__post_init__()
-
-        if self.num_classes != 2:
-            raise ValueError(
-                f"Binary classification target {self.name} has {self.num_classes} classes"
-            )
-
-    @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
-
-
-@final
-class GraphMulticlassClassificationTargetConfig(BaseTargetConfig):
-    kind: Literal["multiclass"] = "multiclass"
-
-    num_classes: int
-    """The number of classes for the target"""
-
-    class_weights: list[float] | None = None
-    """The class weights for the target"""
-
-    dropout: float | None = None
-    """The dropout probability to use before the output layer"""
-
-    @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
-
-
-GraphTargetConfig: TypeAlias = Annotated[
-    GraphScalarTargetConfig
-    | GraphBinaryClassificationTargetConfig
-    | GraphMulticlassClassificationTargetConfig,
-    Field(discriminator="kind"),
-]
-
-
-@final
-class NodeVectorTargetConfig(BaseTargetConfig):
-    kind: Literal["vector"] = "vector"
-
-    @override
-    def construct_output_head(self) -> nn.Module:
-        raise NotImplementedError
-
-
-NodeTargetConfig: TypeAlias = Annotated[
-    NodeVectorTargetConfig, Field(discriminator="kind")
-]
 
 
 class PrimaryMetricConfig(TypedConfig):
@@ -551,188 +467,6 @@ class FinetuneConfigBase(BaseConfig):
 
 
 TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
-
-
-class OutputHeadInput(TypedDict):
-    data: BaseData
-    backbone_output: GOCBackboneOutput
-
-
-class GraphScalarOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
-    @override
-    def __init__(
-        self,
-        config: TConfig,
-        reduction: str | None = None,
-    ):
-        super().__init__(config)
-
-        if reduction is None:
-            reduction = self.config.graph_scalar_reduction_default
-
-        self.out_mlp = MLP(
-            ([self.config.backbone.emb_size_atom] * self.config.output.num_mlps)
-            + [self.config.backbone.num_targets],
-            activation=self.config.activation_cls,
-        )
-        self.reduction = reduction
-
-    @override
-    def forward(
-        self,
-        input: OutputHeadInput,
-        *,
-        scale: torch.Tensor | None = None,
-        shift: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        data = input["data"]
-        backbone_output = input["backbone_output"]
-
-        n_molecules = int(torch.max(data.batch).item() + 1)
-
-        output = self.out_mlp(backbone_output["energy"])  # (n_atoms, 1)
-        if scale is not None:
-            output = output * scale
-        if shift is not None:
-            output = output + shift
-
-        output = scatter(
-            output,
-            data.batch,
-            dim=0,
-            dim_size=n_molecules,
-            reduce=self.reduction,
-        )  # (bsz, 1)
-        output = rearrange(output, "b 1 -> b")
-        return output
-
-
-class GraphBinaryClassificationOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
-    @override
-    def __init__(
-        self,
-        config: TConfig,
-        classification_config: GraphBinaryClassificationTargetConfig,
-        reduction: str | None = None,
-    ):
-        super().__init__(config)
-
-        assert (
-            classification_config.num_classes == 2
-        ), "Only binary classification supported"
-
-        if reduction is None:
-            reduction = self.config.graph_scalar_reduction_default
-
-        self.out_mlp = MLP(
-            ([self.config.backbone.emb_size_atom] * self.config.output.num_mlps) + [1],
-            activation=self.config.activation_cls,
-        )
-        self.classification_config = classification_config
-        self.reduction = reduction
-
-    @override
-    def forward(self, input: OutputHeadInput) -> torch.Tensor:
-        data = input["data"]
-        backbone_output = input["backbone_output"]
-
-        n_molecules = int(torch.max(data.batch).item() + 1)
-
-        output = self.out_mlp(backbone_output["energy"])  # (n, num_classes)
-        output = scatter(
-            output,
-            data.batch,
-            dim=0,
-            dim_size=n_molecules,
-            reduce=self.reduction,
-        )  # (bsz, num_classes)
-        output = rearrange(output, "b 1 -> b")
-        return output
-
-
-class GraphMulticlassClassificationOutputHead(
-    Base[TConfig], nn.Module, Generic[TConfig]
-):
-    @override
-    def __init__(
-        self,
-        config: TConfig,
-        classification_config: GraphMulticlassClassificationTargetConfig,
-        reduction: str | None = None,
-    ):
-        super().__init__(config)
-
-        if reduction is None:
-            reduction = self.config.graph_scalar_reduction_default
-
-        self.out_mlp = MLP(
-            ([self.config.backbone.emb_size_atom] * self.config.output.num_mlps)
-            + [classification_config.num_classes],
-            activation=self.config.activation_cls,
-        )
-        self.classification_config = classification_config
-        self.reduction = reduction
-
-        self.dropout = None
-        if classification_config.dropout:
-            self.dropout = nn.Dropout(classification_config.dropout)
-
-    @override
-    def forward(self, input: OutputHeadInput) -> torch.Tensor:
-        data = input["data"]
-        n_molecules = int(torch.max(data.batch).item() + 1)
-
-        x = input["backbone_output"]["energy"]
-        if self.dropout is not None:
-            x = self.dropout(x)
-
-        x = self.out_mlp(x)  # (n, num_classes)
-        x = scatter(
-            x,
-            data.batch,
-            dim=0,
-            dim_size=n_molecules,
-            reduce=self.reduction,
-        )  # (bsz, num_classes)
-        return x
-
-
-class NodeVectorOutputHead(Base[TConfig], nn.Module, Generic[TConfig]):
-    @override
-    def __init__(
-        self,
-        config: TConfig,
-        reduction: str | None = None,
-    ):
-        super().__init__(config)
-
-        if reduction is None:
-            reduction = self.config.graph_scalar_reduction_default
-
-        self.out_mlp = MLP(
-            ([self.config.backbone.emb_size_edge] * self.config.output.num_mlps)
-            + [self.config.backbone.num_targets],
-            activation=self.config.activation_cls,
-        )
-        self.reduction = reduction
-
-    @override
-    def forward(self, input: OutputHeadInput) -> torch.Tensor:
-        data = input["data"]
-        backbone_output = input["backbone_output"]
-
-        n_atoms = data.atomic_numbers.shape[0]
-
-        output = self.out_mlp(backbone_output["forces"])
-        output = output * backbone_output["V_st"]  # (n_edges, 3)
-        output = scatter(
-            output,
-            backbone_output["idx_t"],
-            dim=0,
-            dim_size=n_atoms,
-            reduce=self.reduction,
-        )
-        return output
 
 
 class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
@@ -1004,50 +738,17 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             f"{num_total:,} total parameters ({num_train:,} trainable)"
         )
 
-    def construct_graph_scalar_output_head(self, target: str) -> nn.Module:
-        return GraphScalarOutputHead(
-            self.config,
-            reduction=self.config.graph_scalar_reduction.get(
-                target, self.config.graph_scalar_reduction_default
-            ),
-        )
-
-    def construct_graph_classification_output_head(
-        self,
-        target: GraphBinaryClassificationTargetConfig
-        | GraphMulticlassClassificationTargetConfig,
-    ) -> nn.Module:
-        match target:
-            case GraphBinaryClassificationTargetConfig():
-                return GraphBinaryClassificationOutputHead(
-                    self.config,
-                    target,
-                    reduction=self.config.graph_classification_reduction.get(
-                        target.name, self.config.graph_classification_reduction_default
-                    ),
-                )
-            case GraphMulticlassClassificationTargetConfig():
-                return GraphMulticlassClassificationOutputHead(
-                    self.config,
-                    target,
-                    reduction=self.config.graph_classification_reduction.get(
-                        target.name, self.config.graph_classification_reduction_default
-                    ),
-                )
-            case _:
-                raise ValueError(f"Invalid target: {target}")
-
-    def construct_node_vector_output_head(self, target: str) -> nn.Module:
-        return NodeVectorOutputHead(
-            self.config,
-            reduction=self.config.node_vector_reduction.get(
-                target, self.config.node_vector_reduction_default
-            ),
-        )
-
     def construct_output_heads(self):
         self.outputs = TypedModuleDict(
-            {target: target.construct_output_head() for target in self.config.targets},
+            {
+                target.name: target.construct_output_head(
+                    self.config.output,
+                    self.config.backbone.emb_size_atom,
+                    self.config.backbone.emb_size_edge,
+                    self.config.activation_cls,
+                )
+                for target in self.config.targets
+            },
             key_prefix="ft_mlp_",
         )
 
@@ -1134,7 +835,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                         reduction="sum",
                     )
                 case _:
-                    raise ValueError(f"Unknown target type: {target}")
+                    assert_never(target)
 
             # Log the loss
             self.log(f"{target.name}_loss", loss)
@@ -1152,6 +853,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     loss = F.pairwise_distance(
                         preds[target.name], batch[target.name], p=2.0
                     ).mean()
+                case _:
+                    assert_never(target)
 
             # Log the loss
             self.log(f"{target.name}_loss", loss)
