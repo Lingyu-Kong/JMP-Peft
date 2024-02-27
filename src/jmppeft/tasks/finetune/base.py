@@ -7,8 +7,7 @@ from collections.abc import Iterable, Mapping
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import (Annotated, Any, Generic, Literal, TypeAlias, assert_never,
-                    cast)
+from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
 
 import torch
 import torch.nn as nn
@@ -17,8 +16,7 @@ from einops import rearrange
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.core.optimizer import LightningOptimizer
 from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import (BalancedBatchSampler,
-                                            DatasetWithSizes)
+from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from ll.nn import MLP
 from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -28,8 +26,7 @@ from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
 from typing_extensions import TypedDict, TypeVar, override
 
-from ...datasets.finetune_lmdb import \
-    FinetuneDatasetConfig as FinetuneDatasetConfigBase
+from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
@@ -41,14 +38,25 @@ from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
 from ...modules.lora import LoraConfig
-from ...modules.scheduler.linear_warmup_cos_rlp import \
-    PerParamGroupLinearWarmupCosineAnnealingRLPLR
+from ...modules.scheduler.linear_warmup_cos_rlp import (
+    PerParamGroupLinearWarmupCosineAnnealingRLPLR,
+)
 from ...modules.transforms.normalize import NormalizationConfig
-from ...utils.goc_graph import (Cutoffs, Graph, MaxNeighbors, generate_graph,
-                                subselect_graph, tag_mask)
+from ...utils.goc_graph import (
+    Cutoffs,
+    Graph,
+    MaxNeighbors,
+    generate_graph,
+    subselect_graph,
+    tag_mask,
+)
 from ...utils.state_dict import load_state_dict
-from ..config import (EmbeddingConfig, OptimizerConfig, OutputConfig,
-                      optimizer_from_config)
+from ..config import (
+    EmbeddingConfig,
+    OptimizerConfig,
+    OutputConfig,
+    optimizer_from_config,
+)
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
 
 log = getLogger(__name__)
