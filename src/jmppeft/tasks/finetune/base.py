@@ -1,13 +1,21 @@
 import copy
 import fnmatch
-import itertools
 import math
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
+from typing import (
+    Annotated,
+    Any,
+    Generic,
+    Literal,
+    TypeAlias,
+    assert_never,
+    cast,
+    final,
+)
 
 import torch
 import torch.nn as nn
@@ -243,9 +251,38 @@ class EarlyStoppingConfig(TypedConfig):
     """
 
 
-class BinaryClassificationTargetConfig(TypedConfig):
+class BaseTargetConfig(TypedConfig, ABC):
     name: str
     """The name of the target"""
+
+    loss_coefficient: float = 1.0
+    """The loss coefficient for the target"""
+
+    reduction: Literal["sum", "mean", "max"] = "sum"
+    """
+    The reduction method for the target. This refers to how the target is computed.
+    For example, for graph scalar targets, this refers to how the scalar targets are
+    computed from each node's scalar prediction.
+    """
+
+    @abstractmethod
+    def construct_output_head(self) -> nn.Module:
+        ...
+
+
+@final
+class GraphScalarTargetConfig(BaseTargetConfig):
+    kind: Literal["scalar"] = "scalar"
+
+    @override
+    def construct_output_head(self) -> nn.Module:
+        raise NotImplementedError
+
+
+@final
+class GraphBinaryClassificationTargetConfig(BaseTargetConfig):
+    kind: Literal["binary"] = "binary"
+
     num_classes: int
     """The number of classes for the target"""
 
@@ -261,17 +298,49 @@ class BinaryClassificationTargetConfig(TypedConfig):
                 f"Binary classification target {self.name} has {self.num_classes} classes"
             )
 
+    @override
+    def construct_output_head(self) -> nn.Module:
+        raise NotImplementedError
 
-class MulticlassClassificationTargetConfig(TypedConfig):
-    name: str
-    """The name of the target"""
+
+@final
+class GraphMulticlassClassificationTargetConfig(BaseTargetConfig):
+    kind: Literal["multiclass"] = "multiclass"
+
     num_classes: int
     """The number of classes for the target"""
 
     class_weights: list[float] | None = None
     """The class weights for the target"""
+
     dropout: float | None = None
     """The dropout probability to use before the output layer"""
+
+    @override
+    def construct_output_head(self) -> nn.Module:
+        raise NotImplementedError
+
+
+GraphTargetConfig: TypeAlias = Annotated[
+    GraphScalarTargetConfig
+    | GraphBinaryClassificationTargetConfig
+    | GraphMulticlassClassificationTargetConfig,
+    Field(discriminator="kind"),
+]
+
+
+@final
+class NodeVectorTargetConfig(BaseTargetConfig):
+    kind: Literal["vector"] = "vector"
+
+    @override
+    def construct_output_head(self) -> nn.Module:
+        raise NotImplementedError
+
+
+NodeTargetConfig: TypeAlias = Annotated[
+    NodeVectorTargetConfig, Field(discriminator="kind")
+]
 
 
 class PrimaryMetricConfig(TypedConfig):
@@ -326,18 +395,7 @@ class FinetuneConfigBase(BaseConfig):
     lr_scheduler: LRSchedulerConfig | None = None
     """Learning rate scheduler configuration. If None, no learning rate scheduler is used."""
 
-    activation: Literal[
-        "scaled_silu",
-        "scaled_swish",
-        "silu",
-        "swish",
-    ] = "scaled_silu"
-    """Activation function to use."""
-
-    embedding: EmbeddingConfig = EmbeddingConfig(
-        num_elements=BackboneConfig.base().num_elements,
-        embedding_size=BackboneConfig.base().emb_size_atom,
-    )
+    embedding: EmbeddingConfig = TypedConfig.MISSING
     """Configuration for the embedding layer."""
     backbone: BackboneConfig
     """Configuration for the backbone."""
@@ -357,7 +415,7 @@ class FinetuneConfigBase(BaseConfig):
 
     @property
     def activation_cls(self):
-        match self.activation:
+        match self.backbone.activation:
             case "scaled_silu" | "scaled_swish":
                 return ScaledSiLU
             case "silu" | "swish":
@@ -366,7 +424,7 @@ class FinetuneConfigBase(BaseConfig):
                 return nn.Identity
             case _:
                 raise NotImplementedError(
-                    f"Activation {self.activation} is not implemented"
+                    f"Activation {self.backbone.activation=} is not implemented"
                 )
 
     primary_metric: PrimaryMetricConfig
@@ -379,55 +437,66 @@ class FinetuneConfigBase(BaseConfig):
     test: TestConfig | None = None
     """Configuration for test stage"""
 
-    graph_scalar_targets: list[str] = []
-    """List of graph scalar targets (e.g., energy)"""
-    graph_classification_targets: list[
-        BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig
-    ] = []
-    """List of graph classification targets (e.g., is_metal)"""
-    node_vector_targets: list[str] = []
-    """List of node vector targets (e.g., force)"""
+    graph_targets: list[GraphTargetConfig] = []
+    """List of graph targets (e.g., energy, is_metal)"""
+
+    node_targets: list[NodeTargetConfig] = []
+    """List of node targets (e.g., force)"""
 
     @property
-    def regression_targets(self):
-        """List of all regression targets, i.e., graph scalar and node vector targets"""
-        return self.node_vector_targets + self.graph_scalar_targets
+    def targets(self):
+        """List of all targets, i.e., graph and node targets"""
+        return self.graph_targets + self.node_targets
 
-    @property
-    def all_targets(self):
-        """List of all targets, i.e., graph scalar, graph classification, and node vector targets"""
-        return (
-            self.node_vector_targets
-            + self.graph_scalar_targets
-            + [target.name for target in self.graph_classification_targets]
-        )
+    # graph_scalar_targets: list[str] = []
+    # """List of graph scalar targets (e.g., energy)"""
+    # graph_classification_targets: list[
+    #     BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig
+    # ] = []
+    # """List of graph classification targets (e.g., is_metal)"""
+    # node_vector_targets: list[str] = []
+    # """List of node vector targets (e.g., force)"""
 
-    graph_scalar_loss_coefficient_default: float = 1.0
-    """Default loss coefficient for graph scalar targets, if not specified in `graph_scalar_loss_coefficients`"""
-    graph_classification_loss_coefficient_default: float = 1.0
-    """Default loss coefficient for graph classification targets, if not specified in `graph_classification_loss_coefficients`"""
-    node_vector_loss_coefficient_default: float = 1.0
-    """Default loss coefficient for node vector targets, if not specified in `node_vector_loss_coefficients`"""
-    graph_scalar_loss_coefficients: dict[str, float] = {}
-    """Loss coefficients for graph scalar targets"""
-    graph_classification_loss_coefficients: dict[str, float] = {}
-    """Loss coefficients for graph classification targets"""
-    node_vector_loss_coefficients: dict[str, float] = {}
-    """Loss coefficients for node vector targets"""
+    # @property
+    # def regression_targets(self):
+    #     """List of all regression targets, i.e., graph scalar and node vector targets"""
+    #     return self.node_vector_targets + self.graph_scalar_targets
 
-    graph_scalar_reduction_default: Literal["sum", "mean", "max"] = "sum"
-    """Default reduction method, if not specified in `graph_scalar_reduction`, for computing graph scalar targets from each node's scalar prediction"""
-    graph_classification_reduction_default: Literal["sum", "mean", "max"] = "sum"
-    """Default reduction method, if  method fornot specified in `graph_classification_reduction`, graph classification targets from each node's classification prediction"""
-    node_vector_reduction_default: Literal["sum", "mean", "max"] = "sum"
-    """Default reduction method, if not specified in `node_vector_reduction`, for computing node vector targets from each edge's vector prediction"""
+    # @property
+    # def all_targets(self):
+    #     """List of all targets, i.e., graph scalar, graph classification, and node vector targets"""
+    #     return (
+    #         self.node_vector_targets
+    #         + self.graph_scalar_targets
+    #         + [target.name for target in self.graph_classification_targets]
+    #     )
 
-    graph_scalar_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
-    """Reduction methods for computing graph scalar targets from each node's scalar prediction"""
-    graph_classification_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
-    """Reduction methods for computing graph classification targets from each node's classification prediction"""
-    node_vector_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
-    """Reduction methods for computing node vector targets from each edge's vector prediction"""
+    # graph_scalar_loss_coefficient_default: float = 1.0
+    # """Default loss coefficient for graph scalar targets, if not specified in `graph_scalar_loss_coefficients`"""
+    # graph_classification_loss_coefficient_default: float = 1.0
+    # """Default loss coefficient for graph classification targets, if not specified in `graph_classification_loss_coefficients`"""
+    # node_vector_loss_coefficient_default: float = 1.0
+    # """Default loss coefficient for node vector targets, if not specified in `node_vector_loss_coefficients`"""
+    # graph_scalar_loss_coefficients: dict[str, float] = {}
+    # """Loss coefficients for graph scalar targets"""
+    # graph_classification_loss_coefficients: dict[str, float] = {}
+    # """Loss coefficients for graph classification targets"""
+    # node_vector_loss_coefficients: dict[str, float] = {}
+    # """Loss coefficients for node vector targets"""
+
+    # graph_scalar_reduction_default: Literal["sum", "mean", "max"] = "sum"
+    # """Default reduction method, if not specified in `graph_scalar_reduction`, for computing graph scalar targets from each node's scalar prediction"""
+    # graph_classification_reduction_default: Literal["sum", "mean", "max"] = "sum"
+    # """Default reduction method, if  method fornot specified in `graph_classification_reduction`, graph classification targets from each node's classification prediction"""
+    # node_vector_reduction_default: Literal["sum", "mean", "max"] = "sum"
+    # """Default reduction method, if not specified in `node_vector_reduction`, for computing node vector targets from each edge's vector prediction"""
+
+    # graph_scalar_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
+    # """Reduction methods for computing graph scalar targets from each node's scalar prediction"""
+    # graph_classification_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
+    # """Reduction methods for computing graph classification targets from each node's classification prediction"""
+    # node_vector_reduction: dict[str, Literal["sum", "mean", "max"]] = {}
+    # """Reduction methods for computing node vector targets from each edge's vector prediction"""
 
     normalization: dict[str, NormalizationConfig] = {}
     """Normalization parameters for each target"""
@@ -464,10 +533,21 @@ class FinetuneConfigBase(BaseConfig):
     def __post_init__(self):
         super().__post_init__()
 
+        if self.embedding is TypedConfig.MISSING:
+            self.embedding = EmbeddingConfig(
+                num_elements=self.backbone.num_elements,
+                embedding_size=self.backbone.emb_size_atom,
+            )
+
         if self.use_balanced_batch_sampler:
             assert (
                 not self.trainer.use_distributed_sampler
             ), "config.trainer.use_distributed_sampler must be False when using balanced batch sampler"
+
+        assert self.graph_targets or self.node_targets, (
+            "At least one graph target or node target must be specified, "
+            f"but none are specified: {self.graph_targets=}, {self.node_targets=}"
+        )
 
 
 TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
@@ -532,7 +612,7 @@ class GraphBinaryClassificationOutputHead(Base[TConfig], nn.Module, Generic[TCon
     def __init__(
         self,
         config: TConfig,
-        classification_config: BinaryClassificationTargetConfig,
+        classification_config: GraphBinaryClassificationTargetConfig,
         reduction: str | None = None,
     ):
         super().__init__(config)
@@ -577,7 +657,7 @@ class GraphMulticlassClassificationOutputHead(
     def __init__(
         self,
         config: TConfig,
-        classification_config: MulticlassClassificationTargetConfig,
+        classification_config: GraphMulticlassClassificationTargetConfig,
         reduction: str | None = None,
     ):
         super().__init__(config)
@@ -719,44 +799,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             case _:
                 pass
 
-    def validate_config(self, config: TConfig):
-        assert config.activation.lower() == config.backbone.activation.lower()
-
-        assert config.embedding.num_elements == config.backbone.num_elements
-        assert config.embedding.embedding_size == config.backbone.emb_size_atom
-
-        assert config.all_targets, f"No targets specified, {config.all_targets=}"
-        for a, b in itertools.combinations(
-            [
-                config.graph_scalar_targets,
-                [target.name for target in config.graph_classification_targets],
-                config.node_vector_targets,
-            ],
-            2,
-        ):
-            assert (
-                set(a) & set(b) == set()
-            ), f"Targets must be disjoint, but they are not: {a} and {b}"
-        # config.targets = config.graph_scalar_targets + config.node_vector_targets
-
-        if config.graph_scalar_loss_coefficients:
-            assert set(config.graph_scalar_loss_coefficients.keys()).issubset(
-                set(config.graph_scalar_targets)
-            ), (
-                f"Loss coefficients must correspond to graph scalar targets, but they "
-                f"do not: {config.graph_scalar_loss_coefficients.keys()=} vs "
-                f"{config.graph_scalar_targets=}"
-            )
-
-        if config.node_vector_loss_coefficients:
-            assert set(config.node_vector_loss_coefficients.keys()).issubset(
-                set(config.node_vector_targets)
-            ), (
-                f"Loss coefficients must correspond to node vector targets, but they "
-                f"do not: {config.node_vector_loss_coefficients.keys()=} vs "
-                f"{config.node_vector_targets=}"
-            )
-
     def _construct_backbone(self):
         log.critical("Using regular backbone")
 
@@ -791,7 +833,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     @override
     def __init__(self, hparams: TConfig):
-        self.validate_config(hparams)
         super().__init__(hparams)
 
         # Set up callbacks
@@ -815,23 +856,20 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         self.train_metrics = FinetuneMetrics(
             self.config.metrics,
             self.metrics_provider,
-            self.config.graph_scalar_targets,
-            self.config.graph_classification_targets,
-            self.config.node_vector_targets,
+            self.config.graph_targets,
+            self.config.node_targets,
         )
         self.val_metrics = FinetuneMetrics(
             self.config.metrics,
             self.metrics_provider,
-            self.config.graph_scalar_targets,
-            self.config.graph_classification_targets,
-            self.config.node_vector_targets,
+            self.config.graph_targets,
+            self.config.node_targets,
         )
         self.test_metrics = FinetuneMetrics(
             self.config.metrics,
             self.metrics_provider,
-            self.config.graph_scalar_targets,
-            self.config.graph_classification_targets,
-            self.config.node_vector_targets,
+            self.config.graph_targets,
+            self.config.node_targets,
         )
 
         # Sanity check: ensure all named_parameters have requires_grad=True,
@@ -854,7 +892,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 if (mode := ckpt_best.mode) is None:
                     mode = "min"
 
-            self.register_callback(lambda: ModelCheckpoint(monitor=monitor, mode=mode))
+            self.register_callback(
+                lambda: ModelCheckpoint(monitor=monitor, mode=mode or "min")
+            )
 
         if (early_stopping := self.config.early_stopping) is not None:
             if (monitor := early_stopping.monitor) is None:
@@ -876,7 +916,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         for cls_target in self.config.graph_classification_targets:
             match cls_target:
-                case MulticlassClassificationTargetConfig(
+                case GraphMulticlassClassificationTargetConfig(
                     class_weights=class_weights
                 ) if class_weights:
                     self.register_buffer(
@@ -974,10 +1014,11 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     def construct_graph_classification_output_head(
         self,
-        target: BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig,
+        target: GraphBinaryClassificationTargetConfig
+        | GraphMulticlassClassificationTargetConfig,
     ) -> nn.Module:
         match target:
-            case BinaryClassificationTargetConfig():
+            case GraphBinaryClassificationTargetConfig():
                 return GraphBinaryClassificationOutputHead(
                     self.config,
                     target,
@@ -985,7 +1026,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                         target.name, self.config.graph_classification_reduction_default
                     ),
                 )
-            case MulticlassClassificationTargetConfig():
+            case GraphMulticlassClassificationTargetConfig():
                 return GraphMulticlassClassificationOutputHead(
                     self.config,
                     target,
@@ -1005,25 +1046,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         )
 
     def construct_output_heads(self):
-        self.graph_outputs = TypedModuleDict(
-            {
-                target: self.construct_graph_scalar_output_head(target)
-                for target in self.config.graph_scalar_targets
-            },
-            key_prefix="ft_mlp_",
-        )
-        self.graph_classification_outputs = TypedModuleDict(
-            {
-                target.name: self.construct_graph_classification_output_head(target)
-                for target in self.config.graph_classification_targets
-            },
-            key_prefix="ft_mlp_",
-        )
-        self.node_outputs = TypedModuleDict(
-            {
-                target: self.construct_node_vector_output_head(target)
-                for target in self.config.node_vector_targets
-            },
+        self.outputs = TypedModuleDict(
+            {target: target.construct_output_head() for target in self.config.targets},
             key_prefix="ft_mlp_",
         )
 
@@ -1076,39 +1100,20 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         }
 
         preds = {
-            **{
-                target: module(output_head_input)
-                for target, module in self.graph_outputs.items()
-            },
-            **{
-                target: module(output_head_input)
-                for target, module in self.graph_classification_outputs.items()
-            },
-            **{
-                target: module(output_head_input)
-                for target, module in self.node_outputs.items()
-            },
+            target: module(output_head_input) for target, module in self.outputs.items()
         }
         return preds
 
     def compute_losses(self, batch: BaseData, preds: dict[str, torch.Tensor]):
         losses: list[torch.Tensor] = []
 
-        for target in self.config.graph_scalar_targets:
-            loss = F.l1_loss(preds[target], batch[target])
-            self.log(f"{target}_loss", loss)
-
-            coef = self.config.graph_scalar_loss_coefficients.get(
-                target, self.config.graph_scalar_loss_coefficient_default
-            )
-            loss = coef * loss
-            self.log(f"{target}_loss_scaled", loss)
-
-            losses.append(loss)
-
-        for target in self.config.graph_classification_targets:
+        # Compute losses for graph targets
+        for target in self.config.graph_targets:
             match target:
-                case BinaryClassificationTargetConfig():
+                case GraphScalarTargetConfig():
+                    loss = F.l1_loss(preds[target.name], batch[target.name])
+                    self.log(f"{target}_loss", loss)
+                case GraphBinaryClassificationTargetConfig():
                     y_input = preds[target.name]
                     y_target = batch[target.name].float()
                     pos_weight = None
@@ -1117,7 +1122,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     loss = F.binary_cross_entropy_with_logits(
                         y_input, y_target, reduction="sum", pos_weight=pos_weight
                     )
-                case MulticlassClassificationTargetConfig():
+                case GraphMulticlassClassificationTargetConfig():
                     weight = None
                     if target.class_weights:
                         weight = self.get_buffer(f"{target.name}_class_weights")
@@ -1130,25 +1135,29 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     )
                 case _:
                     raise ValueError(f"Unknown target type: {target}")
+
+            # Log the loss
             self.log(f"{target.name}_loss", loss)
 
-            coef = self.config.graph_classification_loss_coefficients.get(
-                target.name, self.config.graph_classification_loss_coefficient_default
-            )
-            loss = coef * loss
+            # Multiply by the loss coefficient and log the scaled loss
+            loss = target.loss_coefficient * loss
             self.log(f"{target.name}_loss_scaled", loss)
 
             losses.append(loss)
 
-        for target in self.config.node_vector_targets:
-            assert preds[target].shape[-1] == 3
-            loss = F.pairwise_distance(preds[target], batch[target], p=2.0).mean()
-            self.log(f"{target}_loss", loss)
+        for target in self.config.node_targets:
+            match target:
+                case NodeVectorTargetConfig():
+                    assert preds[target.name].shape[-1] == 3
+                    loss = F.pairwise_distance(
+                        preds[target.name], batch[target.name], p=2.0
+                    ).mean()
 
-            coef = self.config.node_vector_loss_coefficients.get(
-                target, self.config.node_vector_loss_coefficient_default
-            )
-            loss = coef * loss
+            # Log the loss
+            self.log(f"{target.name}_loss", loss)
+
+            # Multiply by the loss coefficient and log the scaled loss
+            loss = target.loss_coefficient * loss
             self.log(f"{target}_loss_scaled", loss)
 
             losses.append(loss)
@@ -1599,13 +1608,13 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         """
         for target_config in self.config.graph_classification_targets:
             match target_config:
-                case BinaryClassificationTargetConfig():
+                case GraphBinaryClassificationTargetConfig():
                     if (value := getattr(data, target_config.name, None)) is None:
                         log.warning(f"target {target_config.name} not found in data")
                         continue
 
                     setattr(data, target_config.name, value.float())
-                case MulticlassClassificationTargetConfig():
+                case GraphMulticlassClassificationTargetConfig():
                     if (value := getattr(data, target_config.name, None)) is None:
                         log.warning(f"target {target_config.name} not found in data")
                         continue

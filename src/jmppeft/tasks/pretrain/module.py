@@ -2,7 +2,7 @@ import math
 from collections.abc import Callable
 from functools import cache, partial
 from logging import getLogger
-from typing import Annotated, Generic, Literal, TypeAlias, assert_never, cast
+from typing import Annotated, Literal, TypeAlias, assert_never, cast
 
 import torch
 import torch.nn as nn
@@ -22,7 +22,7 @@ from torch_geometric.data.data import BaseData
 from torch_geometric.utils import dropout_edge
 from torch_scatter import scatter
 from torchmetrics import SumMetric
-from typing_extensions import TypeVar, override
+from typing_extensions import override
 
 from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetConfigBase
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset
@@ -112,14 +112,6 @@ class PretrainConfig(BaseConfig):
     lr_scheduler: LRSchedulerConfig | None = None
     """Learning rate scheduler configuration. If None, no learning rate scheduler is used."""
 
-    activation: Literal[
-        "scaled_silu",
-        "scaled_swish",
-        "silu",
-        "swish",
-    ] = "scaled_silu"
-    """Activation function to use."""
-
     dropout: float | None = None
     """The dropout rate to use in GemNet."""
     edge_dropout: float | None = None
@@ -149,7 +141,7 @@ class PretrainConfig(BaseConfig):
 
     @property
     def activation_cls(self):
-        match self.activation:
+        match self.backbone.activation:
             case "scaled_silu" | "scaled_swish":
                 return ScaledSiLU
             case "silu" | "swish":
@@ -158,7 +150,7 @@ class PretrainConfig(BaseConfig):
                 return nn.Identity
             case _:
                 raise NotImplementedError(
-                    f"Activation {self.activation} is not implemented"
+                    f"Activation {self.backbone.activation=} is not implemented"
                 )
 
     log_task_losses: bool = True
@@ -209,7 +201,9 @@ class PretrainConfig(BaseConfig):
     def __post_init__(self):
         super().__post_init__()
 
-        self.trainer.use_distributed_sampler = False
+        assert (
+            not self.trainer.use_distributed_sampler
+        ), "config.trainer.use_distributed_sampler must be False"
 
         self.backbone.dropout = self.dropout
         self.backbone.edge_dropout = self.edge_dropout
@@ -308,37 +302,18 @@ class Output(Base[PretrainConfig], nn.Module):
         return E, F
 
 
-TConfig = TypeVar(
-    "TConfig", bound=PretrainConfig, default=PretrainConfig, infer_variance=True
-)
-
-
-class PretrainModel(LightningModuleBase[TConfig], Generic[TConfig]):
+class PretrainModel(LightningModuleBase):
     @classmethod
     @override
     def config_cls(cls):
         return PretrainConfig
-
-    @staticmethod
-    def _model_validate_config(config: TConfig):
-        assert (
-            config.activation.lower() == config.backbone.activation.lower()
-        ), f"{config.activation=} != {config.backbone.activation=}"
-
-        assert (
-            config.embedding.num_elements == config.backbone.num_elements
-        ), f"{config.embedding.num_elements=} != {config.backbone.num_elements=}"
-        assert (
-            config.embedding.embedding_size == config.backbone.emb_size_atom
-        ), f"{config.embedding.embedding_size=} != {config.backbone.emb_size_atom=}"
 
     def _construct_backbone(self):
         backbone = GemNetOCBackbone(self.config.backbone, **dict(self.config.backbone))
         return backbone
 
     @override
-    def __init__(self, hparams: TConfig):
-        self._model_validate_config(hparams)
+    def __init__(self, hparams: PretrainConfig):
         super().__init__(hparams)
 
         # Set up callbacks

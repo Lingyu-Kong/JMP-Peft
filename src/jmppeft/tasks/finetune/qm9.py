@@ -5,11 +5,10 @@ import torch
 import torch.nn as nn
 from ase.data import atomic_masses
 from einops import rearrange
+from ll import Field, TypedConfig
 from torch_geometric.data.data import BaseData
 from torch_scatter import scatter
 from typing_extensions import override
-
-from ll import Field, TypedConfig
 
 from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors
 from .base import FinetuneConfigBase, FinetuneModelBase, OutputHeadInput
@@ -73,6 +72,13 @@ class QM9Config(FinetuneConfigBase):
     output_head: OutputHeadConfig
 
     max_neighbors: int = 30
+
+    @override
+    def __post_init__(self):
+        super().__post_init__()
+
+        for target in self.targets:
+            assert target.name in self.targets, f"{target=} is not a valid QM9 target"
 
 
 class SpatialExtentOutputHead(nn.Module):
@@ -179,13 +185,6 @@ class QM9Model(FinetuneModelBase[QM9Config]):
             torch.from_numpy(atomic_masses).float(),
             persistent=False,
         )
-
-    @override
-    def validate_config(self, config: QM9Config):
-        super().validate_config(config)
-
-        for key in config.graph_scalar_targets:
-            assert key in self.targets, f"{key} is not a valid QM9 target"
 
     @classmethod
     @override

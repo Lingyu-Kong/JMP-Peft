@@ -1,24 +1,21 @@
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from logging import getLogger
-from typing import cast, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import torch
 import torch.nn as nn
 import torchmetrics
 import torchmetrics.classification
 from frozendict import frozendict
-
 from ll import TypedConfig
 from ll.util.typed import TypedModuleDict
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from .base import (
-        BinaryClassificationTargetConfig,
-        MulticlassClassificationTargetConfig,
-    )
+    from .base import BaseTargetConfig, GraphTargetConfig, NodeTargetConfig
 
 log = getLogger(__name__)
 
@@ -32,10 +29,10 @@ class CheckConflictingStructuresConfig(TypedConfig):
     }
     """
     A dictionary which maps from pre-training dataset names to the path of the
-    pickle files (saved using `torch.save` as sets of frozendict[int, int] objects)
+    pickle files (saved using `torch.save` as sets of `frozendict[int, int]` objects)
     containing the unique atomic numbers in the dataset.
 
-    The frozendict[int, int] objects are mappings from atomic numbers to the number
+    The `frozendict[int, int]` objects are mappings from atomic numbers to the number
     of atoms with that atomic number in the structure.
     """
 
@@ -67,19 +64,22 @@ class MetricPair:
 class MetricPairProvider(Protocol):
     def __call__(
         self, prop: str, batch: BaseData, preds: dict[str, torch.Tensor]
-    ) -> MetricPair | None: ...
+    ) -> MetricPair | None:
+        ...
 
 
 class ConflictingMetrics(nn.Module):
     @override
     def __init__(
         self,
-        graph_targets: list[str],
-        node_targets: list[str],
+        graph_targets: "list[GraphTargetConfig]",
+        node_targets: "list[NodeTargetConfig]",
         structures: set[frozendict[int, int]],
         provider: MetricPairProvider,
     ):
         super().__init__()
+
+        from .base import GraphScalarTargetConfig, NodeVectorTargetConfig
 
         self.graph_targets = graph_targets
         self.node_targets = node_targets
@@ -87,10 +87,18 @@ class ConflictingMetrics(nn.Module):
 
         self.structures = structures
         self.conflicting_maes = TypedModuleDict(
-            {target: torchmetrics.MeanAbsoluteError() for target in self.targets}
+            {
+                target.name: torchmetrics.MeanAbsoluteError()
+                for target in self.targets
+                if isinstance(target, (GraphScalarTargetConfig, NodeVectorTargetConfig))
+            }
         )
         self.non_conflicting_maes = TypedModuleDict(
-            {target: torchmetrics.MeanAbsoluteError() for target in self.targets}
+            {
+                target.name: torchmetrics.MeanAbsoluteError()
+                for target in self.targets
+                if isinstance(target, (GraphScalarTargetConfig, NodeVectorTargetConfig))
+            }
         )
 
         self.num_conflicting = torchmetrics.SumMetric()
@@ -111,17 +119,17 @@ class ConflictingMetrics(nn.Module):
 
     def _compute_metrics(
         self,
-        targets: list[str],
+        targets: "Sequence[BaseTargetConfig]",
         batch: BaseData,
         preds: dict[str, torch.Tensor],
         mask: torch.Tensor,
     ):
-        for key in targets:
-            if (mp := self.provider(key, batch, preds)) is None:
+        for target in targets:
+            if (mp := self.provider(target.name, batch, preds)) is None:
                 continue
 
-            conflicting_mae = self.conflicting_maes[key]
-            non_conflicting_mae = self.non_conflicting_maes[key]
+            conflicting_mae = self.conflicting_maes[target.name]
+            non_conflicting_mae = self.non_conflicting_maes[target.name]
 
             conflicting_mae(mp.predicted[mask], mp.ground_truth[mask])
             non_conflicting_mae(mp.predicted[~mask], mp.ground_truth[~mask])
@@ -142,7 +150,8 @@ class ConflictingMetrics(nn.Module):
         metrics["num_non_conflicting"] = self.num_non_conflicting
         metrics["num_total"] = self.num_total
 
-        for key in self.targets:
+        for target in self.targets:
+            key = target.name
             metrics[f"{key}_conflicting_mae"] = self.conflicting_maes[key]
             metrics[f"{key}_non_conflicting_mae"] = self.non_conflicting_maes[key]
 
@@ -225,20 +234,22 @@ class MulticlassClassificationMetrics(nn.Module):
 
 
 class FinetuneMetrics(nn.Module):
-    @property
-    def regression_targets(self):
-        return self.graph_scalar_targets + self.node_vector_targets
-
     @override
     def __init__(
         self,
         config: MetricsConfig,
         provider: MetricPairProvider,
-        graph_scalar_targets: list[str],
-        graph_classification_targets: "list[BinaryClassificationTargetConfig | MulticlassClassificationTargetConfig]",
-        node_vector_targets: list[str],
+        graph_targets: "list[GraphTargetConfig]",
+        node_targets: "list[NodeTargetConfig]",
     ):
         super().__init__()
+
+        from .base import (
+            GraphBinaryClassificationTargetConfig,
+            GraphMulticlassClassificationTargetConfig,
+            GraphScalarTargetConfig,
+            NodeVectorTargetConfig,
+        )
 
         if not isinstance(provider, MetricPairProvider):
             raise TypeError(
@@ -247,22 +258,25 @@ class FinetuneMetrics(nn.Module):
         self.provider = provider
 
         self.config = config
-        self.graph_scalar_targets = graph_scalar_targets
-        self.graph_classification_targets = graph_classification_targets
-        self.node_vector_targets = node_vector_targets
+        self.graph_targets = graph_targets
+        self.node_targets = node_targets
 
         self.maes = TypedModuleDict(
             {
-                target: torchmetrics.MeanAbsoluteError()
-                for target in self.regression_targets
+                target.name: torchmetrics.MeanAbsoluteError()
+                for target in self.graph_targets + self.node_targets
+                if isinstance(target, (GraphScalarTargetConfig, NodeVectorTargetConfig))
             },
             key_prefix="mae_",
         )
         if self.config.report_rmse:
             self.rmses = TypedModuleDict(
                 {
-                    target: torchmetrics.MeanSquaredError(squared=False)
-                    for target in self.regression_targets
+                    target.name: torchmetrics.MeanSquaredError(squared=False)
+                    for target in self.graph_targets + self.node_targets
+                    if isinstance(
+                        target, (GraphScalarTargetConfig, NodeVectorTargetConfig)
+                    )
                 },
                 key_prefix="rmse_",
             )
@@ -270,10 +284,17 @@ class FinetuneMetrics(nn.Module):
             {
                 target.name: (
                     BinaryClassificationMetrics(target.num_classes)
-                    if isinstance(target, BinaryClassificationTargetConfig)
+                    if isinstance(target, GraphBinaryClassificationTargetConfig)
                     else MulticlassClassificationMetrics(target.num_classes)
                 )
-                for target in self.graph_classification_targets
+                for target in self.graph_targets + self.node_targets
+                if isinstance(
+                    target,
+                    (
+                        GraphBinaryClassificationTargetConfig,
+                        GraphMulticlassClassificationTargetConfig,
+                    ),
+                )
             },
             key_prefix="cls_",
         )
@@ -284,8 +305,8 @@ class FinetuneMetrics(nn.Module):
             for name, structures in ccs.structures.items():
                 structures = cast(set[frozendict[int, int]], torch.load(structures))
                 metrics_dict[name] = ConflictingMetrics(
-                    graph_targets=self.graph_scalar_targets,
-                    node_targets=self.node_vector_targets,
+                    graph_targets=self.graph_targets,
+                    node_targets=self.node_targets,
                     structures=structures,
                     provider=self.provider,
                 )
@@ -294,8 +315,8 @@ class FinetuneMetrics(nn.Module):
 
             if ccs.all:
                 metrics_dict["all"] = ConflictingMetrics(
-                    graph_targets=self.graph_scalar_targets,
-                    node_targets=self.node_vector_targets,
+                    graph_targets=self.graph_targets,
+                    node_targets=self.node_targets,
                     structures=all_structures,
                     provider=self.provider,
                 )

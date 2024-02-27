@@ -55,6 +55,11 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
                 not self.trainer.inference_mode
             ), "Gradient forces requires trainer.inference_mode = False"
 
+        assert self.model_type in ("energy", "forces", "energy_forces"), (
+            f"{self.model_type=} must be one of these values: "
+            "energy, forces, energy_forces"
+        )
+
 
 TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
 
@@ -62,20 +67,6 @@ TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
 class EnergyForcesModelBase(
     FinetuneModelBase[TConfig], nn.Module, ABC, Generic[TConfig]
 ):
-    @override
-    def validate_config(self, config: TConfig):
-        super().validate_config(config)
-
-        assert config.model_type in ("energy", "forces", "energy_forces"), (
-            f"{config.model_type=} must be one of these values: "
-            "energy, forces, energy_forces"
-        )
-
-        # if config.gradient_forces:
-        #     assert (
-        #         not config.trainer.inference_mode
-        #     ), f"config.trainer.inference_mode must be False when {config.gradient_forces=}"
-
     @override
     def __init__(self, hparams: TConfig):
         super().__init__(hparams)
