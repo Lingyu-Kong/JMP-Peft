@@ -4,7 +4,7 @@ from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
 
 
-def jmp_l_pdbbind_config_(config: PDBBindConfig, target: str = "y"):
+def jmp_l_pdbbind_config_(config: PDBBindConfig):
     # Optimizer settings
     config.optimizer = AdamWConfig(
         lr=5.0e-6,
@@ -22,12 +22,6 @@ def jmp_l_pdbbind_config_(config: PDBBindConfig, target: str = "y"):
 
     # PDBBind specific settings
     config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
-
-    # Make sure we only optimize for the single target
-    config.graph_scalar_targets = [target]
-    config.node_vector_targets = []
-    config.graph_classification_targets = []
-    config.graph_scalar_reduction = {target: "sum"}
 
     # PDBBind specific settings
     config.pbdbind_task = "-logKd/Ki"

@@ -18,6 +18,12 @@ from ...models.gemnet.backbone import GOCBackboneOutput
 from ...models.gemnet.layers.force_scaler import ForceScaler
 from ...modules.dataset import dataset_transform as DT
 from .base import FinetuneConfigBase, FinetuneModelBase
+from .output_head import (
+    GraphScalarTargetConfig,
+    GraphTargetConfig,
+    NodeTargetConfig,
+    NodeVectorTargetConfig,
+)
 
 log = getLogger(__name__)
 
@@ -35,11 +41,12 @@ class PretrainOutputHeadConfig(TypedConfig):
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
-    graph_scalar_targets: list[str] = ["y"]
-    node_vector_targets: list[str] = ["force"]
-
-    graph_scalar_loss_coefficients: dict[str, float] = {"y": 1.0}
-    node_vector_loss_coefficients: dict[str, float] = {"force": 100.0}
+    graph_targets: list[GraphTargetConfig] = [
+        GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
+    ]
+    node_targets: list[NodeTargetConfig] = [
+        NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
+    ]
 
     gradient_forces: bool = False
     model_type: Literal["energy", "forces", "energy_forces"] = "energy_forces"

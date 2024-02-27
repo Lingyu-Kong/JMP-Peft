@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from logging import getLogger
-from typing import Annotated, Literal, TypeAlias, final
+from typing import Annotated, Literal, TypeAlias
 
 import torch
 import torch.nn as nn
@@ -42,7 +42,6 @@ class BaseTargetConfig(TypedConfig, ABC):
         ...
 
 
-@final
 class GraphScalarTargetConfig(BaseTargetConfig):
     kind: Literal["scalar"] = "scalar"
 
@@ -62,7 +61,6 @@ class GraphScalarTargetConfig(BaseTargetConfig):
         )
 
 
-@final
 class GraphBinaryClassificationTargetConfig(BaseTargetConfig):
     kind: Literal["binary"] = "binary"
 
@@ -97,7 +95,6 @@ class GraphBinaryClassificationTargetConfig(BaseTargetConfig):
         )
 
 
-@final
 class GraphMulticlassClassificationTargetConfig(BaseTargetConfig):
     kind: Literal["multiclass"] = "multiclass"
 
@@ -134,7 +131,6 @@ GraphTargetConfig: TypeAlias = Annotated[
 ]
 
 
-@final
 class NodeVectorTargetConfig(BaseTargetConfig):
     kind: Literal["vector"] = "vector"
 

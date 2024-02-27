@@ -11,12 +11,7 @@ STATS: dict[str, NC] = {
 }
 
 
-def jmp_l_qmof_config(
-    config: QMOFConfig,
-    base_path: Path,
-    ckpt_path: Path,
-    target: str = "y",
-):
+def jmp_l_qmof_config_(config: QMOFConfig, base_path: Path):
     # Optimizer settings
     config.optimizer = AdamWConfig(
         lr=5.0e-6,
@@ -31,15 +26,9 @@ def jmp_l_qmof_config(
     config.test_dataset = DC.qmof_config(base_path, "test")
 
     # Set up normalization
-    if (normalization_config := STATS.get(target)) is None:
-        raise ValueError(f"Normalization for {target} not found")
-    config.normalization = {target: normalization_config}
+    if (normalization_config := STATS.get("y")) is None:
+        raise ValueError(f"Normalization for {'y'} not found")
+    config.normalization = {"y": normalization_config}
 
     # QMOF specific settings
     config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
-
-    # Make sure we only optimize for the single target
-    config.graph_scalar_targets = [target]
-    config.node_vector_targets = []
-    config.graph_classification_targets = []
-    config.graph_scalar_reduction = {target: "sum"}

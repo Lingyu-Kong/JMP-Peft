@@ -1,38 +1,26 @@
 import copy
 import fnmatch
 import math
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Iterable, Mapping
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import (
-    Annotated,
-    Any,
-    Generic,
-    Literal,
-    TypeAlias,
-    assert_never,
-    cast,
-    final,
-)
+from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.core.optimizer import LightningOptimizer
-from ll import Base, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll import BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
-from ll.nn import MLP
 from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
-from torch_scatter import scatter
-from typing_extensions import TypedDict, TypeVar, override
+from typing_extensions import TypeVar, override
 
 from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
@@ -73,6 +61,7 @@ from .output_head import (
     GraphTargetConfig,
     NodeTargetConfig,
     NodeVectorTargetConfig,
+    OutputHeadInput,
 )
 
 log = getLogger(__name__)
@@ -460,9 +449,9 @@ class FinetuneConfigBase(BaseConfig):
                 not self.trainer.use_distributed_sampler
             ), "config.trainer.use_distributed_sampler must be False when using balanced batch sampler"
 
-        assert self.graph_targets or self.node_targets, (
-            "At least one graph target or node target must be specified, "
-            f"but none are specified: {self.graph_targets=}, {self.node_targets=}"
+        assert self.targets, (
+            "At least one target must be specified, "
+            f"but none are specified: {self.targets=}"
         )
 
 
@@ -648,13 +637,13 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 )
             )
 
-        for cls_target in self.config.graph_classification_targets:
-            match cls_target:
+        for target in self.config.graph_targets:
+            match target:
                 case GraphMulticlassClassificationTargetConfig(
                     class_weights=class_weights
                 ) if class_weights:
                     self.register_buffer(
-                        f"{cls_target.name}_class_weights",
+                        f"{target.name}_class_weights",
                         torch.tensor(class_weights, dtype=torch.float),
                         persistent=False,
                     )
@@ -1309,7 +1298,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         Returns:
             BaseData: The transformed data object.
         """
-        for target_config in self.config.graph_classification_targets:
+        for target_config in self.config.graph_targets:
             match target_config:
                 case GraphBinaryClassificationTargetConfig():
                     if (value := getattr(data, target_config.name, None)) is None:

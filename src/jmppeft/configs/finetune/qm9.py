@@ -5,6 +5,7 @@ from ...tasks.config import AdamWConfig
 from ...tasks.finetune import QM9Config
 from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
+from ...tasks.finetune.output_head import GraphScalarTargetConfig
 from ...tasks.finetune.qm9 import QM9Target, SpatialExtentConfig
 
 STATS: dict[str, NC] = {
@@ -53,10 +54,9 @@ def jmp_l_qm9_config_(config: QM9Config, target: QM9Target, base_path: Path):
     config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
 
     # Make sure we only optimize for the target
-    config.graph_scalar_targets = [target]
-    config.node_vector_targets = []
-    config.graph_classification_targets = []
-    config.graph_scalar_reduction = {target: "sum"}
+    config.graph_targets = [
+        GraphScalarTargetConfig(name=target, reduction="sum"),
+    ]
 
     # Handle R_2_Abs separately
     if target == "R_2_Abs":
