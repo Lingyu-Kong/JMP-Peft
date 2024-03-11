@@ -39,12 +39,11 @@ configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 configs.append((config.finalize(), RMD17Model))
 
 # %%
-from ll import Runner, Trainer
-
 from jmppeft.utils.finetune_state_dict import (
     filter_state_dict,
     retreive_state_dict_for_finetuning,
 )
+from ll import Runner, Trainer
 
 
 def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:

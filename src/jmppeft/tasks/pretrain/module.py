@@ -557,9 +557,7 @@ class PretrainModel(LightningModuleBase):
             case LinearWarmupCosineAnnealingSchedulerConfig() as config:
                 if not (max_steps := config.max_steps):
                     if max_epochs := config.max_epochs:
-                        _ = (
-                            self.trainer.estimated_stepping_batches
-                        )  # make sure dataloaders are loaded for self.trainer.num_training_batches
+                        _ = self.trainer.estimated_stepping_batches  # make sure dataloaders are loaded for self.trainer.num_training_batches
                         num_steps_per_epoch = math.ceil(
                             self.trainer.num_training_batches
                             / self.trainer.accumulate_grad_batches
