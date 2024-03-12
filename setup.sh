@@ -7,6 +7,9 @@ mamba install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvi
 # Install PyTorch Geometric
 mamba install -y -c pyg pyg pytorch-scatter pytorch-sparse pytorch-cluster
 
+# Pydantic needs to be installed from GitHub (for now)
+pip install git+https://github.com/pydantic/pydantic.git
+
 # Install other packages
 mamba install -y \
     -c conda-forge \
@@ -14,12 +17,20 @@ mamba install -y \
     pytorch-lightning torchmetrics lightning \
     einops wandb \
     cloudpickle \
-    "pydantic>2" \
     frozendict wrapt varname typing-extensions lovely-tensors lovely-numpy requests pytest nbval
+
+# Pydam
+
+# Install packages for datasets
+pip install lmdb
+mamba install -y -c conda-forge ase
 
 # Install pymatgen + matbench-discovery
 mamba install -y -c conda-forge pymatgen jarvis-tools
 pip install matbench-discovery
 
 # Install jaxtyping
-pip install jaxtyping
+pip install beartype jaxtyping
+
+# Install LoRA
+pip install loralib

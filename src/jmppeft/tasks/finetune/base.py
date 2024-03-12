@@ -396,9 +396,7 @@ class FinetuneConfigBase(BaseConfig):
             )
 
         if self.use_balanced_batch_sampler:
-            assert (
-                not self.trainer.use_distributed_sampler
-            ), "config.trainer.use_distributed_sampler must be False when using balanced batch sampler"
+            assert not self.trainer.use_distributed_sampler, "config.trainer.use_distributed_sampler must be False when using balanced batch sampler"
 
         assert self.targets, (
             "At least one target must be specified, "
@@ -411,8 +409,7 @@ TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
 
 class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
     @abstractmethod
-    def metric_prefix(self) -> str:
-        ...
+    def metric_prefix(self) -> str: ...
 
     @override
     def on_test_end(self):
@@ -753,7 +750,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             match target:
                 case GraphScalarTargetConfig():
                     loss = F.l1_loss(preds[target.name], batch[target.name])
-                    self.log(f"{target}_loss", loss)
                 case GraphBinaryClassificationTargetConfig():
                     y_input = preds[target.name]
                     y_target = batch[target.name].float()
@@ -986,9 +982,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         if (warmup_steps := lr_config.warmup_steps) is None:
             if warmup_epochs := lr_config.warmup_epochs:
                 assert warmup_epochs >= 0, f"Invalid warmup_epochs: {warmup_epochs}"
-                _ = (
-                    self.trainer.estimated_stepping_batches
-                )  # make sure dataloaders are loaded for self.trainer.num_training_batches
+                _ = self.trainer.estimated_stepping_batches  # make sure dataloaders are loaded for self.trainer.num_training_batches
                 num_steps_per_epoch = math.ceil(
                     self.trainer.num_training_batches
                     / self.trainer.accumulate_grad_batches
@@ -1000,9 +994,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         if not (max_steps := lr_config.max_steps):
             if max_epochs := lr_config.max_epochs:
-                _ = (
-                    self.trainer.estimated_stepping_batches
-                )  # make sure dataloaders are loaded for self.trainer.num_training_batches
+                _ = self.trainer.estimated_stepping_batches  # make sure dataloaders are loaded for self.trainer.num_training_batches
                 num_steps_per_epoch = math.ceil(
                     self.trainer.num_training_batches
                     / self.trainer.accumulate_grad_batches

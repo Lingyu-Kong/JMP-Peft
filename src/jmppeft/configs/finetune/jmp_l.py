@@ -19,9 +19,10 @@ def jmp_l_ft_config_(
     ckpt_path: Path,
     ema_backbone: bool = True,
     disable_force_output_heads: bool = True,
+    use_bf16: bool = False,
 ):
     # Set the model trainer settings for maximum performance
-    config.trainer.precision = "16-mixed"
+    config.trainer.precision = "bf16-mixed" if use_bf16 else "16-mixed"
     config.trainer.set_float32_matmul_precision = "medium"
     config.trainer.supports_parameter_hooks = False
     config.trainer.supports_skip_batch_exception = False

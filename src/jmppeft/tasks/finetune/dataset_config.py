@@ -52,7 +52,7 @@ def qm9_config(
     base_path: Path,
     split: Split,
 ):
-    lmdb_path = base_path / "lmdb" / "qm9" / f"{split}"
+    lmdb_path = base_path / "lmdb" / f"{split}"
     assert lmdb_path.exists(), f"{lmdb_path} does not exist"
 
     config = FinetuneLmdbDatasetConfig(src=lmdb_path)
@@ -63,7 +63,7 @@ def qmof_config(
     base_path: Path,
     split: Split,
 ):
-    lmdb_path = base_path / "lmdb" / "qmof" / f"{split}"
+    lmdb_path = base_path / "lmdb" / f"{split}"
     assert lmdb_path.exists(), f"{lmdb_path} does not exist"
 
     config = FinetuneLmdbDatasetConfig(src=lmdb_path)

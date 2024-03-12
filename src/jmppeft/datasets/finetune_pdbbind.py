@@ -1,17 +1,14 @@
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from functools import lru_cache
+from functools import cache, lru_cache
 from logging import getLogger
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import numpy as np
 import torch
-from Bio import PDB
-from Bio.PDB.PDBExceptions import PDBConstructionWarning
 from einops import pack
 from ll import TypedConfig
-from rdkit import Chem
 from torch.utils.data import Dataset
 from torch_geometric.data.data import BaseData, Data
 from typing_extensions import override
@@ -22,14 +19,21 @@ try:
     import deepchem.feat as feat
     import deepchem.molnet as molnet
     import deepchem.splits as splits
+    from Bio import PDB
+    from Bio.PDB.PDBExceptions import PDBConstructionWarning
     from deepchem.data import Dataset as DCDataset
     from deepchem.trans import NormalizationTransformer, Transformer
+    from rdkit import Chem
 
-    molnet_err: ImportError | None = None
+    import_error: ImportError | None = None
 except ImportError as err:
     if TYPE_CHECKING:
         raise
-    molnet_err = err
+    import_error = err
+
+if TYPE_CHECKING:
+    from deepchem.data import Dataset as DCDataset
+    from deepchem.trans import Transformer
 
 
 log = getLogger(__name__)
@@ -46,7 +50,7 @@ class _MolNetDatasetBase(Dataset[BaseData], ABC):
     def __init__(
         self,
         dataset_output: Callable[
-            [], tuple[list[str], tuple[DCDataset, ...], list[Transformer]]
+            [], tuple[list[str], tuple["DCDataset", ...], list["Transformer"]]
         ],
         task: str,
         split: Literal["train", "val", "test"],
@@ -55,8 +59,8 @@ class _MolNetDatasetBase(Dataset[BaseData], ABC):
     ):
         super().__init__()
 
-        if molnet_err is not None:
-            raise ImportError("`deepchem` library is not available") from molnet_err
+        if import_error is not None:
+            raise ImportError("Failed to import necessary modules") from import_error
 
         tasks, datasets, transformers = dataset_output()
 
@@ -109,8 +113,7 @@ class _MolNetDatasetBase(Dataset[BaseData], ABC):
         return len(self.X)
 
     @abstractmethod
-    def X_to_data(self, idx: int) -> BaseData:
-        ...
+    def X_to_data(self, idx: int) -> BaseData: ...
 
     @override
     def __getitem__(self, idx: int) -> BaseData:
@@ -130,9 +133,6 @@ class _MolNetDatasetBase(Dataset[BaseData], ABC):
 
 
 PDBBindTask: TypeAlias = Literal["-logKd/Ki"]
-
-
-_pt = Chem.GetPeriodicTable()
 
 
 class PDBBindDataset(_MolNetDatasetBase):
@@ -224,11 +224,15 @@ class PDBBindDataset(_MolNetDatasetBase):
             return atomic_numbers, coords
         return None
 
+    @cache
+    def _pt():
+        return Chem.GetPeriodicTable()
+
     # Function to extract atomic numbers and coordinates from a PDB file
     @staticmethod
     @lru_cache(maxsize=16)
     def _get_pdb_info(pdb_file: str):
-        global _pt
+        pt = PDBBindDataset._pt()
 
         parser = PDB.PDBParser()
         structure = parser.get_structure("structure", pdb_file)
@@ -240,7 +244,7 @@ class PDBBindDataset(_MolNetDatasetBase):
                     for atom in residue:
                         symbol = atom.element.strip()
                         symbol = f"{symbol[0].upper()}{symbol[1:].lower()}"
-                        atomic_numbers.append(_pt.GetAtomicNumber(symbol))
+                        atomic_numbers.append(pt.GetAtomicNumber(symbol))
                         coords.append(atom.get_coord())
             return np.array(atomic_numbers), np.array(coords)
         return None

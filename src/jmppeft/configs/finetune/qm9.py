@@ -6,7 +6,7 @@ from ...tasks.finetune import QM9Config
 from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
 from ...tasks.finetune.output_head import GraphScalarTargetConfig
-from ...tasks.finetune.qm9 import QM9Target, SpatialExtentConfig
+from ...tasks.finetune.qm9 import GraphSpatialExtentScalarTargetConfig, QM9Target
 
 STATS: dict[str, NC] = {
     "mu": NC(mean=2.674587, std=1.5054824),
@@ -51,13 +51,15 @@ def jmp_l_qm9_config_(config: QM9Config, target: QM9Target, base_path: Path):
     config.normalization = {target: normalization_config}
 
     # QM9 specific settings
-    config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
-
-    # Make sure we only optimize for the target
-    config.graph_targets = [
-        GraphScalarTargetConfig(name=target, reduction="sum"),
-    ]
+    config.primary_metric = PrimaryMetricConfig(name=f"{target}_mae", mode="min")
 
     # Handle R_2_Abs separately
-    if target == "R_2_Abs":
-        config.output_head = SpatialExtentConfig()
+    match target:
+        case "R_2_Abs":
+            config.graph_targets = [
+                GraphSpatialExtentScalarTargetConfig(name=target, reduction="sum"),
+            ]
+        case _:
+            config.graph_targets = [
+                GraphScalarTargetConfig(name=target, reduction="sum"),
+            ]
