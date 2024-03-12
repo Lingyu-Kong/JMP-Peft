@@ -5,6 +5,7 @@ LICENSE file in the root directory of this source tree.
 """
 
 import math
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -13,10 +14,13 @@ from jaxtyping import Float
 from ....modules.lora import LoraConfig
 from ..initializers import he_orthogonal_init
 
+loralib_err: ImportError | None = None
 try:
     import loralib
-except ImportError:
-    loralib = None
+except ImportError as e:
+    if TYPE_CHECKING:
+        raise e
+    loralib_err = e
 
 
 class Dense(nn.Module):
@@ -53,7 +57,8 @@ class Dense(nn.Module):
         self.out_features = out_features
 
         if lora:
-            assert loralib is not None, "Loralib is not installed."
+            if loralib_err is not None:
+                raise ImportError("Loralib is not installed.") from loralib_err
 
             self.linear = loralib.Linear(
                 in_features,
