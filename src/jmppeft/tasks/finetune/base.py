@@ -33,7 +33,7 @@ from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
-from ...modules.lora import LoraRootConfig
+from ...modules.lora import LoraConfig, LoraRootConfig
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
 )
@@ -307,7 +307,7 @@ class FinetuneConfigBase(BaseConfig):
     """Configuration for the backbone."""
     output: OutputConfig = OutputConfig(num_mlps=5)
     """Configuration for the output head."""
-    lora: LoraRootConfig = LoraRootConfig.disabled()
+    lora: LoraRootConfig | None = None
     """Low-rank Adaptation (LoRA) configuration"""
 
     batch_size: int
@@ -476,7 +476,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         backbone = GemNetOCBackbone(
             self.config.backbone,
             **dict(self.config.backbone),
-            lora=self.config.lora.create_lora_config(),
+            lora=self.config.lora.create_lora_config()
+            if self.config.lora
+            else LoraConfig.disabled(),
         )
 
         return backbone
@@ -659,11 +661,19 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 param.requires_grad = False
                 log.info(f"Freezing {name} (pattern: {matching_pattern})")
 
-        if self.config.lora and self.config.lora.freeze_non_lora:
+        if (lc := self.config.lora) is not None and lc.enabled and lc.freeze_non_lora:
             # See https://github.com/microsoft/LoRA/blob/main/loralib/utils.py#L13
+            lora_params: list[str] = []
             for name, param in self.named_parameters():
                 if not name.endswith(".lora_A") and not name.endswith(".lora_B"):
                     param.requires_grad = False
+                else:
+                    lora_params.append(name)
+
+            if lora_params:
+                log.critical(
+                    f"LoRA enabled for the following parameters: {lora_params}"
+                )
 
         all_parameters = [
             param for param in self.parameters() if param not in self.ignored_parameters
@@ -717,7 +727,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         # Ignore non-existant LoRA parameters
         def should_ignore_missing_key_fn(k: str):
-            if not self.config.lora.enabled:
+            if (lc := self.config.lora) is None or not lc.enabled:
                 return False
 
             return k.endswith(".lora_A") or k.endswith(".lora_B")

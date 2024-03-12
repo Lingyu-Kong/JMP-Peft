@@ -1,7 +1,7 @@
 # %%
 from functools import partial
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias, TypedDict
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict
 
 from ll import PrivateAttr, TypedConfig
 
@@ -39,9 +39,6 @@ class LoraRootConfig(TypedConfig):
 
     # Tracking children
     all_children_paths: _PathTree = {}
-
-    def __bool__(self):
-        return self.enabled
 
     def create_lora_config(self):
         return LoraConfig(
@@ -114,10 +111,10 @@ class LoraConfig(TypedConfig):
 
     def __call__(self, module: str):
         update: dict[str, Any] = {"enabled": self._root.enabled_by_default}
-        updated_path = list(self.path)
 
         # Recursively update kwargs for children
-        for part in module.split("."):
+        updated_path: list[str] = []
+        for part in [*self.path, *module.split(".")]:
             updated_path.append(part)
             update.update(self._root.children.get(".".join(updated_path), {}))
 
@@ -126,10 +123,6 @@ class LoraConfig(TypedConfig):
 
         # Update kwargs for the module
         updated = self.model_copy(update=update)
-        if updated.enabled:
-            modulename = ". ".join(updated_path)
-            log.critical(f"LoRA enabled for {modulename} with r={self.r}")
-
         return updated
 
     @classmethod
