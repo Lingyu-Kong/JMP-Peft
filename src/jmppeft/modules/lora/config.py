@@ -1,7 +1,11 @@
+# %%
 from functools import partial
-from typing import Any, ClassVar, TypeAlias, TypedDict
+from logging import getLogger
+from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias, TypedDict
 
-from ll import TypedConfig
+from ll import PrivateAttr, TypedConfig
+
+log = getLogger(__name__)
 
 
 class _LoraKwargs(TypedDict):
@@ -11,25 +15,85 @@ class _LoraKwargs(TypedDict):
     merge_weights: bool
 
 
-_PathTree: TypeAlias = dict[str, "_PathTree"]
+_PathTree: TypeAlias = dict[str, Any]
 
 
-class LoraConfig(TypedConfig):
+class LoraRootConfig(TypedConfig):
     enabled: bool = True
+    """Should LoRA be enabled?"""
 
-    # Base Settings
+    enabled_by_default: bool = False
+    """Should LoRA be automatically enabled for all Dense layers?"""
+
+    freeze_non_lora: bool = True
+    """Should non-LoRA layers be frozen?"""
+
+    children: dict[str, Any] = {}
+    """Configuration for children modules."""
+
+    # Default Settings
     r: int = 0
     alpha: int = 1
     dropout: float = 0.0
     merge_weights: bool = False
 
-    # Specialized Settings for Children
-    _path: list[str] = []
-    _children_config: dict[str, Any] = {}
+    # Tracking children
+    all_children_paths: _PathTree = {}
 
-    _all_paths: ClassVar[_PathTree] = {}
+    def __bool__(self):
+        return self.enabled
+
+    def create_lora_config(self):
+        return LoraConfig(
+            enabled=self.enabled,
+            r=self.r,
+            alpha=self.alpha,
+            dropout=self.dropout,
+            merge_weights=self.merge_weights,
+            _root=self,
+        )
+
+    @classmethod
+    def disabled(cls):
+        return cls(enabled=False, r=0)
+
+    def pprint_path_tree(self):
+        def pprint_tree(tree: _PathTree, depth=0):
+            for k, v in tree.items():
+                print(f"{'   ' * depth}{k}")
+                pprint_tree(v, depth + 1)
+
+        pprint_tree(self.all_children_paths)
+
+
+class LoraConfig(TypedConfig):
+    enabled: bool
+    """Should LoRA be enabled for this module?"""
+
+    # Base Settings
+    r: int
+    alpha: int
+    dropout: float
+    merge_weights: bool
+
+    # Specialized Settings for Children
+    path: list[str] = []
+
+    _root: LoraRootConfig = PrivateAttr()
+    """Root configuration for LoRA."""
+
+    if not TYPE_CHECKING:
+
+        def __init__(self, *args, _root, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._root = _root
 
     def as_kwargs(self):
+        if not self.enabled:
+            raise ValueError(f"LoRA is not enabled. Path: {self.path}")
+
+        assert self.r > 0, f"Invalid r={self.r} for LoRA. Must be > 0."
+
         return _LoraKwargs(
             r=self.r,
             lora_alpha=self.alpha,
@@ -37,12 +101,9 @@ class LoraConfig(TypedConfig):
             merge_weights=self.merge_weights,
         )
 
-    def __bool__(self):
-        return self.enabled and self.r > 0
-
     @property
     def gemnet_basis_embedding_cls(self):
-        if not self:
+        if not self.enabled:
             from ...models.gemnet.layers.efficient import BasisEmbedding
 
             return BasisEmbedding
@@ -52,35 +113,30 @@ class LoraConfig(TypedConfig):
             return partial(LoRABasisEmbedding, lora=self)
 
     def __call__(self, module: str):
-        update: dict[str, Any] = {}
-        updated_path = list(self._path)
+        update: dict[str, Any] = {"enabled": self._root.enabled_by_default}
+        updated_path = list(self.path)
 
         # Recursively update kwargs for children
         for part in module.split("."):
-            update.update(self._children_config.get(part, {}))
             updated_path.append(part)
+            update.update(self._root.children.get(".".join(updated_path), {}))
 
-        update["_path"] = updated_path
+        update["path"] = updated_path
         self._register_path_inplace_(updated_path)
 
         # Update kwargs for the module
-        return self.model_copy(update=update)
+        updated = self.model_copy(update=update)
+        if updated.enabled:
+            modulename = ". ".join(updated_path)
+            log.critical(f"LoRA enabled for {modulename} with r={self.r}")
+
+        return updated
 
     @classmethod
     def disabled(cls):
-        return cls(enabled=False, r=0)
+        return LoraRootConfig.disabled().create_lora_config()
 
-    @classmethod
-    def _register_path_inplace_(cls, path: list[str]):
-        tree = cls._all_paths
+    def _register_path_inplace_(self, path: list[str]):
+        tree = self._root.all_children_paths
         for part in path:
             tree = tree.setdefault(part, {})
-
-    @classmethod
-    def pprint_path_tree(cls):
-        def pprint_tree(tree: _PathTree, depth=0):
-            for k, v in tree.items():
-                print(f"{'   ' * depth}{k}")
-                pprint_tree(v, depth + 1)
-
-        pprint_tree(cls._all_paths)

@@ -33,7 +33,7 @@ from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
-from ...modules.lora import LoraConfig
+from ...modules.lora import LoraRootConfig
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
 )
@@ -307,7 +307,7 @@ class FinetuneConfigBase(BaseConfig):
     """Configuration for the backbone."""
     output: OutputConfig = OutputConfig(num_mlps=5)
     """Configuration for the output head."""
-    lora: LoraConfig = LoraConfig.disabled()
+    lora: LoraRootConfig = LoraRootConfig.disabled()
     """Low-rank Adaptation (LoRA) configuration"""
 
     batch_size: int
@@ -476,7 +476,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         backbone = GemNetOCBackbone(
             self.config.backbone,
             **dict(self.config.backbone),
-            lora=self.config.lora,
+            lora=self.config.lora.create_lora_config(),
         )
 
         return backbone
@@ -659,6 +659,12 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 param.requires_grad = False
                 log.info(f"Freezing {name} (pattern: {matching_pattern})")
 
+        if self.config.lora and self.config.lora.freeze_non_lora:
+            # See https://github.com/microsoft/LoRA/blob/main/loralib/utils.py#L13
+            for name, param in self.named_parameters():
+                if not name.endswith(".lora_A") and not name.endswith(".lora_B"):
+                    param.requires_grad = False
+
         all_parameters = [
             param for param in self.parameters() if param not in self.ignored_parameters
         ]
@@ -711,6 +717,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         # Ignore non-existant LoRA parameters
         def should_ignore_missing_key_fn(k: str):
+            if not self.config.lora.enabled:
+                return False
+
             return k.endswith(".lora_A") or k.endswith(".lora_B")
 
         load_state_dict(

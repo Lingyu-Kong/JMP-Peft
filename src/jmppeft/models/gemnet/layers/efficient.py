@@ -36,7 +36,7 @@ class BasisEmbedding(torch.nn.Module):
     ):
         super().__init__()
 
-        assert not lora
+        assert not lora.enabled, "LoRA is not supported for BasisEmbedding."
 
         self.num_radial = num_radial
         self.num_spherical = num_spherical

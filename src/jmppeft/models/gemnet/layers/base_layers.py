@@ -56,7 +56,7 @@ class Dense(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
 
-        if lora:
+        if lora.enabled:
             if loralib_err is not None:
                 raise ImportError("Loralib is not installed.") from loralib_err
 
