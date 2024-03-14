@@ -11,7 +11,7 @@ from ...tasks.finetune.qm9 import GraphSpatialExtentScalarTargetConfig, QM9Targe
 STATS: dict[str, NC] = {
     "mu": NC(mean=2.674587, std=1.5054824),
     "alpha": NC(mean=75.31013, std=8.164021),
-    "eps_HMO": NC(mean=-6.5347567, std=0.59702325),
+    "eps_HOMO": NC(mean=-6.5347567, std=0.59702325),
     "eps_LUMO": NC(mean=0.323833, std=1.273586),
     "delta_eps": NC(mean=6.8585854, std=1.283122),
     "R_2_Abs": NC(mean=1189.6819, std=280.0421),

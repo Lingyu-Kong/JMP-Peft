@@ -99,7 +99,7 @@ def lora_config_(
 ckpt_path = Path(
     "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
 )
-base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/data/datasets/rmd17/")
+base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/rmd17/")
 
 
 def make_config(filter_children: bool):
@@ -162,9 +162,16 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
+# %%
 runner = Runner(run)
 runner.fast_dev_run(configs)
 
 # %%
 runner = Runner(run)
-runner.local_session_per_gpu(configs, snapshot=True)
+runner.local_session_per_gpu(
+    configs,
+    snapshot=True,
+    num_jobs_per_gpu=4,
+    prologue=["module load conda/Mambaforge-23.1.0-1"],
+    env={"LL_DISABLE_TYPECHECKING": "1"},
+)

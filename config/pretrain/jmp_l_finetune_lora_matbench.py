@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
-from jmppeft.configs.finetune.qm9 import jmp_l_qm9_config_
+from jmppeft.configs.finetune.matbench import matbench_config_
 from jmppeft.modules.lora import LoraRootConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
@@ -11,7 +11,11 @@ from jmppeft.tasks.finetune.base import (
     RLPConfig,
     RLPWarmupConfig,
 )
-from jmppeft.tasks.finetune.qm9 import QM9Config, QM9Model, QM9Target
+from jmppeft.tasks.finetune.matbench import (
+    MatbenchConfig,
+    MatbenchDataset,
+    MatbenchModel,
+)
 
 
 def _flatten(config: dict[str, dict[str, Any]]):
@@ -99,17 +103,17 @@ def lora_config_(
 ckpt_path = Path(
     "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
 )
-base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/qm9/")
+base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/matbench/")
 
 
-def create_config(target: QM9Target):
-    config = QM9Config.draft()
+def create_config(dataset: MatbenchDataset, batch_size: int = 4):
+    config = MatbenchConfig.draft()
     config.project = "jmp_peft_nersc"
-    config.name = f"qm9-{target}"
+    config.name = f"matbench-{dataset}"
     jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
-    jmp_l_qm9_config_(config, target, base_path)
+    matbench_config_(config, dataset, 0, base_path)
 
-    config.batch_size = 32
+    config.batch_size = batch_size
     config.parameter_specific_optimizers = None
     config.optimizer.lr = 1.0e-4
     config.lr_scheduler = RLPConfig(
@@ -126,14 +130,14 @@ def create_config(target: QM9Target):
     lora_config_(config, r=4, filter_children=False)
     config.num_workers = 2
 
-    return config.finalize(), QM9Model
+    return config.finalize(), MatbenchModel
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-configs.append(create_config("eps_LUMO"))
-configs.append(create_config("eps_HOMO"))
-configs.append(create_config("U"))
-configs.append(create_config("H"))
+configs.append(create_config("mp_gap"))
+configs.append(create_config("mp_e_form"))
+configs.append(create_config("perovskites"))
+configs.append(create_config("log_gvrh"))
 
 
 # %%
@@ -171,7 +175,7 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    num_jobs_per_gpu=2,
+    num_jobs_per_gpu=4,
     prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )

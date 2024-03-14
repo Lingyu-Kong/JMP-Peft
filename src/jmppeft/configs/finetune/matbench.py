@@ -70,10 +70,11 @@ def matbench_config_(
     config.test_dataset = DC.matbench_config(dataset, base_path, "test", fold)
 
     # Set up normalization
-    if (normalization_config := STATS.get(f"{dataset}_{fold}")) is None:
-        raise ValueError(f"Normalization for {dataset}_{fold} not found")
+    if (normalization_config := STATS.get(f"{dataset}_fold{fold}")) is None:
+        raise ValueError(f"Normalization for {dataset}_fold{fold} not found")
     config.normalization = normalization_config
 
     # MatBench specific settings
     config.dataset = dataset
     config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
+    config.default_target_()

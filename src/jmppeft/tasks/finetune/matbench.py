@@ -6,6 +6,7 @@ from typing_extensions import override
 
 from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors
 from .base import FinetuneConfigBase, FinetuneModelBase
+from .output_head import GraphScalarTargetConfig
 
 MatbenchDataset: TypeAlias = Literal[
     "jdft2d",
@@ -39,6 +40,10 @@ class MatbenchConfig(FinetuneConfigBase):
     mp_e_form_dev: bool = True
 
     conditional_max_neighbors: bool = False
+
+    def default_target_(self):
+        self.graph_targets = [GraphScalarTargetConfig(name="y", loss_coefficient=1.0)]
+        self.node_targets = []
 
     @override
     def __post_init__(self):

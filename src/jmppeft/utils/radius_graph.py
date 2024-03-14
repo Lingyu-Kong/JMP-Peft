@@ -4,15 +4,14 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
-
 import numpy as np
 import torch
-from torch_geometric.data.batch import Batch
+from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo, segment_csr
 
 
 def radius_graph_pbc(
-    data: Batch,
+    data: BaseData,
     radius: float,
     max_num_neighbors_threshold: int,
     pbc: list[bool] = [True, True, True],
