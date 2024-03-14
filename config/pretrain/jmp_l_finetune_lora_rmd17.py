@@ -96,8 +96,10 @@ def lora_config_(
     )
 
 
-ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
-base_path = Path("/mnt/shared/datasets/rmd17/")
+ckpt_path = Path(
+    "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
+)
+base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/data/datasets/rmd17/")
 
 
 def make_config(filter_children: bool):

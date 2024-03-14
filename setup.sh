@@ -2,7 +2,7 @@ mamba create -n jmp-peft python=3.11
 conda activate jmp-peft
 
 # Install PyTorch
-mamba install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+mamba install -y -c pytorch -c nvidia pytorch torchvision torchaudio pytorch-cuda=12.1
 
 # Install PyTorch Geometric
 mamba install -y -c pyg pyg pytorch-scatter pytorch-sparse pytorch-cluster
@@ -19,7 +19,8 @@ mamba install -y \
     cloudpickle \
     frozendict wrapt varname typing-extensions lovely-tensors lovely-numpy requests pytest nbval
 
-# Pydam
+# Rich for better terminal output
+pip install rich
 
 # Install packages for datasets
 pip install lmdb
