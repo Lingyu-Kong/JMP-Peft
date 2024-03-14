@@ -25,8 +25,8 @@ class LoraRootConfig(TypedConfig):
     enabled_by_default: bool = False
     """Should LoRA be automatically enabled for all Dense layers?"""
 
-    freeze_non_lora: bool = True
-    """Should non-LoRA layers be frozen?"""
+    freeze_non_lora_backbone: bool = True
+    """Should non-LoRA layers in the backbone be frozen?"""
 
     children: dict[str, Any] = {}
     """Configuration for children modules."""

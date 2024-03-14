@@ -661,19 +661,20 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 param.requires_grad = False
                 log.info(f"Freezing {name} (pattern: {matching_pattern})")
 
-        if (lc := self.config.lora) is not None and lc.enabled and lc.freeze_non_lora:
+        if (
+            (lc := self.config.lora) is not None
+            and lc.enabled
+            and lc.freeze_non_lora_backbone
+        ):
             # See https://github.com/microsoft/LoRA/blob/main/loralib/utils.py#L13
-            lora_params: list[str] = []
-            for name, param in self.named_parameters():
-                if not name.endswith(".lora_A") and not name.endswith(".lora_B"):
-                    param.requires_grad = False
-                else:
-                    lora_params.append(name)
-
-            if lora_params:
-                log.critical(
-                    f"LoRA enabled for the following parameters: {lora_params}"
-                )
+            self.freeze_parameters(
+                (
+                    param
+                    for name, param in self.backbone.named_parameters()
+                    if not name.endswith(".lora_A") and not name.endswith(".lora_B")
+                ),
+                name="backbone (non-LoRA)",
+            )
 
         all_parameters = [
             param for param in self.parameters() if param not in self.ignored_parameters

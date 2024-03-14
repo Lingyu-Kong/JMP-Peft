@@ -1,8 +1,4 @@
 # %%
-import os
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +24,9 @@ def _flatten(config: dict[str, dict[str, Any]]):
 
 def lora_config_(
     config: FinetuneConfigBase,
-    r: int = 4,
+    *,
+    r: int,
+    filter_children: bool,
 ):
     int_block_configs = {
         f"int_blocks_{idx}": {
@@ -78,45 +76,63 @@ def lora_config_(
         )
         for idx in range(config.backbone.num_blocks + 1)
     }
-    config.lora = LoraRootConfig(
-        children={
+    children = (
+        {
             "bases": {"enabled": True},
             "out_mlp_E": {"enabled": True},
             # Flatten the out_blocks (e.g., out_blocks_0.layers, out_blocks_1.layers, ...)
             # and int_blocks (e.g., int_blocks_0.trip_interaction.dense_ba, ...)
             **_flatten(out_block_configs),
             **_flatten(int_block_configs),
-        },
-        enabled_by_default=False,
+        }
+        if filter_children
+        else {}
+    )
+
+    config.lora = LoraRootConfig(
+        enabled_by_default=True,
         r=r,
+        children=children,
     )
 
 
 ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
 base_path = Path("/mnt/shared/datasets/rmd17/")
 
-config = RMD17Config.draft()
-jmp_l_ft_config_(config, ckpt_path, ema_backbone=True)
-jmp_l_rmd17_config_(config, "aspirin", base_path)
 
-config.parameter_specific_optimizers = None
-config.optimizer.lr = 1.0e-4
-config.lr_scheduler = RLPConfig(
-    patience=25,
-    factor=0.8,
-    interval="epoch",
-    warmup=RLPWarmupConfig(
-        step_type="epoch",
-        steps=5,
-        start_lr_factor=1.0e-1,
-    ),
-)
+def make_config(filter_children: bool):
+    config = RMD17Config.draft()
+    jmp_l_ft_config_(config, ckpt_path, ema_backbone=True)
+    jmp_l_rmd17_config_(config, "aspirin", base_path)
 
-lora_config_(config, r=4)
-config.num_workers = 8
+    config.parameter_specific_optimizers = None
+    config.optimizer.lr = 1.0e-4
+
+    config.lr_scheduler = RLPConfig(
+        patience=25,
+        factor=0.8,
+        interval="epoch",
+        warmup=RLPWarmupConfig(
+            step_type="epoch",
+            steps=5,
+            start_lr_factor=1.0e-1,
+        ),
+    )
+
+    lora_config_(config, r=4, filter_children=filter_children)
+    config.num_workers = 8
+
+    config.project = "jmppeft_3-12"
+    config.name = "lora_rmd17"
+    if filter_children:
+        config.name += "_filtered"
+
+    return config.finalize(), RMD17Model
+
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-configs.append((config.finalize(), RMD17Model))
+configs.append(make_config(filter_children=False))
+configs.append(make_config(filter_children=True))
 
 # %%
 from jmppeft.utils.finetune_state_dict import (
