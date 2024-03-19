@@ -302,7 +302,7 @@ class Output(Base[PretrainConfig], nn.Module):
         return E, F
 
 
-class PretrainModel(LightningModuleBase):
+class PretrainModel(LightningModuleBase[PretrainConfig]):
     @classmethod
     @override
     def config_cls(cls):
