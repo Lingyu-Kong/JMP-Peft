@@ -8,10 +8,11 @@ from jmppeft.modules.lora import LoraRootConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
-    RLPConfig,
-    RLPWarmupConfig,
 )
 from jmppeft.tasks.finetune.qm9 import QM9Config, QM9Model, QM9Target
+from jmppeft.utils.param_specific_util import (
+    make_parameter_specific_optimizer_config,
+)
 
 
 def _flatten(config: dict[str, dict[str, Any]]):
@@ -26,6 +27,7 @@ def lora_config_(
     config: FinetuneConfigBase,
     *,
     r: int,
+    alpha: int,
     filter_children: bool,
 ):
     int_block_configs = {
@@ -93,16 +95,24 @@ def lora_config_(
         enabled_by_default=True,
         r=r,
         children=children,
+        alpha=alpha,
     )
 
 
-ckpt_path = Path(
-    "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
-)
-base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/qm9/")
+# ckpt_path = Path(
+#     "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
+# )
+# base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/qm9/")
+
+ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
+base_path = Path("/mnt/shared/datasets/qm9/")
 
 
-def create_config(target: QM9Target):
+def create_config(
+    target: QM9Target,
+    lora: bool,
+    lora_lr: float = 2.0e-4,
+):
     config = QM9Config.draft()
     config.project = "jmp_peft_nersc"
     config.name = f"qm9-{target}"
@@ -110,31 +120,37 @@ def create_config(target: QM9Target):
     jmp_l_qm9_config_(config, target, base_path)
 
     config.batch_size = 32
-    config.parameter_specific_optimizers = None
-    config.optimizer.lr = 1.0e-4
-    config.lr_scheduler = RLPConfig(
-        patience=25,
-        factor=0.8,
-        interval="epoch",
-        warmup=RLPWarmupConfig(
-            step_type="epoch",
-            steps=5,
-            start_lr_factor=1.0e-1,
-        ),
-    )
 
-    lora_config_(config, r=4, filter_children=False)
-    config.num_workers = 2
+    lora_lr_scale = None
+    if lora:
+        lora_config_(config, r=8, alpha=16, filter_children=False)
+        config.name += "-lora"
+        lora_lr_scale = lora_lr / config.optimizer.lr
+    else:
+        config.lora = None
+        config.name += "-nolora"
+
+    config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
+        config,
+        config.backbone.num_blocks,
+        {
+            "embedding": 0.3,
+            "blocks_0": 0.55,
+            "blocks_1": 0.40,
+            "blocks_2": 0.30,
+            "blocks_3": 0.40,
+            "blocks_4": 0.55,
+            "blocks_5": 0.625,
+        },
+        lora_lr_scale=lora_lr_scale,
+    )
 
     return config.finalize(), QM9Model
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-configs.append(create_config("eps_LUMO"))
-configs.append(create_config("eps_HOMO"))
-configs.append(create_config("U"))
-configs.append(create_config("H"))
-
+configs.append(create_config("eps_HOMO", True))
+configs.append(create_config("eps_HOMO", False))
 
 # %%
 from jmppeft.utils.finetune_state_dict import (
@@ -171,7 +187,7 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    num_jobs_per_gpu=2,
-    prologue=["module load conda/Mambaforge-23.1.0-1"],
+    num_jobs_per_gpu=1,
+    # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )

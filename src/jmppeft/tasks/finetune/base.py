@@ -13,6 +13,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.core.optimizer import LightningOptimizer
+from lightning.pytorch.utilities.types import (
+    OptimizerLRScheduler,
+)
 from ll import AllowMissing, BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from ll.util.typed import TypedModuleDict
@@ -164,6 +167,9 @@ class FreezeConfig(TypedConfig):
 
     parameter_patterns: list[str] = []
     """List of parameter patterns to freeze"""
+
+    ensure_non_frozen_parameter_patterns: list[str] = []
+    """List of parameter patterns to ensure are not frozen"""
 
 
 class ParamSpecificOptimizerConfig(TypedConfig):
@@ -610,9 +616,15 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             n_params += param.numel()
         log.critical(f"Freezing {n_params} parameters in {name}")
 
-    def named_parameters_matching_patterns(self, patterns: list[str]):
+    def named_parameters_matching_patterns(
+        self,
+        patterns: list[str],
+        ignored_parameters: set[nn.Parameter] | None = None,
+    ):
+        ignored_parameters_set = self.ignored_parameters | (ignored_parameters or set())
+
         for name, param in self.named_parameters():
-            if param in self.ignored_parameters:
+            if param in ignored_parameters_set:
                 continue
             if (
                 matching_pattern := next(
@@ -675,6 +687,17 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 ),
                 name="backbone (non-LoRA)",
             )
+
+        # After we do all the freezing, we want to unfreeze any parameters that
+        #   match the ensure_non_frozen_parameter_patterns.
+        if nonfrozen := self.config.freeze.ensure_non_frozen_parameter_patterns:
+            for (
+                name,
+                param,
+                matching_pattern,
+            ) in self.named_parameters_matching_patterns(nonfrozen):
+                param.requires_grad = True
+                log.info(f"Unfreezing {name} (pattern: {matching_pattern})")
 
         all_parameters = [
             param for param in self.parameters() if param not in self.ignored_parameters
@@ -980,19 +1003,47 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         super().optimizer_step(epoch, batch_idx, optimizer, optimizer_closure)
 
-    def split_parameters(self, pattern_lists: list[list[str]]):
+    def split_parameters(
+        self,
+        pattern_lists: list[list[str]],
+        no_double_counting: bool = True,
+    ):
+        """
+        Splits the parameters of the model into multiple groups based on the provided pattern lists.
+
+        Args:
+            pattern_lists (list[list[str]]): A list of pattern lists. Each pattern list contains a set of patterns
+                used to match parameter names.
+            no_double_counting (bool): If True, parameters that match multiple patterns will only be counted once.
+
+        Returns:
+            parameters (list[list[torch.nn.Parameter]]): A list of parameter groups. Each group contains the parameters
+                that match the patterns in the corresponding pattern list.
+            all_parameters (list[torch.nn.Parameter]): The remaining parameters that do not match any of the patterns.
+        """
+
+        matched_parameters = set[nn.Parameter]()
         all_parameters = list(self.parameters())
 
         parameters: list[list[torch.nn.Parameter]] = []
         for patterns in pattern_lists:
             matching = [
-                p for _, p, _ in self.named_parameters_matching_patterns(patterns)
+                p
+                for _, p, _ in self.named_parameters_matching_patterns(
+                    patterns, matched_parameters
+                )
             ]
+
             parameters.append(matching)
-            # remove matching parameters from all_parameters
+
+            # Remove matching parameters from all_parameters.
             all_parameters = [
                 p for p in all_parameters if all(p is not m for m in matching)
             ]
+
+            # If no_double_counting is True, add the matching parameters to the set of matched parameters.
+            if no_double_counting:
+                matched_parameters.update(matching)
 
         return parameters, all_parameters
 
@@ -1090,13 +1141,15 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                         c.name or ",".join(c.paremeter_patterns),
                     )
                     for c, params in zip(configs, params_list)
+                    # Ignore empty parameter groups
+                    if params
                 ),
                 (self.config.optimizer, rest_params, "rest"),
             ],
             base=self.config.optimizer,
         )
 
-        out: dict[str, Any] = {
+        out: OptimizerLRScheduler = {
             "optimizer": optimizer,
         }
         if (lr_config := self.config.lr_scheduler) is None:
@@ -1150,18 +1203,37 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         return out
 
+    def _report_parameters(self):
+        trainable_parameters: list[str] = []
+        non_trainable_parameters: list[str] = []
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                trainable_parameters.append(name)
+            else:
+                non_trainable_parameters.append(name)
+
+        trainable_parameters_str = "\n".join(f"\t-{p}" for p in trainable_parameters)
+        log.info(f"Trainable parameters {trainable_parameters_str}")
+
+        non_trainable_parameters_str = "\n".join(
+            f"\t-{p}" for p in non_trainable_parameters
+        )
+        log.info(f"Non-trainable parameters {non_trainable_parameters_str}")
+
     @override
     def configure_optimizers(self):
         if self.config.parameter_specific_optimizers is not None:
-            return self.configure_optimizers_param_specific_optimizers(
+            out = self.configure_optimizers_param_specific_optimizers(
                 self.config.parameter_specific_optimizers
             )
+            self._report_parameters()
+            return out
 
         optimizer = optimizer_from_config(
             [(self.config.optimizer, self.parameters())],
         )
 
-        out: dict[str, Any] = {
+        out: OptimizerLRScheduler = {
             "optimizer": optimizer,
         }
         if (lr_config := self.config.lr_scheduler) is None:

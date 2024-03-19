@@ -1,4 +1,3 @@
-# %%
 from functools import partial
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict
