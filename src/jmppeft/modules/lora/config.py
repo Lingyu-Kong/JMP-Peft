@@ -1,6 +1,7 @@
+import math
 from functools import partial
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
 
 from ll import PrivateAttr, TypedConfig
 
@@ -36,6 +37,11 @@ class LoraRootConfig(TypedConfig):
     dropout: float = 0.0
     merge_weights: bool = False
 
+    use_rslora: bool = False
+    """
+    When set to True, uses [Rank-Stabilized LoRA](https://doi.org/10.48550/arXiv.2312.03732) which sets the adapter scaling factor to `lora_alpha/math.sqrt(r)`, since it was proven to work better. Otherwise, it will use the original default value of `lora_alpha/r`.
+    """
+
     # Tracking children
     all_children_paths: _PathTree = {}
 
@@ -46,6 +52,7 @@ class LoraRootConfig(TypedConfig):
             alpha=self.alpha,
             dropout=self.dropout,
             merge_weights=self.merge_weights,
+            use_rslora=self.use_rslora,
             _root=self,
         )
 
@@ -72,6 +79,11 @@ class LoraConfig(TypedConfig):
     dropout: float
     merge_weights: bool
 
+    use_rslora: bool = False
+    """
+    When set to True, uses [Rank-Stabilized LoRA](https://doi.org/10.48550/arXiv.2312.03732) which sets the adapter scaling factor to `lora_alpha/math.sqrt(r)`, since it was proven to work better. Otherwise, it will use the original default value of `lora_alpha/r`.
+    """
+
     # Specialized Settings for Children
     path: list[str] = []
 
@@ -90,9 +102,19 @@ class LoraConfig(TypedConfig):
 
         assert self.r > 0, f"Invalid r={self.r} for LoRA. Must be > 0."
 
+        # HACK:
+        # `loralib.Linear` computes the adapter scaling factor as `lora_alpha/r`.
+        #   In other words, it does not support `use_rslora`.
+        #   We support `use_rslora` by computing `x` such that
+        #   `(x/r) == lora_alpha/math.sqrt(r)` and `x` is the new `lora_alpha`.
+        #   This is a hacky way to support `use_rslora` without modifying `loralib`.
+        lora_alpha_input = self.alpha
+        if self.use_rslora:
+            lora_alpha_input = cast(Any, self.alpha * math.sqrt(self.r))
+
         return _LoraKwargs(
             r=self.r,
-            lora_alpha=self.alpha,
+            lora_alpha=lora_alpha_input,
             lora_dropout=self.dropout,
             merge_weights=self.merge_weights,
         )
