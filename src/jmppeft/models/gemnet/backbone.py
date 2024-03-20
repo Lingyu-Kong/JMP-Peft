@@ -4,19 +4,18 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
-from functools import cache
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import Any, TypedDict, cast
 
 import torch
 import torch.nn as nn
 from ll.util.typed import TypedModuleList
-from torch.utils.checkpoint import checkpoint
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo
 
 from ...modules.lora import LoraConfig
 from ...modules.scaling.compat import load_scales_compat
 from ...utils.goc_graph import Graph, graphs_from_batch
+from ...utils.gradient_checkpointing import GradientCheckpointingConfig, checkpoint
 from .bases import Bases, BasesOutput
 from .config import BackboneConfig, BasesConfig
 from .interaction_indices import get_mixed_triplets, get_quadruplets, get_triplets
@@ -31,9 +30,6 @@ from .utils import (
     inner_product_clamped,
     repeat_blocks,
 )
-
-if TYPE_CHECKING:
-    from ...tasks.finetune.base import GradientCheckpointingConfig
 
 
 class GOCBackboneOutput(TypedDict):
@@ -245,7 +241,7 @@ class GemNetOCBackbone(nn.Module):
         scale_file: str | None = None,
         absolute_rbf_cutoff: float | None = None,
         lora: LoraConfig = LoraConfig.disabled(),
-        gradient_checkpointing: "GradientCheckpointingConfig | None" = None,
+        gradient_checkpointing: GradientCheckpointingConfig | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -674,76 +670,48 @@ class GemNetOCBackbone(nn.Module):
             quad_idx,
         )
 
-    @cache
-    def block(self, i: int):
-        def inner(
-            input: tuple[
-                BaseData,
-                tuple[torch.Tensor, torch.Tensor],
-                torch.Tensor,
-                torch.Tensor,
-                BasesOutput,
-                Graph,
-                Graph,
-                Graph,
-                torch.Tensor,
-                dict[Any, Any],
-                dict[Any, Any],
-                dict[Any, Any],
-                dict[Any, Any],
-            ],
-        ):
-            (
-                data,
-                (idx_s, idx_t),
-                h,
-                m,
-                bases,
-                main_graph,
-                a2a_graph,
-                a2ee2a_graph,
-                id_swap,
-                trip_idx_e2e,
-                trip_idx_a2e,
-                trip_idx_e2a,
-                quad_idx,
-            ) = input
+    def block(
+        self,
+        i: int,
+        data: BaseData,
+        idx_t: torch.Tensor,
+        h: torch.Tensor,
+        m: torch.Tensor,
+        bases: BasesOutput,
+        main_graph: Graph,
+        a2a_graph: Graph,
+        a2ee2a_graph: Graph,
+        id_swap: torch.Tensor,
+        trip_idx_e2e: dict[Any, Any],
+        trip_idx_a2e: dict[Any, Any],
+        trip_idx_e2a: dict[Any, Any],
+        quad_idx: dict[Any, Any],
+    ):
+        # Interaction block
+        h, m = self.int_blocks[i](
+            h=h,
+            m=m,
+            bases_qint=bases.qint,
+            bases_e2e=bases.e2e,
+            bases_a2e=bases.a2e,
+            bases_e2a=bases.e2a,
+            basis_a2a_rad=bases.a2a_rad,
+            basis_atom_update=bases.atom_update,
+            edge_index_main=main_graph["edge_index"],
+            a2ee2a_graph=a2ee2a_graph,
+            a2a_graph=a2a_graph,
+            id_swap=id_swap,
+            trip_idx_e2e=trip_idx_e2e,
+            trip_idx_a2e=trip_idx_a2e,
+            trip_idx_e2a=trip_idx_e2a,
+            quad_idx=quad_idx,
+        )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
 
-            # Interaction block
-            h, m = self.int_blocks[i](
-                h=h,
-                m=m,
-                bases_qint=bases.qint,
-                bases_e2e=bases.e2e,
-                bases_a2e=bases.a2e,
-                bases_e2a=bases.e2a,
-                basis_a2a_rad=bases.a2a_rad,
-                basis_atom_update=bases.atom_update,
-                edge_index_main=main_graph["edge_index"],
-                a2ee2a_graph=a2ee2a_graph,
-                a2a_graph=a2a_graph,
-                id_swap=id_swap,
-                trip_idx_e2e=trip_idx_e2e,
-                trip_idx_a2e=trip_idx_a2e,
-                trip_idx_e2a=trip_idx_e2a,
-                quad_idx=quad_idx,
-            )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
+        x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t)
+        x_E = cast(torch.Tensor, x_E)
+        x_F = cast(torch.Tensor | None, x_F)
 
-            x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t, data=data)
-
-            return h, m, x_E, x_F
-
-        if (gc_config := self.gradient_checkpointing) is not None:
-            if not TYPE_CHECKING:
-                # This is a workaround to make sure that the type checker
-                # keeps the same type for the inner function.
-                inner = checkpoint(
-                    inner,
-                    use_reentrant=gc_config.use_reentrant,
-                    preserve_rng_state=gc_config.preserve_rng_state,
-                )
-
-        return inner
+        return h, m, x_E, x_F
 
     def forward(
         self,
@@ -793,32 +761,40 @@ class GemNetOCBackbone(nn.Module):
         # m = self.edge_emb(h, bases.rbf_main, main_graph["edge_index"])
         # (nEdges_main, emb_size_edge)
 
-        x_E, x_F = self.out_blocks[0](h, m, bases.output, idx_t, data=data)
+        x_E, x_F = checkpoint(self.out_blocks[0], self.gradient_checkpointing)(
+            h, m, bases.output, idx_t
+        )
         # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
         xs_E, xs_F = [x_E], [x_F]
 
-        if self.gradient_checkpointing:
+        if (gc_config := self.gradient_checkpointing) is not None:
             if self.config.unique_basis_per_layer:
                 raise NotImplementedError
 
             for i in range(self.num_blocks):
-                h, m, x_E, x_F = self.block(i)(
-                    (
-                        data,
-                        (idx_s, idx_t),
-                        h,
-                        m,
-                        bases,
-                        main_graph,
-                        a2a_graph,
-                        a2ee2a_graph,
-                        id_swap,
-                        trip_idx_e2e,
-                        trip_idx_a2e,
-                        trip_idx_e2a,
-                        quad_idx,
-                    )
+                ckpt_out = checkpoint(self.block, gc_config)(
+                    i,
+                    data,
+                    idx_t,
+                    h,
+                    m,
+                    bases,
+                    main_graph,
+                    a2a_graph,
+                    a2ee2a_graph,
+                    id_swap,
+                    trip_idx_e2e,
+                    trip_idx_a2e,
+                    trip_idx_e2a,
+                    quad_idx,
                 )
+                ckpt_out = cast(
+                    tuple[
+                        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None
+                    ],
+                    ckpt_out,
+                )
+                h, m, x_E, x_F = ckpt_out
                 xs_E.append(x_E)
                 xs_F.append(x_F)
         else:
@@ -859,7 +835,7 @@ class GemNetOCBackbone(nn.Module):
                     quad_idx=quad_idx,
                 )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
 
-                x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t, data=data)
+                x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t)
                 # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
                 xs_E.append(x_E)
                 xs_F.append(x_F)

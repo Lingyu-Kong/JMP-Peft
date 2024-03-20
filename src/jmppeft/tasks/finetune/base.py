@@ -51,6 +51,7 @@ from ...utils.goc_graph import (
     subselect_graph,
     tag_mask,
 )
+from ...utils.gradient_checkpointing import GradientCheckpointingConfig
 from ...utils.state_dict import load_state_dict
 from ..config import (
     EmbeddingConfig,
@@ -294,20 +295,6 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
     FinetuneLmdbDatasetConfig | FinetunePDBBindDatasetConfig,
     Field(discriminator="name"),
 ]
-
-
-class GradientCheckpointingConfig(TypedConfig):
-    preserve_rng_state: bool = False
-    """
-    Whether to preserve the RNG state when checkpointing.
-    Incurs a small overhead if set to `True`.
-    """
-
-    use_reentrant: bool = False
-    """
-    Whether to use reentrant checkpointing.
-    This is recommended to be `False`, see https://pytorch.org/docs/stable/checkpoint.html#torch.utils.checkpoint.checkpoint
-    """
 
 
 class FinetuneConfigBase(BaseConfig):

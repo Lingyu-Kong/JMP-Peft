@@ -120,7 +120,7 @@ def create_config(
     jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
     jmp_l_qm9_config_(config, target, base_path)
 
-    config.batch_size = 32
+    config.batch_size = 256
 
     lora_lr_scale = None
     if lora:

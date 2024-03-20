@@ -211,7 +211,7 @@ class OutputBlock(AtomUpdateBlock):
         x = x / (1 - self.edge_dropout)
         return x
 
-    def forward(self, h, m, basis_rad, idx_atom, *, data):
+    def forward(self, h, m, basis_rad, idx_atom):
         """
         Returns
         -------
