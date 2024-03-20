@@ -145,6 +145,7 @@ def create_config(
         lora_lr_scale=lora_lr_scale,
     )
 
+    config.freeze.report_parameters = True
     # config.freeze.embedding = True
 
     # GC

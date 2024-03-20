@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
 
 import rich
+import rich.console
 import rich.table
+import rich.tree
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -73,6 +75,7 @@ from .output_head import (
 )
 
 log = getLogger(__name__)
+
 
 DatasetType: TypeAlias = FinetuneLmdbDataset
 
@@ -174,6 +177,11 @@ class FreezeConfig(TypedConfig):
 
     ensure_non_frozen_parameter_patterns: list[str] = []
     """List of parameter patterns to ensure are not frozen"""
+
+    report_parameters: bool = False
+    """
+    If `True`, we will print a large table of all parameters and their requires_grad status.
+    """
 
 
 class ParamSpecificOptimizerConfig(TypedConfig):
@@ -651,39 +659,39 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             yield name, param, matching_pattern
 
     def process_freezing(self):
-        if self.config.freeze.backbone:
+        config = self.config.freeze
+
+        if config.backbone:
             self.freeze_parameters(self.backbone.parameters(), name="backbone")
 
-        if self.config.freeze.embedding:
+        if config.embedding:
             self.freeze_parameters(self.embedding.parameters(), name="embedding")
 
-        if self.config.freeze.backbone_interaction_layers:
-            for layer_idx in self.config.freeze.backbone_interaction_layers:
+        if config.backbone_interaction_layers:
+            for layer_idx in config.backbone_interaction_layers:
                 self.freeze_parameters(
                     self.backbone.int_blocks[layer_idx].parameters(),
                     name=f"backbone.int_blocks[{layer_idx}]",
                 )
 
-        if self.config.freeze.backbone_output_layers:
-            for layer_idx in self.config.freeze.backbone_output_layers:
+        if config.backbone_output_layers:
+            for layer_idx in config.backbone_output_layers:
                 self.freeze_parameters(
                     self.backbone.out_blocks[layer_idx].parameters(),
                     name=f"backbone.out_blocks[{layer_idx}]",
                 )
 
-        if self.config.freeze.backbone_bases:
+        if config.backbone_bases:
             self.freeze_parameters(
                 self.backbone.bases.parameters(), name="backbone.bases"
             )
 
-        if self.config.freeze.parameter_patterns:
+        if config.parameter_patterns:
             for (
                 name,
                 param,
                 matching_pattern,
-            ) in self.named_parameters_matching_patterns(
-                self.config.freeze.parameter_patterns
-            ):
+            ) in self.named_parameters_matching_patterns(config.parameter_patterns):
                 param.requires_grad = False
                 log.info(f"Freezing {name} (pattern: {matching_pattern})")
 
@@ -739,7 +747,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         # After we do all the freezing, we want to unfreeze any parameters that
         #   match the ensure_non_frozen_parameter_patterns.
-        if nonfrozen := self.config.freeze.ensure_non_frozen_parameter_patterns:
+        if nonfrozen := config.ensure_non_frozen_parameter_patterns:
             for (
                 name,
                 param,
@@ -750,6 +758,48 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
                 param.requires_grad = True
                 log.info(f"Unfreezing {name} (pattern: {matching_pattern})")
+
+        if config.report_parameters:
+            tree = rich.tree.Tree("Parameters")
+
+            def _print_submodule(submodule: nn.Module, name: str):
+                # Compute the total number of parameters for title
+                num_params = sum(p.numel() for p in submodule.parameters())
+                num_trainable = sum(
+                    p.numel() for p in submodule.parameters() if p.requires_grad
+                )
+                percent_trainble = int(math.ceil(num_trainable / num_params * 100))
+                title = (
+                    f"{name} --- {num_trainable:,}/{num_params:,} ({percent_trainble}%)"
+                )
+
+                # Parameter table
+                table = rich.table.Table()
+                table.add_column("Trainable [✅/❌]", justify="right")
+                table.add_column("Name", justify="left")
+                table.add_column("# of Params (Trainable/Total)", justify="right")
+
+                # # Sort parameters by first requires_grad (True first) and then name (A-Z)
+                # parameters = sorted(
+                #     submodule.named_parameters(),
+                #     key=lambda x: (not x[1].requires_grad, x[0]),
+                # )
+                for name, param in submodule.named_parameters():
+                    num_params = param.numel()
+                    trainable = num_params if param.requires_grad else 0
+                    table.add_row(
+                        "✅" if param.requires_grad else "❌",
+                        name,
+                        f"{trainable:,}/{num_params:,}",
+                    )
+
+                return rich.console.Group(title, table)
+
+            tree.add(_print_submodule(self.embedding, "Embedding"))
+            tree.add(_print_submodule(self.backbone, "Backbone"))
+            tree.add(_print_submodule(self.outputs, "Output Heads"))
+
+            rich.print(tree)
 
         all_parameters = [
             param for param in self.parameters() if param not in self.ignored_parameters
