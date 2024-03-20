@@ -696,6 +696,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 param,
                 matching_pattern,
             ) in self.named_parameters_matching_patterns(nonfrozen):
+                if param.requires_grad:
+                    continue
+
                 param.requires_grad = True
                 log.info(f"Unfreezing {name} (pattern: {matching_pattern})")
 
