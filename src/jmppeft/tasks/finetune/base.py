@@ -2,12 +2,14 @@ import copy
 import fnmatch
 import math
 from abc import abstractmethod
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 from logging import getLogger
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
 
+import rich
+import rich.table
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -391,6 +393,9 @@ class FinetuneConfigBase(BaseConfig):
     ema: EMAConfig | None = None
     """Configuration for exponential moving average"""
 
+    debug_print_every: int | None = None
+    """Print debug information every `debug_print_every` iterations. `None` to disable."""
+
     @override
     def __post_init__(self):
         super().__post_init__()
@@ -620,11 +625,14 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         self,
         patterns: list[str],
         ignored_parameters: set[nn.Parameter] | None = None,
+        requires_grad_only: bool = False,
     ):
         ignored_parameters_set = self.ignored_parameters | (ignored_parameters or set())
 
         for name, param in self.named_parameters():
             if param in ignored_parameters_set:
+                continue
+            if requires_grad_only and not param.requires_grad:
                 continue
             if (
                 matching_pattern := next(
@@ -771,6 +779,48 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         if not self.config.ckpt_load.reset_embeddings:
             load_state_dict(self.embedding, embedding, strict=strict)
         log.critical("Loaded backbone state dict (backbone and embedding).")
+
+    def _lora_debug_print(self):
+        # Check print_every parameter.
+        if (
+            self.config.debug_print_every is None
+            or (self.global_step % self.config.debug_print_every) != 0
+        ):
+            return
+
+        # Create a rich table to print the following:
+        # - Optimizer state memory usage
+        # - Total memory usage
+
+        table = rich.table.Table(
+            title="Memory Usage",
+        )
+
+        # Add columns
+        table.add_column("Name", justify="left", style="cyan")
+        table.add_column("Memory Usage", justify="right", style="magenta")
+
+        # Add rows
+        # - Optimizer state memory usage
+        optimizer_state_memory_usage = 0
+        optimizers = self.optimizers()
+        if not isinstance(optimizers, Sequence):
+            optimizers = [optimizers]
+        for optimizer in optimizers:
+            for group in optimizer.param_groups:
+                for param in group["params"]:
+                    optimizer_state_memory_usage += param.numel() * param.element_size()
+
+        optimizer_state_memory_usage = optimizer_state_memory_usage / (1024**3)
+        table.add_row("Optimizer State", f"{optimizer_state_memory_usage:,} GB")
+
+        # - Total memory usage
+        total_memory_usage = torch.cuda.memory_allocated()
+        total_memory_usage = total_memory_usage / (1024**3)
+        table.add_row("Total", f"{total_memory_usage:,} GB")
+
+        # Print the table
+        rich.print(table)
 
     @override
     def forward(self, data: BaseData):
@@ -941,6 +991,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             loss = self.compute_losses(batch, preds)
             self.log_dict(self.train_metrics(batch, preds))
 
+            self._lora_debug_print()
+
             return loss
 
     @override
@@ -1010,6 +1062,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         self,
         pattern_lists: list[list[str]],
         no_double_counting: bool = True,
+        requires_grad_only: bool = True,
     ):
         """
         Splits the parameters of the model into multiple groups based on the provided pattern lists.
@@ -1018,22 +1071,27 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             pattern_lists (list[list[str]]): A list of pattern lists. Each pattern list contains a set of patterns
                 used to match parameter names.
             no_double_counting (bool): If True, parameters that match multiple patterns will only be counted once.
+            requires_grad_only (bool): If True, only parameters with requires_grad=True will be considered.
 
         Returns:
-            parameters (list[list[torch.nn.Parameter]]): A list of parameter groups. Each group contains the parameters
+            parameters (list[list[nn.Parameter]]): A list of parameter groups. Each group contains the parameters
                 that match the patterns in the corresponding pattern list.
-            all_parameters (list[torch.nn.Parameter]): The remaining parameters that do not match any of the patterns.
+            all_parameters (list[nn.Parameter]): The remaining parameters that do not match any of the patterns.
         """
 
         matched_parameters = set[nn.Parameter]()
-        all_parameters = list(self.parameters())
+        all_parameters = [
+            p for p in self.parameters() if not requires_grad_only or p.requires_grad
+        ]
 
-        parameters: list[list[torch.nn.Parameter]] = []
+        parameters: list[list[nn.Parameter]] = []
         for patterns in pattern_lists:
             matching = [
                 p
                 for _, p, _ in self.named_parameters_matching_patterns(
-                    patterns, matched_parameters
+                    patterns,
+                    ignored_parameters=matched_parameters,
+                    requires_grad_only=requires_grad_only,
                 )
             ]
 
