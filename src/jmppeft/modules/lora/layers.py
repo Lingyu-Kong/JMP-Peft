@@ -13,12 +13,14 @@ class LoRALayer:
     def __init__(
         self,
         r: int,
-        lora_alpha: int | float,
+        lora_alpha: int,
         lora_dropout: float,
         merge_weights: bool,
+        use_rslora: bool = False,
     ):
         self.r = r
         self.lora_alpha = lora_alpha
+        self.use_rslora = use_rslora
         # Optional dropout
         if lora_dropout > 0.0:
             self.lora_dropout = nn.Dropout(p=lora_dropout)
@@ -28,6 +30,12 @@ class LoRALayer:
         self.merged = False
         self.merge_weights = merge_weights
 
+    def _compute_scaling(self, r: int, lora_alpha: int) -> float:
+        if self.use_rslora:
+            return lora_alpha / math.sqrt(r)
+        else:
+            return lora_alpha / r
+
 
 class Embedding(nn.Embedding, LoRALayer):
     # LoRA implemented in a dense layer
@@ -36,8 +44,9 @@ class Embedding(nn.Embedding, LoRALayer):
         num_embeddings: int,
         embedding_dim: int,
         r: int = 0,
-        lora_alpha: int | float = 1,
+        lora_alpha: int = 1,
         merge_weights: bool = True,
+        use_rslora: bool = False,
         **kwargs,
     ):
         nn.Embedding.__init__(self, num_embeddings, embedding_dim, **kwargs)
@@ -47,12 +56,13 @@ class Embedding(nn.Embedding, LoRALayer):
             lora_alpha=lora_alpha,
             lora_dropout=0,
             merge_weights=merge_weights,
+            use_rslora=use_rslora,
         )
         # Actual trainable parameters
         if r > 0:
             self.lora_A = nn.Parameter(self.weight.new_zeros((r, num_embeddings)))
             self.lora_B = nn.Parameter(self.weight.new_zeros((embedding_dim, r)))
-            self.scaling = self.lora_alpha / self.r
+            self.scaling = self._compute_scaling(self.r, self.lora_alpha)
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
         self.reset_parameters()
@@ -108,10 +118,11 @@ class Linear(nn.Linear, LoRALayer):
         in_features: int,
         out_features: int,
         r: int = 0,
-        lora_alpha: int | float = 1,
+        lora_alpha: int = 1,
         lora_dropout: float = 0.0,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
         merge_weights: bool = True,
+        use_rslora: bool = False,
         add_bias_to_lora_linear: bool = False,
         **kwargs,
     ):
@@ -122,6 +133,7 @@ class Linear(nn.Linear, LoRALayer):
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             merge_weights=merge_weights,
+            use_rslora=use_rslora,
         )
 
         self.fan_in_fan_out = fan_in_fan_out
@@ -129,7 +141,7 @@ class Linear(nn.Linear, LoRALayer):
         if r > 0:
             self.lora_A = nn.Parameter(self.weight.new_zeros((r, in_features)))
             self.lora_B = nn.Parameter(self.weight.new_zeros((out_features, r)))
-            self.scaling = self.lora_alpha / self.r
+            self.scaling = self._compute_scaling(self.r, self.lora_alpha)
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
         self.reset_parameters()
@@ -189,11 +201,12 @@ class MergedLinear(nn.Linear, LoRALayer):
         in_features: int,
         out_features: int,
         r: int = 0,
-        lora_alpha: int | float = 1,
+        lora_alpha: int = 1,
         lora_dropout: float = 0.0,
         enable_lora: list[bool] = [False],
         fan_in_fan_out: bool = False,
         merge_weights: bool = True,
+        use_rslora: bool = False,
         **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
@@ -203,6 +216,7 @@ class MergedLinear(nn.Linear, LoRALayer):
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             merge_weights=merge_weights,
+            use_rslora=use_rslora,
         )
         assert (
             out_features % len(enable_lora) == 0
@@ -219,7 +233,7 @@ class MergedLinear(nn.Linear, LoRALayer):
                     (out_features // len(enable_lora) * sum(enable_lora), r)
                 )
             )  # weights for Conv1D with groups=sum(enable_lora)
-            self.scaling = self.lora_alpha / self.r
+            self.scaling = self._compute_scaling(self.r, self.lora_alpha)
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
             # Compute the indices
@@ -297,6 +311,7 @@ class ConvLoRA(nn.Module, LoRALayer):
         lora_alpha=1,
         lora_dropout=0.0,
         merge_weights=True,
+        use_rslora: bool = False,
         **kwargs,
     ):
         super(ConvLoRA, self).__init__()
@@ -307,6 +322,7 @@ class ConvLoRA(nn.Module, LoRALayer):
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             merge_weights=merge_weights,
+            use_rslora=use_rslora,
         )
         assert isinstance(kernel_size, int)
         # Actual trainable parameters
@@ -319,7 +335,7 @@ class ConvLoRA(nn.Module, LoRALayer):
                     (out_channels // self.conv.groups * kernel_size, r * kernel_size)
                 )
             )
-            self.scaling = self.lora_alpha / self.r
+            self.scaling = self._compute_scaling(self.r, self.lora_alpha)
             # Freezing the pre-trained weight matrix
             self.conv.weight.requires_grad = False
         self.reset_parameters()

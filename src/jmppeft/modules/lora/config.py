@@ -14,6 +14,7 @@ class _LoraKwargs(TypedDict):
     lora_alpha: int
     lora_dropout: float
     merge_weights: bool
+    use_rslora: bool
 
 
 class _LoraLinearKwargs(_LoraKwargs):
@@ -128,21 +129,12 @@ class LoraConfig(TypedConfig):
 
         assert self.r > 0, f"Invalid r={self.r} for LoRA. Must be > 0."
 
-        # HACK:
-        # `loralib.Linear` computes the adapter scaling factor as `lora_alpha/r`.
-        #   In other words, it does not support `use_rslora`.
-        #   We support `use_rslora` by computing `x` such that
-        #   `(x/r) == lora_alpha/math.sqrt(r)` and `x` is the new `lora_alpha`.
-        #   This is a hacky way to support `use_rslora` without modifying `loralib`.
-        lora_alpha_input = self.alpha
-        if self.use_rslora:
-            lora_alpha_input = cast(Any, self.alpha * math.sqrt(self.r))
-
         return _LoraKwargs(
             r=self.r,
-            lora_alpha=lora_alpha_input,
+            lora_alpha=self.alpha,
             lora_dropout=self.dropout,
             merge_weights=self.merge_weights,
+            use_rslora=self.use_rslora,
         )
 
     def as_linear_kwargs(self):
