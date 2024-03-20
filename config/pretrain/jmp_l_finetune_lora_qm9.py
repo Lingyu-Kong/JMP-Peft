@@ -96,6 +96,8 @@ def lora_config_(
         r=r,
         children=children,
         alpha=alpha,
+        bias="all",
+        use_rslora=True,
     )
 
 
@@ -150,7 +152,7 @@ def create_config(
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 configs.append(create_config("eps_HOMO", True))
-configs.append(create_config("eps_HOMO", False))
+# configs.append(create_config("eps_HOMO", False))
 
 # %%
 from jmppeft.utils.finetune_state_dict import (
@@ -191,3 +193,5 @@ runner.local_session_per_gpu(
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )
+
+# %%
