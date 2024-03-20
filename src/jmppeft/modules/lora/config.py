@@ -4,6 +4,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
 from ll import PrivateAttr, TypedConfig
+from typing_extensions import override
 
 log = getLogger(__name__)
 
@@ -13,6 +14,10 @@ class _LoraKwargs(TypedDict):
     lora_alpha: int
     lora_dropout: float
     merge_weights: bool
+
+
+class _LoraLinearKwargs(_LoraKwargs):
+    add_bias_to_lora_linear: bool
 
 
 _PathTree: TypeAlias = dict[str, Any]
@@ -47,6 +52,12 @@ class LoraRootConfig(TypedConfig):
     When set to True, uses [Rank-Stabilized LoRA](https://doi.org/10.48550/arXiv.2312.03732) which sets the adapter scaling factor to `lora_alpha/math.sqrt(r)`, since it was proven to work better. Otherwise, it will use the original default value of `lora_alpha/r`.
     """
 
+    add_bias_to_lora_linear: bool = False
+    """
+    If enabled, adds a bias to LoRA-enabled linear layers that did not have a bias in the original model.
+    This is useful for using `bias="lora_only"` for models that do not have biases in the original model (e.g., GemNet).
+    """
+
     # Tracking children
     all_children_paths: _PathTree = {}
 
@@ -72,6 +83,16 @@ class LoraRootConfig(TypedConfig):
                 pprint_tree(v, depth + 1)
 
         pprint_tree(self.all_children_paths)
+
+    @override
+    def __post_init__(self):
+        super().__post_init__()
+
+        if self.add_bias_to_lora_linear:
+            assert self.bias in ("all", "lora_only"), (
+                "Bias must be 'all' or 'lora_only' "
+                "when `add_bias_to_lora_linear` is enabled."
+            )
 
 
 class LoraConfig(TypedConfig):
@@ -122,6 +143,12 @@ class LoraConfig(TypedConfig):
             lora_alpha=lora_alpha_input,
             lora_dropout=self.dropout,
             merge_weights=self.merge_weights,
+        )
+
+    def as_linear_kwargs(self):
+        return _LoraLinearKwargs(
+            **self.as_kwargs(),
+            add_bias_to_lora_linear=self._root.add_bias_to_lora_linear,
         )
 
     @property

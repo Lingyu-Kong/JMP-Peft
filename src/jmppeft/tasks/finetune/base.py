@@ -41,6 +41,7 @@ from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
+from ...modules.lora import Linear as LoraLinear
 from ...modules.lora import LoraConfig, LoRALayer, LoraRootConfig
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
@@ -848,6 +849,31 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             key_prefix="ft_mlp_",
         )
 
+    def lora_added_bias_parameters(self):
+        if (
+            (lc := self.config.lora) is None
+            or not lc.enabled
+            or not lc.add_bias_to_lora_linear
+        ):
+            return {}
+
+        # Get all LoRA A/B parameters
+        lora_added_bias_parameters: dict[str, torch.Tensor] = {}
+        for name, module in self.backbone.named_modules(
+            remove_duplicate=False,
+            # ^ `remove_duplicate=False` is necessary because we have multiple
+            #   modules with the same name (e.g., see `seq_energy_pre` in GemNet's output blocks).
+        ):
+            if (
+                not isinstance(module, LoraLinear)
+                or not module.has_new_lora_linear_bias
+            ):
+                continue
+
+            lora_added_bias_parameters[f"{name}.bias"] = module.bias
+
+        return lora_added_bias_parameters
+
     def load_backbone_state_dict(
         self,
         *,
@@ -869,11 +895,22 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 ignored_key_patterns.append(f"out_blocks.{block_idx}.seq_forces.*")
 
         # Ignore non-existant LoRA parameters
+        lora_added_bias_parameters = set(self.lora_added_bias_parameters().keys())
+        log.debug(f"LoRA added bias parameters: {lora_added_bias_parameters}")
+
         def should_ignore_missing_key_fn(k: str):
             if (lc := self.config.lora) is None or not lc.enabled:
                 return False
 
-            return k.endswith(".lora_A") or k.endswith(".lora_B")
+            # Ignore non-existant LoRA A/B keys
+            if k.endswith(".lora_A") or k.endswith(".lora_B"):
+                return True
+
+            # Ignore new bias keys added by us
+            if k in lora_added_bias_parameters:
+                return True
+
+            return False
 
         load_state_dict(
             self.backbone,

@@ -13,7 +13,7 @@ class LoRALayer:
     def __init__(
         self,
         r: int,
-        lora_alpha: int,
+        lora_alpha: int | float,
         lora_dropout: float,
         merge_weights: bool,
     ):
@@ -36,7 +36,7 @@ class Embedding(nn.Embedding, LoRALayer):
         num_embeddings: int,
         embedding_dim: int,
         r: int = 0,
-        lora_alpha: int = 1,
+        lora_alpha: int | float = 1,
         merge_weights: bool = True,
         **kwargs,
     ):
@@ -108,10 +108,11 @@ class Linear(nn.Linear, LoRALayer):
         in_features: int,
         out_features: int,
         r: int = 0,
-        lora_alpha: int = 1,
+        lora_alpha: int | float = 1,
         lora_dropout: float = 0.0,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
         merge_weights: bool = True,
+        add_bias_to_lora_linear: bool = False,
         **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
@@ -134,6 +135,11 @@ class Linear(nn.Linear, LoRALayer):
         self.reset_parameters()
         if fan_in_fan_out:
             self.weight.data = self.weight.data.transpose(0, 1)
+
+        self.has_new_lora_linear_bias = False
+        if add_bias_to_lora_linear and self.bias is None:
+            self.bias = nn.Parameter(torch.zeros(out_features))
+            self.has_new_lora_linear_bias = True
 
     def reset_parameters(self):
         nn.Linear.reset_parameters(self)
@@ -183,7 +189,7 @@ class MergedLinear(nn.Linear, LoRALayer):
         in_features: int,
         out_features: int,
         r: int = 0,
-        lora_alpha: int = 1,
+        lora_alpha: int | float = 1,
         lora_dropout: float = 0.0,
         enable_lora: list[bool] = [False],
         fan_in_fan_out: bool = False,

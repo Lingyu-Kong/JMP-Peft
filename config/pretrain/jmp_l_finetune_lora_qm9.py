@@ -98,6 +98,7 @@ def lora_config_(
         alpha=alpha,
         bias="all",
         use_rslora=True,
+        add_bias_to_lora_linear=True,
     )
 
 

@@ -52,7 +52,7 @@ class Dense(nn.Module):
                 in_features,
                 out_features,
                 bias=bias,
-                **lora.as_kwargs(),
+                **lora.as_linear_kwargs(),
             )
         else:
             self.linear = nn.Linear(in_features, out_features, bias=bias)
