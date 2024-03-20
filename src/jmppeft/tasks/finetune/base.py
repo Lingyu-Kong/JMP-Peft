@@ -21,6 +21,7 @@ from lightning.pytorch.utilities.types import (
 from ll import AllowMissing, BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from ll.util.typed import TypedModuleDict
+from loralib import LoRALayer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
@@ -692,14 +693,49 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             and lc.freeze_non_lora_backbone
         ):
             # See https://github.com/microsoft/LoRA/blob/main/loralib/utils.py#L13
-            self.freeze_parameters(
-                (
-                    param
-                    for name, param in self.backbone.named_parameters()
-                    if not name.endswith(".lora_A") and not name.endswith(".lora_B")
-                ),
-                name="backbone (non-LoRA)",
-            )
+            # Get all non-LoRA parameters. We make this a set
+            #   because it'll be more efficient to pop from a set than a list.
+            parameters = {
+                param
+                for name, param in self.backbone.named_parameters()
+                if not name.endswith(".lora_A") and not name.endswith(".lora_B")
+            }
+            # Handle the bias config
+            match lc.bias:
+                case "none":
+                    # Do nothing
+                    pass
+                case "all":
+                    # Unfreeze all bias parameters.
+                    for name, param in self.backbone.named_parameters():
+                        if "bias" not in name:
+                            continue
+                        if param not in parameters:
+                            continue
+                        parameters.remove(param)
+                case "lora_only":
+                    # Unfreeze only the bias parameters of nn.Linear layers
+                    #   that are LoRA layers.
+                    for m in self.backbone.modules():
+                        if (
+                            not isinstance(m, LoRALayer)
+                            or (bias := getattr(m, "bias", None)) is None
+                        ):
+                            continue
+
+                        if bias not in parameters:
+                            log.warning(
+                                f"LoRA layer bias parameter {m} not found in list of parameters to freeze. "
+                                "This should not happen."
+                            )
+                            continue
+
+                        parameters.remove(bias)
+
+                case _:
+                    assert_never(lc.bias)
+
+            self.freeze_parameters(parameters, name="backbone (non-LoRA)")
 
         # After we do all the freezing, we want to unfreeze any parameters that
         #   match the ensure_non_frozen_parameter_patterns.

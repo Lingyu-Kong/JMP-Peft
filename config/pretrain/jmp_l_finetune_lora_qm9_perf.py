@@ -24,11 +24,8 @@ def _flatten(config: dict[str, dict[str, Any]]):
     }
 
 
-def lora_config_(
+def _lora_children_config(
     config: FinetuneConfigBase,
-    *,
-    r: int,
-    alpha: int,
     filter_children: bool,
 ):
     int_block_configs = {
@@ -92,12 +89,7 @@ def lora_config_(
         else {}
     )
 
-    config.lora = LoraRootConfig(
-        enabled_by_default=True,
-        r=r,
-        children=children,
-        alpha=alpha,
-    )
+    return children
 
 
 # ckpt_path = Path(
@@ -120,11 +112,18 @@ def create_config(
     jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
     jmp_l_qm9_config_(config, target, base_path)
 
-    config.batch_size = 256
+    config.batch_size = 32
 
     lora_lr_scale = None
     if lora:
-        lora_config_(config, r=8, alpha=16, filter_children=True)
+        config.lora = LoraRootConfig(
+            enabled_by_default=True,
+            r=8,
+            alpha=16,
+            children=_lora_children_config(config, True),
+            freeze_non_lora_backbone=True,
+            bias="lora_only",
+        )
         config.name += "-lora"
         lora_lr_scale = lora_lr / config.optimizer.lr
     else:
@@ -149,7 +148,7 @@ def create_config(
     # config.freeze.embedding = True
 
     # GC
-    config.gradient_checkpointing = GradientCheckpointingConfig()
+    # config.gradient_checkpointing = GradientCheckpointingConfig()
 
     # Debug
     config.trainer.logging.enabled = False

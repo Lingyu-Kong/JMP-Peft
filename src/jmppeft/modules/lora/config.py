@@ -1,7 +1,7 @@
 import math
 from functools import partial
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
 
 from ll import PrivateAttr, TypedConfig
 
@@ -27,6 +27,11 @@ class LoraRootConfig(TypedConfig):
 
     freeze_non_lora_backbone: bool = True
     """Should non-LoRA layers in the backbone be frozen?"""
+
+    bias: Literal["none", "all", "lora_only"] = "none"
+    """
+    Bias type for LoRA. Can be `"none"`, `"all"` or `"lora_only"`. If `"all"` or `"lora_only"`, the corresponding biases will be updated during training. Be aware that this means that, even when disabling the adapters, the model will not produce the same output as the base model would have without adaptation.
+    """
 
     children: dict[str, Any] = {}
     """Configuration for children modules."""
@@ -79,7 +84,7 @@ class LoraConfig(TypedConfig):
     dropout: float
     merge_weights: bool
 
-    use_rslora: bool = False
+    use_rslora: bool
     """
     When set to True, uses [Rank-Stabilized LoRA](https://doi.org/10.48550/arXiv.2312.03732) which sets the adapter scaling factor to `lora_alpha/math.sqrt(r)`, since it was proven to work better. Otherwise, it will use the original default value of `lora_alpha/r`.
     """
