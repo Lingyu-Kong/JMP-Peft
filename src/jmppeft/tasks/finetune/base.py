@@ -10,6 +10,7 @@ from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, ca
 
 import rich
 import rich.console
+import rich.markdown
 import rich.table
 import rich.tree
 import torch
@@ -762,11 +763,15 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         if config.report_parameters:
             tree = rich.tree.Tree("Parameters")
 
-            def _print_submodule(submodule: nn.Module, name: str):
+            def _add_module(
+                root_tree: rich.tree.Tree,
+                module: nn.Module,
+                name: str,
+            ):
                 # Compute the total number of parameters for title
-                num_params = sum(p.numel() for p in submodule.parameters())
+                num_params = sum(p.numel() for p in module.parameters())
                 num_trainable = sum(
-                    p.numel() for p in submodule.parameters() if p.requires_grad
+                    p.numel() for p in module.parameters() if p.requires_grad
                 )
                 percent_trainble = int(math.ceil(num_trainable / num_params * 100))
                 title = (
@@ -775,29 +780,42 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
                 # Parameter table
                 table = rich.table.Table()
-                table.add_column("Trainable [✅/❌]", justify="right")
                 table.add_column("Name", justify="left")
-                table.add_column("# of Params (Trainable/Total)", justify="right")
+                table.add_column("Trainable?", justify="center")
+                table.add_column("# (Trainable/Total)", justify="right")
 
                 # # Sort parameters by first requires_grad (True first) and then name (A-Z)
                 # parameters = sorted(
                 #     submodule.named_parameters(),
                 #     key=lambda x: (not x[1].requires_grad, x[0]),
                 # )
-                for name, param in submodule.named_parameters():
-                    num_params = param.numel()
-                    trainable = num_params if param.requires_grad else 0
-                    table.add_row(
-                        "✅" if param.requires_grad else "❌",
-                        name,
-                        f"{trainable:,}/{num_params:,}",
+                for module_name, submodule in module.named_modules():
+                    immediate_parameters = list(
+                        submodule.named_parameters(recurse=False)
                     )
+                    # If no parameters, skip
+                    if not immediate_parameters or not sum(
+                        param.numel() for _, param in immediate_parameters
+                    ):
+                        continue
 
-                return rich.console.Group(title, table)
+                    # Add parameters to the table
+                    for i, (name, param) in enumerate(immediate_parameters):
+                        num_params = param.numel()
+                        trainable = num_params if param.requires_grad else 0
+                        prefix = f"**{module_name}**" if i % 2 == 0 else module_name
+                        table.add_row(
+                            rich.markdown.Markdown(f"\t{prefix}.{name}"),
+                            "✅" if param.requires_grad else "❌",
+                            f"{trainable:,}/{num_params:,}",
+                        )
 
-            tree.add(_print_submodule(self.embedding, "Embedding"))
-            tree.add(_print_submodule(self.backbone, "Backbone"))
-            tree.add(_print_submodule(self.outputs, "Output Heads"))
+                group = rich.console.Group(title, table)
+                root_tree.add(group)
+
+            _add_module(tree, self.embedding, "Embedding")
+            _add_module(tree, self.backbone, "Backbone")
+            _add_module(tree, self.outputs, "Output")
 
             rich.print(tree)
 
