@@ -296,7 +296,24 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
 ]
 
 
+class GradientCheckpointingConfig(TypedConfig):
+    preserve_rng_state: bool = False
+    """
+    Whether to preserve the RNG state when checkpointing.
+    Incurs a small overhead if set to `True`.
+    """
+
+    use_reentrant: bool = False
+    """
+    Whether to use reentrant checkpointing.
+    This is recommended to be `False`, see https://pytorch.org/docs/stable/checkpoint.html#torch.utils.checkpoint.checkpoint
+    """
+
+
 class FinetuneConfigBase(BaseConfig):
+    gradient_checkpointing: GradientCheckpointingConfig | None = None
+    """Gradient checkpointing configuration"""
+
     train_dataset: FinetuneDatasetConfig | None = None
     """Configuration for the train dataset"""
     val_dataset: FinetuneDatasetConfig | None = None
@@ -490,6 +507,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             lora=self.config.lora.create_lora_config()
             if self.config.lora
             else LoraConfig.disabled(),
+            gradient_checkpointing=self.config.gradient_checkpointing,
         )
 
         return backbone

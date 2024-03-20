@@ -8,6 +8,7 @@ from jmppeft.modules.lora import LoraRootConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
+    GradientCheckpointingConfig,
 )
 from jmppeft.tasks.finetune.qm9 import QM9Config, QM9Model, QM9Target
 from jmppeft.utils.param_specific_util import (
@@ -145,7 +146,11 @@ def create_config(
         lora_lr_scale=lora_lr_scale,
     )
 
-    config.freeze.embedding = True
+    # config.freeze.embedding = True
+
+    # GC
+    config.gradient_checkpointing = GradientCheckpointingConfig()
+
     # Debug
     config.trainer.logging.enabled = False
     config.debug_print_every = 10

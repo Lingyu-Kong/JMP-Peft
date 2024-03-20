@@ -4,18 +4,19 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
-from typing import TypedDict
+from functools import cache
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import torch
 import torch.nn as nn
-
 from ll.util.typed import TypedModuleList
+from torch.utils.checkpoint import checkpoint
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo
 
 from ...modules.lora import LoraConfig
 from ...modules.scaling.compat import load_scales_compat
-from ...utils.goc_graph import graphs_from_batch
+from ...utils.goc_graph import Graph, graphs_from_batch
 from .bases import Bases, BasesOutput
 from .config import BackboneConfig, BasesConfig
 from .interaction_indices import get_mixed_triplets, get_quadruplets, get_triplets
@@ -30,6 +31,9 @@ from .utils import (
     inner_product_clamped,
     repeat_blocks,
 )
+
+if TYPE_CHECKING:
+    from ...tasks.finetune.base import GradientCheckpointingConfig
 
 
 class GOCBackboneOutput(TypedDict):
@@ -241,6 +245,7 @@ class GemNetOCBackbone(nn.Module):
         scale_file: str | None = None,
         absolute_rbf_cutoff: float | None = None,
         lora: LoraConfig = LoraConfig.disabled(),
+        gradient_checkpointing: "GradientCheckpointingConfig | None" = None,
         **kwargs,
     ):
         super().__init__()
@@ -250,6 +255,7 @@ class GemNetOCBackbone(nn.Module):
         print("Unrecognized arguments: ", kwargs.keys())
 
         self.config = config
+        self.gradient_checkpointing = gradient_checkpointing
 
         self.num_targets = num_targets
         assert num_blocks > 0
@@ -655,6 +661,7 @@ class GemNetOCBackbone(nn.Module):
                 a2a_graph["edge_index"][1], dim_size=num_atoms
             )
 
+        main_graph = cast(Graph, main_graph)
         return (
             main_graph,
             a2a_graph,
@@ -666,6 +673,77 @@ class GemNetOCBackbone(nn.Module):
             trip_idx_e2a,
             quad_idx,
         )
+
+    @cache
+    def block(self, i: int):
+        def inner(
+            input: tuple[
+                BaseData,
+                tuple[torch.Tensor, torch.Tensor],
+                torch.Tensor,
+                torch.Tensor,
+                BasesOutput,
+                Graph,
+                Graph,
+                Graph,
+                torch.Tensor,
+                dict[Any, Any],
+                dict[Any, Any],
+                dict[Any, Any],
+                dict[Any, Any],
+            ],
+        ):
+            (
+                data,
+                (idx_s, idx_t),
+                h,
+                m,
+                bases,
+                main_graph,
+                a2a_graph,
+                a2ee2a_graph,
+                id_swap,
+                trip_idx_e2e,
+                trip_idx_a2e,
+                trip_idx_e2a,
+                quad_idx,
+            ) = input
+
+            # Interaction block
+            h, m = self.int_blocks[i](
+                h=h,
+                m=m,
+                bases_qint=bases.qint,
+                bases_e2e=bases.e2e,
+                bases_a2e=bases.a2e,
+                bases_e2a=bases.e2a,
+                basis_a2a_rad=bases.a2a_rad,
+                basis_atom_update=bases.atom_update,
+                edge_index_main=main_graph["edge_index"],
+                a2ee2a_graph=a2ee2a_graph,
+                a2a_graph=a2a_graph,
+                id_swap=id_swap,
+                trip_idx_e2e=trip_idx_e2e,
+                trip_idx_a2e=trip_idx_a2e,
+                trip_idx_e2a=trip_idx_e2a,
+                quad_idx=quad_idx,
+            )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
+
+            x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t, data=data)
+
+            return h, m, x_E, x_F
+
+        if (gc_config := self.gradient_checkpointing) is not None:
+            if not TYPE_CHECKING:
+                # This is a workaround to make sure that the type checker
+                # keeps the same type for the inner function.
+                inner = checkpoint(
+                    inner,
+                    use_reentrant=gc_config.use_reentrant,
+                    preserve_rng_state=gc_config.preserve_rng_state,
+                )
+
+        return inner
 
     def forward(
         self,
@@ -719,47 +797,72 @@ class GemNetOCBackbone(nn.Module):
         # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
         xs_E, xs_F = [x_E], [x_F]
 
-        for i in range(self.num_blocks):
+        if self.gradient_checkpointing:
             if self.config.unique_basis_per_layer:
-                bases: BasesOutput = self.per_layer_bases[i](
-                    data,
+                raise NotImplementedError
+
+            for i in range(self.num_blocks):
+                h, m, x_E, x_F = self.block(i)(
+                    (
+                        data,
+                        (idx_s, idx_t),
+                        h,
+                        m,
+                        bases,
+                        main_graph,
+                        a2a_graph,
+                        a2ee2a_graph,
+                        id_swap,
+                        trip_idx_e2e,
+                        trip_idx_a2e,
+                        trip_idx_e2a,
+                        quad_idx,
+                    )
+                )
+                xs_E.append(x_E)
+                xs_F.append(x_F)
+        else:
+            for i in range(self.num_blocks):
+                if self.config.unique_basis_per_layer:
+                    bases: BasesOutput = self.per_layer_bases[i](
+                        data,
+                        h=h,
+                        main_graph=main_graph,
+                        a2a_graph=a2a_graph,
+                        a2ee2a_graph=a2ee2a_graph,
+                        qint_graph=qint_graph,
+                        trip_idx_e2e=trip_idx_e2e,
+                        trip_idx_a2e=trip_idx_a2e,
+                        trip_idx_e2a=trip_idx_e2a,
+                        quad_idx=quad_idx,
+                        num_atoms=num_atoms,
+                    )
+                    m = m + bases.m
+
+                # Interaction block
+                h, m = self.int_blocks[i](
                     h=h,
-                    main_graph=main_graph,
-                    a2a_graph=a2a_graph,
+                    m=m,
+                    bases_qint=bases.qint,
+                    bases_e2e=bases.e2e,
+                    bases_a2e=bases.a2e,
+                    bases_e2a=bases.e2a,
+                    basis_a2a_rad=bases.a2a_rad,
+                    basis_atom_update=bases.atom_update,
+                    edge_index_main=main_graph["edge_index"],
                     a2ee2a_graph=a2ee2a_graph,
-                    qint_graph=qint_graph,
+                    a2a_graph=a2a_graph,
+                    id_swap=id_swap,
                     trip_idx_e2e=trip_idx_e2e,
                     trip_idx_a2e=trip_idx_a2e,
                     trip_idx_e2a=trip_idx_e2a,
                     quad_idx=quad_idx,
-                    num_atoms=num_atoms,
-                )
-                m = m + bases.m
+                )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
 
-            # Interaction block
-            h, m = self.int_blocks[i](
-                h=h,
-                m=m,
-                bases_qint=bases.qint,
-                bases_e2e=bases.e2e,
-                bases_a2e=bases.a2e,
-                bases_e2a=bases.e2a,
-                basis_a2a_rad=bases.a2a_rad,
-                basis_atom_update=bases.atom_update,
-                edge_index_main=main_graph["edge_index"],
-                a2ee2a_graph=a2ee2a_graph,
-                a2a_graph=a2a_graph,
-                id_swap=id_swap,
-                trip_idx_e2e=trip_idx_e2e,
-                trip_idx_a2e=trip_idx_a2e,
-                trip_idx_e2a=trip_idx_e2a,
-                quad_idx=quad_idx,
-            )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
-
-            x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t, data=data)
-            # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
-            xs_E.append(x_E)
-            xs_F.append(x_F)
+                x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t, data=data)
+                # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
+                xs_E.append(x_E)
+                xs_F.append(x_F)
 
         # Global output block for final predictions
         if self.regress_forces:
