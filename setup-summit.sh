@@ -20,7 +20,7 @@ pip install git+https://github.com/pydantic/pydantic.git
 
 # Install other PyTorch packages from pip
 pip install pytorch-lightning torchmetrics lightning einops wandb lovely-tensors
-pip install beartype jaxtyping loralib
+pip install beartype jaxtyping
 
 # Install packages for datasets
 pip install lmdb

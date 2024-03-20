@@ -24,7 +24,6 @@ from lightning.pytorch.utilities.types import (
 from ll import AllowMissing, BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from ll.util.typed import TypedModuleDict
-from loralib import LoRALayer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
@@ -42,7 +41,7 @@ from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
-from ...modules.lora import LoraConfig, LoraRootConfig
+from ...modules.lora import LoraConfig, LoRALayer, LoraRootConfig
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
 )

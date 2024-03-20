@@ -33,8 +33,5 @@ pip install matbench-discovery
 # Install jaxtyping
 pip install beartype jaxtyping
 
-# Install LoRA
-pip install loralib
-
 # Install torchmdnet
 mamba install -y -c conda-forge torchmd-net

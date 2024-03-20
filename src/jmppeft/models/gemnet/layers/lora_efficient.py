@@ -2,10 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from jaxtyping import Float
-from loralib import LoRALayer
 from typing_extensions import override
 
-from ....modules.lora import LoraConfig
+from ....modules.lora import LoraConfig, LoRALayer
 from ....typing_utils import tassert
 from .efficient import BasisEmbedding
 
