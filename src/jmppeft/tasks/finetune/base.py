@@ -1,6 +1,7 @@
 import copy
 import fnmatch
 import math
+import time
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
@@ -925,6 +926,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             load_state_dict(self.embedding, embedding, strict=strict)
         log.critical("Loaded backbone state dict (backbone and embedding).")
 
+    _lora_debug_start_time: float
+
     def _lora_debug_print(self):
         # Check print_every parameter.
         if (
@@ -965,7 +968,10 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         table.add_row("Total", f"{total_memory_usage:,} GB")
 
         # Print the table
-        rich.print(table)
+        current_time = time.time()
+        time_taken = self._lora_debug_start_time - current_time
+        title = f"Time Taken: {time_taken:.2f} seconds"
+        rich.print(rich.console.Group(title, table))
 
     @override
     def forward(self, data: BaseData):
@@ -1114,6 +1120,14 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     @override
     def on_train_batch_start(self, batch: BaseData, batch_idx: int):
+        # Check print_every parameter.
+        if self.config.debug_print_every is not None:
+            if (
+                not hasattr(self, "_lora_debug_start_time")
+                or (self.global_step % self.config.debug_print_every) == 1
+            ):
+                self._lora_debug_start_time = time.time()
+
         match self.config.lr_scheduler:
             case WarmupCosRLPConfig():
                 self._on_train_batch_start_cos_rlp()

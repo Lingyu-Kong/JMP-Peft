@@ -1,16 +1,16 @@
 # %%
+import os
 from pathlib import Path
 from typing import Any
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.qm9 import jmp_l_qm9_config_
 from jmppeft.modules.lora import LoraRootConfig
-from jmppeft.tasks.finetune.base import (
-    FinetuneConfigBase,
-    FinetuneModelBase,
-    GradientCheckpointingConfig,
-)
+from jmppeft.tasks.finetune.base import FinetuneConfigBase, FinetuneModelBase
 from jmppeft.tasks.finetune.qm9 import QM9Config, QM9Model, QM9Target
+from jmppeft.utils.gradient_checkpointing import GradientCheckpointingConfig
 from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
 )
@@ -104,6 +104,7 @@ base_path = Path("/mnt/shared/datasets/qm9/")
 def create_config(
     target: QM9Target,
     lora: bool,
+    gc: bool = False,
     lora_lr: float = 2.0e-4,
 ):
     config = QM9Config.draft()
@@ -145,21 +146,24 @@ def create_config(
         lora_lr_scale=lora_lr_scale,
     )
 
-    config.freeze.report_parameters = True
+    config.freeze.report_parameters = False
     # config.freeze.embedding = True
 
     # GC
-    # config.gradient_checkpointing = GradientCheckpointingConfig()
+    if gc:
+        config.gradient_checkpointing = GradientCheckpointingConfig()
 
     # Debug
     config.trainer.logging.enabled = False
-    config.debug_print_every = 10
+    config.debug_print_every = 25
 
     return config.finalize(), QM9Model
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-configs.append(create_config("eps_LUMO", True))
+configs.append(create_config("eps_LUMO", True, gc=True))
+# configs.append(create_config("eps_LUMO", False, gc=True))
+
 
 # %%
 from jmppeft.utils.finetune_state_dict import (
@@ -189,11 +193,11 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = Runner(run)
-runner.fast_dev_run(configs)
+runner.fast_dev_run(configs, n_batches=100)
 
 # %%
 runner = Runner(run)
 runner.local(
     configs,
-    env={"CUDA_VISIBLE_DEVICES": "0"},
+    env={"CUDA_VISIBLE_DEVICES": "1"},
 )

@@ -148,7 +148,16 @@ def create_config(
         lora_lr_scale=lora_lr_scale,
     )
 
+    bias_config_(config)
+
     return config.finalize(), QM9Model
+
+
+def bias_config_(config: FinetuneConfigBase):
+    assert config.lora is not None
+    config.lora.bias = "all"
+    config.lora.add_bias_to_lora_linear = True
+    config.name += "-bias"
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
@@ -193,6 +202,5 @@ runner.local_session_per_gpu(
     num_jobs_per_gpu=1,
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
+    gpus=[1],
 )
-
-# %%
