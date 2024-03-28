@@ -40,15 +40,11 @@ class BaseTargetConfig(TypedConfig, ABC):
         d_model_node: int,
         d_model_edge: int,
         activation_cls: type[nn.Module],
-    ) -> nn.Module:
-        ...
+    ) -> nn.Module: ...
 
     @contextlib.contextmanager
     def model_forward_context(self, data: BaseData):
         yield
-
-    def should_compute_graph_in_forward(self) -> bool:
-        return False
 
     def supports_inference_mode(self) -> bool:
         return True
@@ -190,10 +186,6 @@ class GradientForcesTargetConfig(BaseTargetConfig):
 
             data.pos.requires_grad_(True)
             yield
-
-    @override
-    def should_compute_graph_in_forward(self):
-        return True
 
     @override
     def supports_inference_mode(self):

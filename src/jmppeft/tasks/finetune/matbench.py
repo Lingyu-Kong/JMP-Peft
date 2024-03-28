@@ -70,6 +70,27 @@ class MatbenchModel(FinetuneModelBase[MatbenchConfig]):
         return aint_graph
 
     @override
+    def forward(self, data: BaseData):
+        # Generate graphs
+        max_neighbors = 30
+        if self.config.conditional_max_neighbors:
+            if data.natoms > 300:
+                max_neighbors = 5
+            elif data.natoms > 200:
+                max_neighbors = 10
+            else:
+                max_neighbors = 30
+
+        data = self.generate_graphs(
+            data,
+            cutoffs=Cutoffs.from_constant(12.0),
+            max_neighbors=MaxNeighbors.from_goc_base_proportions(max_neighbors),
+            pbc=True,
+        )
+
+        return super().forward(data)
+
+    @override
     def data_transform(self, data: BaseData):
         data = super().data_transform(data)
 
@@ -91,19 +112,4 @@ class MatbenchModel(FinetuneModelBase[MatbenchConfig]):
 
         data.pos = data.pos.float()
 
-        max_neighbors = 30
-        if self.config.conditional_max_neighbors:
-            if data.natoms > 300:
-                max_neighbors = 5
-            elif data.natoms > 200:
-                max_neighbors = 10
-            else:
-                max_neighbors = 30
-
-        data = self.generate_graphs(
-            data,
-            cutoffs=Cutoffs.from_constant(12.0),
-            max_neighbors=MaxNeighbors.from_goc_base_proportions(max_neighbors),
-            pbc=True,
-        )
         return data

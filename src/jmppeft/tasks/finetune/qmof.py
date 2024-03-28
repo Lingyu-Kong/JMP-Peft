@@ -29,23 +29,8 @@ class QMOFModel(FinetuneModelBase[QMOFConfig]):
         return aint_graph
 
     @override
-    def data_transform(self, data: BaseData):
-        data = super().data_transform(data)
-
-        data = copy.deepcopy(data)
-        if not torch.is_tensor(data.y):
-            data.y = torch.tensor(data.y)
-        data.y = data.y.view(-1)
-        data.atomic_numbers = data.atomic_numbers.long()
-        data.natoms = data.num_nodes
-
-        data.tags = 2 * torch.ones(data.natoms)
-        data.tags = data.tags.long()
-
-        data.fixed = torch.zeros(data.natoms, dtype=torch.bool)
-
-        data.pos = data.pos.float()
-
+    def forward(self, data: BaseData):
+        # Generate graphs on the GPU
         cutoff = 19
         if data.natoms > 300:
             max_neighbors = 5
@@ -62,6 +47,26 @@ class QMOFModel(FinetuneModelBase[QMOFConfig]):
             # max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
             pbc=True,
         )
+
+        return super().forward(data)
+
+    @override
+    def data_transform(self, data: BaseData):
+        data = super().data_transform(data)
+
+        data = copy.deepcopy(data)
+        if not torch.is_tensor(data.y):
+            data.y = torch.tensor(data.y)
+        data.y = data.y.view(-1)
+        data.atomic_numbers = data.atomic_numbers.long()
+        data.natoms = data.num_nodes
+
+        data.tags = 2 * torch.ones(data.natoms)
+        data.tags = data.tags.long()
+
+        data.fixed = torch.zeros(data.natoms, dtype=torch.bool)
+
+        data.pos = data.pos.float()
 
         data.idx = idx
         return data

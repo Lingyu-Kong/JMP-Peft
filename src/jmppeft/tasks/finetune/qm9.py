@@ -35,9 +35,7 @@ QM9Target: TypeAlias = Literal[
 
 
 class GraphSpatialExtentScalarTargetConfig(GraphScalarTargetConfig):
-    kind: Literal[  # pyright: ignore[reportIncompatibleVariableOverride]
-        "spatial_extent_scalar"
-    ] = "spatial_extent_scalar"
+    kind: Literal["spatial_extent_scalar"] = "spatial_extent_scalar"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @override
     def construct_output_head(
@@ -180,9 +178,8 @@ class QM9Model(FinetuneModelBase[QM9Config]):
         return aint_graph
 
     @override
-    def data_transform(self, data: BaseData):
-        data = super().data_transform(data)
-
+    def forward(self, data: BaseData):
+        # Generate graphs on the GPU
         data = self.generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(8.0),
@@ -190,4 +187,9 @@ class QM9Model(FinetuneModelBase[QM9Config]):
             pbc=False,
         )
 
+        return super().forward(data)
+
+    @override
+    def data_transform(self, data: BaseData):
+        data = super().data_transform(data)
         return data

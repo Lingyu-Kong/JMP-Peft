@@ -10,7 +10,6 @@ from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
-from ...modules.dataset import dataset_transform as DT
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
     GradientForcesTargetConfig,
@@ -71,9 +70,6 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
             else NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
         ]
 
-    def should_compute_graph_in_forward(self):
-        return any(t.should_compute_graph_in_forward() for t in self.node_targets)
-
     def supports_inference_mode(self):
         return all(t.supports_inference_mode() for t in self.node_targets)
 
@@ -93,9 +89,7 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         super().__post_init__()
 
         if not self.supports_inference_mode():
-            assert (
-                not self.trainer.inference_mode
-            ), "`config.trainer.inference_mode` is True, but the model does not support inference mode."
+            assert not self.trainer.inference_mode, "`config.trainer.inference_mode` is True, but the model does not support inference mode."
 
 
 TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
@@ -145,8 +139,8 @@ class EnergyForcesModelBase(
             for target in self.config.targets:
                 stack.enter_context(target.model_forward_context(data))
 
-            if self.config.should_compute_graph_in_forward():
-                data = self.generate_graphs_transform(data)
+            # Generate graphs on the GPU
+            data = self.generate_graphs_transform(data)
 
             # Run the backbone
             atomic_numbers = data.atomic_numbers - 1
@@ -182,37 +176,4 @@ class EnergyForcesModelBase(
         return preds
 
     @abstractmethod
-    def generate_graphs_transform(self, data: BaseData) -> BaseData:
-        ...
-
-    def _generate_graphs_transform(self, data: BaseData):
-        if self.config.should_compute_graph_in_forward():
-            # We need to compute the graphs in the forward method
-            # so that we can compute the forces using the energy
-            # and the positions.
-            return data
-        return self.generate_graphs_transform(data)
-
-    @override
-    def train_dataset(self):
-        if (dataset := super().train_dataset()) is None:
-            return None
-
-        dataset = DT.transform(dataset, transform=self._generate_graphs_transform)
-        return dataset
-
-    @override
-    def val_dataset(self):
-        if (dataset := super().val_dataset()) is None:
-            return None
-
-        dataset = DT.transform(dataset, transform=self._generate_graphs_transform)
-        return dataset
-
-    @override
-    def test_dataset(self):
-        if (dataset := super().test_dataset()) is None:
-            return None
-
-        dataset = DT.transform(dataset, transform=self._generate_graphs_transform)
-        return dataset
+    def generate_graphs_transform(self, data: BaseData) -> BaseData: ...

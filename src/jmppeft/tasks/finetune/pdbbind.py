@@ -108,6 +108,20 @@ class PDBBindModel(FinetuneModelBase[PDBBindConfig]):
         return pair
 
     @override
+    def forward(self, data: BaseData):
+        # Generate graphs on the GPU
+        data = self.generate_graphs(
+            data,
+            cutoffs=Cutoffs.from_constant(self.config.cutoff),
+            max_neighbors=MaxNeighbors.from_goc_base_proportions(
+                self.config.max_neighbors
+            ),
+            pbc=self.config.pbc,
+        )
+
+        return super().forward(data)
+
+    @override
     def process_aint_graph(self, aint_graph: Graph):
         return aint_graph
 
@@ -128,13 +142,5 @@ class PDBBindModel(FinetuneModelBase[PDBBindConfig]):
         data.fixed = torch.zeros(data.natoms, dtype=torch.bool)
 
         data.pos = data.pos.float()
-        data = self.generate_graphs(
-            data,
-            cutoffs=Cutoffs.from_constant(self.config.cutoff),
-            max_neighbors=MaxNeighbors.from_goc_base_proportions(
-                self.config.max_neighbors
-            ),
-            pbc=self.config.pbc,
-        )
 
         return data
