@@ -8,10 +8,11 @@ from typing import Any, TypedDict, cast
 
 import torch
 import torch.nn as nn
-from ll.util.typed import TypedModuleList
+from ll.nn import TypedModuleList
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo
 
+from ...modules.dist_lora import DLoraConfig
 from ...modules.lora import LoraConfig
 from ...modules.scaling.compat import load_scales_compat
 from ...utils.goc_graph import Graph, graphs_from_batch
@@ -242,6 +243,7 @@ class GemNetOCBackbone(nn.Module):
         absolute_rbf_cutoff: float | None = None,
         lora: LoraConfig = LoraConfig.disabled(),
         gradient_checkpointing: GradientCheckpointingConfig | None = None,
+        dlora: DLoraConfig | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -252,6 +254,7 @@ class GemNetOCBackbone(nn.Module):
 
         self.config = config
         self.gradient_checkpointing = gradient_checkpointing
+        self.dlora = dlora
 
         self.num_targets = num_targets
         assert num_blocks > 0

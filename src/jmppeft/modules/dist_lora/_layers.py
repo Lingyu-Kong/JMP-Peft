@@ -1,5 +1,5 @@
 import functools
-from collections.abc import Sequence
+from collections.abc import Iterable
 from typing import TypeAlias, cast
 
 import ll.nn
@@ -30,19 +30,23 @@ def _forward_mlp(
 
 
 def run_mlps_in_parallel(
-    mlps: Sequence[MLP],
-    x: Float[torch.Tensor, "n d_model"],
+    mlps: Iterable[MLP],
+    x: Float[torch.Tensor, "n d_model"] | Float[torch.Tensor, "num_mlps n d_model"],
+    is_x_stacked: bool = False,
 ) -> Float[torch.Tensor, "num_mlps n d_model"]:
     assert mlps, "At least one MLP is required."
+    reference_mlp = next(iter(mlps))
 
     # Now, we stack the head weights.
     params, buffers = torch.func.stack_module_state(cast(list[nn.Module], mlps))
 
     # Vmap the forward method over the stacked weight dimension.
     fn = torch.func.vmap(
-        functools.partial(_forward_mlp, reference_mlp=mlps[0]),
+        functools.partial(_forward_mlp, reference_mlp=reference_mlp),
         in_dims=(
-            None,  # `x` does not have a stacked dimension.
+            None  # `x` does not have a stacked dimension.
+            if is_x_stacked
+            else 0,  # `x` is batched over the stacked dimension.
             0,  # `params` and `buffers` are batched over the stacked dimension.
         ),
     )

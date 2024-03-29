@@ -1,5 +1,5 @@
 import math
-from typing import Annotated, Literal, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
 import ll.nn
 import torch.nn as nn
@@ -102,12 +102,15 @@ class AdapterLayerConfig(TypedConfig):
         return mlp
 
 
-class DropLayerConfig(TypedConfig):
+class LayerDropConfig(TypedConfig):
     rate: float
 
 
 class DLoraConfig(TypedConfig):
     num_heads: int
-    output_block: AdapterLayerConfig | None = None
 
-    droplayer: DropLayerConfig | None = None
+    seq_energy2_output_block: AdapterLayerConfig
+    seq_energy_pre_output_block: AdapterLayerConfig | None
+    seq_forces_output_block: AdapterLayerConfig | None
+
+    layerdrop: LayerDropConfig | None = None
