@@ -2,12 +2,13 @@ import functools
 from collections.abc import Sequence
 from typing import TypeAlias, cast
 
+import ll.nn
 import torch
 import torch.func
 import torch.nn as nn
 from ll.typecheck import Float
 
-MLP: TypeAlias = nn.ModuleList | nn.Sequential
+MLP: TypeAlias = nn.Sequential | ll.nn.ResidualSequential
 
 
 # "Functional" forward method for a single head
@@ -18,14 +19,13 @@ def _forward_mlp(
     *,
     reference_mlp: MLP,
 ):
-    for layer in reference_mlp:
-        x = torch.func.functional_call(
-            layer,
-            param_buffer_dicts,
-            args=(x,),
-            kwargs={},
-            strict=True,
-        )
+    x = torch.func.functional_call(
+        reference_mlp,
+        param_buffer_dicts,
+        args=(x,),
+        kwargs={},
+        strict=True,
+    )
     return x
 
 
