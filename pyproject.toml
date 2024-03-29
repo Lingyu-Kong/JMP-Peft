@@ -11,3 +11,6 @@ deprecateTypingAliases = true
 strictListInference = true
 strictDictionaryInference = true
 strictSetInference = true
+
+[tool.ruff.lint]
+ignore = ["F722"]
