@@ -4,15 +4,19 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
+from functools import partial
 from typing import Any, TypedDict, cast
 
 import torch
 import torch.nn as nn
 from ll.nn import TypedModuleList
+from ll.typecheck import Float, tassert
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo
+from typing_extensions import override
 
-from ...modules.dist_lora import DLoraConfig
+from ...modules.dist_lora import AdapterOutput, DLoraConfig
+from ...modules.dist_lora.gemnet import DLoraOutputBlock
 from ...modules.lora import LoraConfig
 from ...modules.scaling.compat import load_scales_compat
 from ...utils.goc_graph import Graph, graphs_from_batch
@@ -56,9 +60,11 @@ class FinalMLP(nn.Module):
     ):
         super().__init__()
 
+        self.in_features = emb_size * (num_blocks + 1)
+
         out_mlp = [
             Dense(
-                emb_size * (num_blocks + 1),
+                self.in_features,
                 emb_size,
                 activation=activation,
                 dropout=dropout,
@@ -76,7 +82,10 @@ class FinalMLP(nn.Module):
         ]
         self.out_mlp = nn.Sequential(*out_mlp)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: Float[torch.Tensor, "... d"],
+    ) -> torch.Tensor:
         return self.out_mlp(x)
 
 
@@ -337,8 +346,11 @@ class GemNetOCBackbone(nn.Module):
         self.int_blocks = nn.ModuleList(int_blocks)
         out_blocks = []
         for idx in range(num_blocks + 1):
+            out_block_cls = OutputBlock
+            if self.dlora is not None:
+                out_block_cls = partial(DLoraOutputBlock, dlora=self.dlora)
             out_blocks.append(
-                OutputBlock(
+                out_block_cls(
                     emb_size_atom=emb_size_atom,
                     emb_size_edge=emb_size_edge,
                     emb_size_rbf=emb_size_rbf,
@@ -673,6 +685,37 @@ class GemNetOCBackbone(nn.Module):
             quad_idx,
         )
 
+    def _process_outblock_outputs(
+        self,
+        x_E: torch.Tensor | AdapterOutput,
+        x_F: torch.Tensor | AdapterOutput | None,
+    ):
+        # Handle dlora outputs
+        if self.dlora is not None:
+            if x_E is not None:
+                assert isinstance(
+                    x_E, AdapterOutput
+                ), "DLora output blocks must return AdapterOutput"
+                x_E = x_E.reduce(reduction=self.dlora.adapter_reduction)
+
+            if x_F is not None:
+                assert isinstance(
+                    x_F, AdapterOutput
+                ), "DLora output blocks must return AdapterOutput"
+                x_F = x_F.reduce(reduction=self.dlora.adapter_reduction)
+        else:
+            if x_E is not None:
+                assert not isinstance(
+                    x_E, AdapterOutput
+                ), "Regular output blocks must return torch.Tensor"
+
+            if x_F is not None:
+                assert not isinstance(
+                    x_F, AdapterOutput
+                ), "Regular output blocks must return torch.Tensor"
+
+        return x_E, x_F
+
     def block(
         self,
         i: int,
@@ -711,11 +754,17 @@ class GemNetOCBackbone(nn.Module):
         )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
 
         x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t)
-        x_E = cast(torch.Tensor, x_E)
-        x_F = cast(torch.Tensor | None, x_F)
+        x_E, x_F = self._process_outblock_outputs(x_E, x_F)
+
+        tassert(Float[torch.Tensor, "num_atoms emb_size_atom"], h)
+        tassert(Float[torch.Tensor, "num_edges emb_size_edge"], m)
+        tassert(Float[torch.Tensor, "num_atoms emb_size_atom"], x_E)
+        if x_F is not None:
+            tassert(Float[torch.Tensor, "num_edges emb_size_edge"], x_F)
 
         return h, m, x_E, x_F
 
+    @override
     def forward(
         self,
         data: BaseData,
@@ -767,93 +816,48 @@ class GemNetOCBackbone(nn.Module):
         x_E, x_F = checkpoint(self.out_blocks[0], self.gradient_checkpointing)(
             h, m, bases.output, idx_t
         )
+        x_E, x_F = self._process_outblock_outputs(x_E, x_F)
         # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
-        xs_E, xs_F = [x_E], [x_F]
+        xs_E: list[torch.Tensor] = [x_E]
+        xs_F: list[torch.Tensor | None] = [x_F]
 
-        if (gc_config := self.gradient_checkpointing) is not None:
-            if self.config.unique_basis_per_layer:
-                raise NotImplementedError
+        if self.config.unique_basis_per_layer:
+            raise NotImplementedError
 
-            for i in range(self.num_blocks):
-                ckpt_out = checkpoint(self.block, gc_config)(
-                    i,
-                    data,
-                    idx_t,
-                    h,
-                    m,
-                    bases,
-                    main_graph,
-                    a2a_graph,
-                    a2ee2a_graph,
-                    id_swap,
-                    trip_idx_e2e,
-                    trip_idx_a2e,
-                    trip_idx_e2a,
-                    quad_idx,
-                )
-                ckpt_out = cast(
-                    tuple[
-                        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None
-                    ],
-                    ckpt_out,
-                )
-                h, m, x_E, x_F = ckpt_out
-                xs_E.append(x_E)
-                xs_F.append(x_F)
-        else:
-            for i in range(self.num_blocks):
-                if self.config.unique_basis_per_layer:
-                    bases: BasesOutput = self.per_layer_bases[i](
-                        data,
-                        h=h,
-                        main_graph=main_graph,
-                        a2a_graph=a2a_graph,
-                        a2ee2a_graph=a2ee2a_graph,
-                        qint_graph=qint_graph,
-                        trip_idx_e2e=trip_idx_e2e,
-                        trip_idx_a2e=trip_idx_a2e,
-                        trip_idx_e2a=trip_idx_e2a,
-                        quad_idx=quad_idx,
-                        num_atoms=num_atoms,
-                    )
-                    m = m + bases.m
-
-                # Interaction block
-                h, m = self.int_blocks[i](
-                    h=h,
-                    m=m,
-                    bases_qint=bases.qint,
-                    bases_e2e=bases.e2e,
-                    bases_a2e=bases.a2e,
-                    bases_e2a=bases.e2a,
-                    basis_a2a_rad=bases.a2a_rad,
-                    basis_atom_update=bases.atom_update,
-                    edge_index_main=main_graph["edge_index"],
-                    a2ee2a_graph=a2ee2a_graph,
-                    a2a_graph=a2a_graph,
-                    id_swap=id_swap,
-                    trip_idx_e2e=trip_idx_e2e,
-                    trip_idx_a2e=trip_idx_a2e,
-                    trip_idx_e2a=trip_idx_e2a,
-                    quad_idx=quad_idx,
-                )  # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
-
-                x_E, x_F = self.out_blocks[i + 1](h, m, bases.output, idx_t)
-                # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
-                xs_E.append(x_E)
-                xs_F.append(x_F)
+        for i in range(self.num_blocks):
+            fn = partial(self.block, i)
+            if self.gradient_checkpointing:
+                fn = checkpoint(fn, self.gradient_checkpointing)
+            h, m, x_E, x_F = fn(
+                data,
+                idx_t,
+                h,
+                m,
+                bases,
+                main_graph,
+                a2a_graph,
+                a2ee2a_graph,
+                id_swap,
+                trip_idx_e2e,
+                trip_idx_a2e,
+                trip_idx_e2a,
+                quad_idx,
+            )
+            xs_E.append(x_E)
+            xs_F.append(x_F)
 
         # Global output block for final predictions
+        x_F = None
         if self.regress_forces:
             assert self.direct_forces, "Only direct forces are supported for now."
-            x_F = self.out_mlp_F(torch.cat(xs_F, dim=-1))
-        else:
-            x_F = None
+            assert all(
+                x_F is not None for x_F in xs_F
+            ), "Forces are not available for all blocks."
+            x_F = self.out_mlp_F(torch.cat(cast(list[torch.Tensor], xs_F), dim=-1))
 
+        x_E = None
         if self.regress_energy:
             x_E = self.out_mlp_E(torch.cat(xs_E, dim=-1))
-        else:
-            x_E = None
 
         out: GOCBackboneOutput = {
             "energy": x_E,

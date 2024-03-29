@@ -1,19 +1,39 @@
+import functools
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Self, TypeAlias
+from typing import Literal
 
-import ll.nn
+import ll
 import torch
 import torch.nn as nn
-from einops import pack
+from einops import einsum, pack, reduce
 from ll.typecheck import Bool, Float, tassert
+from typing_extensions import override
 
+from ._config import AdapterLayerConfig, DLoraConfig
 from ._layers import run_mlps_in_parallel
 
-if TYPE_CHECKING:
-    from ._config import DLoraConfig
 
-AdapterMLP: TypeAlias = nn.Sequential | ll.nn.ResidualSequential
+class AdapterLayer(nn.Module):
+    def __init__(self, config: AdapterLayerConfig):
+        super().__init__()
+
+        self.config = config
+
+        self.mlp = ll.nn.MLP(
+            [self.config.in_dim, self.config.bottleneck_dim, self.config.out_dim],
+            activation=self.config.nonlinearity,
+            bias=self.config.bias,
+            dropout=self.config.dropout,
+            residual=self.config.residual,
+        )
+        self.config.initialization.initialize_(self.mlp)
+
+    @override
+    def forward(
+        self, x: Float[torch.Tensor, "... d_in"]
+    ) -> Float[torch.Tensor, "... d_out"]:
+        return self.mlp(x)
 
 
 def _run_original_mlp(
@@ -36,6 +56,10 @@ class AdapterOutput:
     """
 
     @property
+    def num_adapters(self):
+        return self.output.shape[0]
+
+    @property
     def device(self):
         return self.output.device
 
@@ -49,7 +73,7 @@ class AdapterOutput:
             [Float[torch.Tensor, "num_adapters ... d_out"]],
             Float[torch.Tensor, "num_adapters ... d_out"],
         ],
-    ) -> Self:
+    ):
         return replace(self, output=fn(self.output))
 
     def vmap_output(
@@ -58,11 +82,18 @@ class AdapterOutput:
             [Float[torch.Tensor, "... d_out"]],
             Float[torch.Tensor, "... d_out"],
         ],
-    ) -> Self:
+    ):
         return replace(self, output=torch.vmap(fn)(self.output))
 
     @classmethod
-    def stack(cls, outputs: Sequence[Self]):
+    def from_single_output(cls, output: Float[torch.Tensor, "... d_out"]):
+        return cls(
+            output=output.unsqueeze(dim=0),
+            layerdrop_mask=torch.ones(1, device=output.device, dtype=torch.bool),
+        )
+
+    @classmethod
+    def concatenate(cls, outputs: Sequence["AdapterOutput"]):
         output, _ = pack([o.output for o in outputs], "* ... d_out")
         tassert(Float[torch.Tensor, "num_adapters ... d_out"], output)
 
@@ -71,50 +102,104 @@ class AdapterOutput:
 
         return cls(output=output, layerdrop_mask=layerdrop_mask)
 
-    @classmethod
-    def from_single_output(cls, output: Float[torch.Tensor, "... d_out"]):
-        return cls(
-            output=output.unsqueeze(dim=0),
-            layerdrop_mask=torch.tensor([True], device=output.device, dtype=torch.bool),
+    def reduce(
+        self, reduction: Literal["sum", "mean", "max"]
+    ) -> Float[torch.Tensor, "... d_out"]:
+        mask = self.layerdrop_mask
+        output = self.output
+
+        # Apply the layerdrop mask.
+        output = einsum(
+            output,
+            mask,
+            "num_adapters ..., num_adapters -> num_adapters ...",
         )
+
+        # output = reduce(self.output)
+        match reduction:
+            case "mean":
+                sum = reduce(output, "num_adapters ... -> ...", "sum")
+                num_valid_adapters = reduce(mask, "num_adapters -> ", "sum")
+                output = sum / num_valid_adapters
+            case _:
+                output = reduce(
+                    output,
+                    "num_adapters ... -> ...",
+                    "sum",
+                )
+
+        return output
+
+    @classmethod
+    def concatenate_and_reduce(
+        cls,
+        outputs: Sequence["AdapterOutput"],
+        reduction: Literal["sum", "mean", "max"],
+    ) -> Float[torch.Tensor, "... d_out"]:
+        stacked = cls.concatenate(outputs)
+
+        # FAST PATH: If there is only one output, we can skip the stack and reduce.
+        if stacked.num_adapters == 1:
+            return stacked.output[0]
+
+        return stacked.reduce(reduction)
 
 
 def run_adapters(
-    x: Float[torch.Tensor, "... d_in"] | AdapterOutput,
+    x: Float[torch.Tensor, "... d_in"],
     *,
     config: "DLoraConfig",
-    adapters: Iterable[AdapterMLP],
+    adapters: Iterable[AdapterLayer],
     original_mlp: nn.ModuleList,
 ):
     # Compute the layerdrop mask.
-    if isinstance(x, AdapterOutput):
-        # If we are given an AdapterOutput, we use its layerdrop mask.
-        layerdrop_mask = x.layerdrop_mask
+    if config.layerdrop is not None:
+        layerdrop_mask = (
+            torch.rand(config.num_heads, device=x.device, dtype=x.dtype)
+            < config.layerdrop.rate
+        )
     else:
-        # Otherwise, we compute the layerdrop mask.
-        if config.layerdrop is not None:
-            layerdrop_mask = (
-                torch.rand(len(original_mlp), device=x.device, dtype=x.dtype)
-                < config.layerdrop.rate
-            )
-        else:
-            layerdrop_mask = torch.ones(
-                len(original_mlp), device=x.device, dtype=torch.bool
-            )
+        layerdrop_mask = torch.ones(config.num_heads, device=x.device, dtype=torch.bool)
 
-    x_original = x.output if isinstance(x, AdapterOutput) else x
-    original_out: Float[torch.Tensor, "... d_out"] = _run_original_mlp(
-        x_original, original_mlp
-    )
+    original_out: Float[torch.Tensor, "... d_out"] = _run_original_mlp(x, original_mlp)
 
     # Run the adapters in parallel.
     adapter_outs: Float[torch.Tensor, "num_adapters ... d_out"] = run_mlps_in_parallel(
         adapters,
-        x_original,
+        x,
     )
 
     # Add the original output to the adapter outputs.
     output = original_out.unsqueeze(dim=0) + adapter_outs
+    tassert(Float[torch.Tensor, "num_adapters ... d_out"], output)
+
+    return AdapterOutput(output, layerdrop_mask)
+
+
+def run_adapters_existing_output(
+    x: AdapterOutput,
+    *,
+    config: "DLoraConfig",
+    adapters: Iterable[AdapterLayer],
+    original_mlp: nn.ModuleList,
+):
+    # If we are given an AdapterOutput, we use its layerdrop mask.
+    layerdrop_mask = x.layerdrop_mask
+
+    # Vmap the original MLP over the stacked dimension.
+    original_out: Float[torch.Tensor, "num_adapters ... d_out"] = torch.vmap(
+        functools.partial(_run_original_mlp, module=original_mlp)
+    )(x.output)
+
+    # Run the adapters in parallel.
+    adapter_outs: Float[torch.Tensor, "num_adapters ... d_out"] = run_mlps_in_parallel(
+        adapters,
+        x.output,
+        is_x_stacked=True,
+    )
+
+    # Add the original output to the adapter outputs.
+    output = original_out + adapter_outs
     tassert(Float[torch.Tensor, "num_adapters ... d_out"], output)
 
     return AdapterOutput(output, layerdrop_mask)

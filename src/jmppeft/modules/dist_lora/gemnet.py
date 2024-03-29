@@ -1,19 +1,17 @@
-import math
-from typing import TYPE_CHECKING
-
 import ll.nn
 import torch
-import torch.nn as nn
-from ll import TypedConfig
 from ll.typecheck import Float, Int, tassert
 from torch_scatter import scatter
 from typing_extensions import override
 
-from ...models.gemnet.layers.atom_update_block import AtomUpdateBlock, OutputBlock
-from ...models.gemnet.layers.base_layers import Dense, ResidualLayer
+from ...models.gemnet.layers.atom_update_block import OutputBlock
 from ..lora import LoraConfig
-from ..scaling import ScaleFactor
-from ._adapter import AdapterOutput, run_adapters
+from ._adapter import (
+    AdapterLayer,
+    AdapterOutput,
+    run_adapters,
+    run_adapters_existing_output,
+)
 from ._config import DLoraConfig
 
 
@@ -75,7 +73,7 @@ class DLoraOutputBlock(OutputBlock):
 
         self.seq_energy2_adapters = ll.nn.TypedModuleList(
             [
-                self.dlora.seq_energy2_output_block.create_module()
+                AdapterLayer(self.dlora.seq_energy2_output_block)
                 for _ in range(self.dlora.num_heads)
             ]
         )
@@ -83,7 +81,7 @@ class DLoraOutputBlock(OutputBlock):
         if self.dlora.seq_energy_pre_output_block is not None:
             self.seq_energy_pre_adapters = ll.nn.TypedModuleList(
                 [
-                    self.dlora.seq_energy_pre_output_block.create_module()
+                    AdapterLayer(self.dlora.seq_energy_pre_output_block)
                     for _ in range(self.dlora.num_heads)
                 ]
             )
@@ -95,7 +93,7 @@ class DLoraOutputBlock(OutputBlock):
 
             self.seq_forces_adapters = ll.nn.TypedModuleList(
                 [
-                    self.dlora.seq_forces_output_block.create_module()
+                    AdapterLayer(self.dlora.seq_forces_output_block)
                     for _ in range(self.dlora.num_heads)
                 ]
             )
@@ -129,13 +127,11 @@ class DLoraOutputBlock(OutputBlock):
         x_E = self._drop_edge_boost_activations(x_E)
 
         x_E = self.scale_sum(x_E, ref=m)
-        tassert(Float[torch.Tensor, "nAtoms emb_size_atom"], x_E)
+        tassert(Float[torch.Tensor, "nAtoms emb_size_edge"], x_E)
 
         if self.dlora.seq_energy_pre_output_block is None:
             for layer in self.seq_energy_pre:
                 x_E = layer(x_E)  # (nAtoms, emb_size_atom)
-
-            x_E = AdapterOutput.from_single_output(x_E)
         else:
             x_E = run_adapters(
                 x_E,
@@ -145,22 +141,40 @@ class DLoraOutputBlock(OutputBlock):
             )
 
         if self.seq_energy2 is not None:
-            # x_E = x_E + h
-            # x_E = x_E * self.inv_sqrt_2
-
-            x_E = x_E.vmap_output(lambda x_E: (x_E + h) * self.inv_sqrt_2)
+            if not isinstance(x_E, AdapterOutput):
+                x_E = x_E + h
+                x_E = x_E * self.inv_sqrt_2
+            else:
+                x_E = x_E.vmap_output(lambda x_E: (x_E + h) * self.inv_sqrt_2)
 
             if self.dlora.seq_energy2_output_block is None:
-                for layer in self.seq_energy2:
-                    x_E = layer(x_E)  # (nAtoms, emb_size_atom)
+                # If seq_energy_pre adapters were used, we need to vectorize this.
+                if not isinstance(x_E, AdapterOutput):
+                    for layer in self.seq_energy2:
+                        x_E = layer(x_E)  # (nAtoms, emb_size_atom)
+                else:
+                    raise NotImplementedError(
+                        "You need to either vectorize both adapters, the last adapter, or none."
+                    )
             else:
-                x_E_out = run_adapters(
-                    x_E,
-                    config=self.dlora,
-                    adapters=self.seq_energy2_adapters,
-                    original_mlp=self.seq_energy2,
-                )
+                if isinstance(x_E, AdapterOutput):
+                    x_E = run_adapters_existing_output(
+                        x_E,
+                        config=self.dlora,
+                        adapters=self.seq_energy2_adapters,
+                        original_mlp=self.seq_energy2,
+                    )
+                else:
+                    x_E = run_adapters(
+                        x_E,
+                        config=self.dlora,
+                        adapters=self.seq_energy2_adapters,
+                        original_mlp=self.seq_energy2,
+                    )
 
+            # Make sure we return an AdapterOutput
+            if not isinstance(x_E, AdapterOutput):
+                x_E = AdapterOutput.from_single_output(x_E)
         else:
             raise ValueError("seq_energy2 is None. Needed for DLoraOutputBlock")
 
@@ -169,31 +183,38 @@ class DLoraOutputBlock(OutputBlock):
             x_F = m
             tassert(Float[torch.Tensor, "num_edges emb_size_edge"], x_F)
 
-            # for i, layer in enumerate(self.seq_forces):
-            #     x_F = layer(x_F)  # (nEdges, emb_size_edge)
+            if self.dlora.seq_forces_output_block is None:
+                for i, layer in enumerate(self.seq_forces):
+                    x_F = layer(x_F)  # (nEdges, emb_size_edge)
 
-            x_F = run_adapters(
-                x_F,
-                config=self.dlora,
-                adapters=self.seq_forces_adapters,
-                original_mlp=self.seq_forces,
-            )
+                basis_emb_F = self.dense_rbf_F(basis_rad)
+                # (nEdges, emb_size_edge)
+                x_F_basis = x_F * basis_emb_F
+                x_F = self.scale_rbf_F(x_F_basis, ref=x_F)
 
-            # basis_emb_F = self.dense_rbf_F(basis_rad)
-            # # (nEdges, emb_size_edge)
-            # x_F_basis = x_F * basis_emb_F
-            # x_F = self.scale_rbf_F(x_F_basis, ref=x_F)
+                x_F = AdapterOutput.from_single_output(x_F)
+            else:
+                x_F = run_adapters(
+                    x_F,
+                    config=self.dlora,
+                    adapters=self.seq_forces_adapters,
+                    original_mlp=self.seq_forces,
+                )
 
-            basis_emb_F = self.dense_rbf_F(basis_rad)
-            tassert(Float[torch.Tensor, "num_edges emb_size_edge"], basis_emb_F)
+                basis_emb_F = self.dense_rbf_F(basis_rad)
+                tassert(Float[torch.Tensor, "num_edges emb_size_edge"], basis_emb_F)
+                tassert(
+                    Float[torch.Tensor, "num_adapters num_edges emb_size_edge"],
+                    x_F.output,
+                )
 
-            tassert(
-                Float[torch.Tensor, "num_adapters num_edges emb_size_edge"], x_F.output
-            )
-            x_F_basis = x_F * basis_emb_F
-            x_F = self.scale_rbf_F(x_F_basis, ref=x_F)
+                # x_F_basis = x_F * basis_emb_F
+                x_F_basis = x_F.vmap_output(lambda x_F: x_F * basis_emb_F)
+                x_F = x_F.map_output(
+                    lambda x_F: self.scale_rbf_F(x_F_basis.output, ref=x_F)
+                )
         else:
-            x_F_out = None
+            x_F = None
         # ------------------------------------------------------------------ #
 
-        return x_E_out, x_F
+        return x_E, x_F

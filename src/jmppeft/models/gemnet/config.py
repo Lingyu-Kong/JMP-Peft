@@ -1,6 +1,8 @@
 from ll import TypedConfig
 from typing_extensions import override
 
+from ...modules.dist_lora import DLoraConfig
+
 
 class BackboneConfig(TypedConfig):
     num_targets: int = 1

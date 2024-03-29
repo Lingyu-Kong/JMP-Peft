@@ -5,6 +5,9 @@ import ll.nn
 import torch.nn as nn
 from ll import Field, TypedConfig
 
+if TYPE_CHECKING:
+    from ...tasks.finetune.base import FinetuneConfigBase
+
 
 class AdapterLayerHoulsbyInitializationConfig(TypedConfig):
     """
@@ -89,18 +92,6 @@ class AdapterLayerConfig(TypedConfig):
         AdapterLayerHoulsbyInitializationConfig()
     )
 
-    def create_module(self):
-        mlp = ll.nn.MLP(
-            [self.in_dim, self.bottleneck_dim, self.out_dim],
-            activation=self.nonlinearity,
-            bias=self.bias,
-            dropout=self.dropout,
-            residual=self.residual,
-        )
-
-        self.initialization.initialize_(mlp)
-        return mlp
-
 
 class LayerDropConfig(TypedConfig):
     rate: float
@@ -113,4 +104,22 @@ class DLoraConfig(TypedConfig):
     seq_energy_pre_output_block: AdapterLayerConfig | None
     seq_forces_output_block: AdapterLayerConfig | None
 
+    adapter_reduction: Literal["sum", "mean", "max"]
+
     layerdrop: LayerDropConfig | None = None
+
+    def disable_lora_for_dlora_(self, config: "FinetuneConfigBase"):
+        if config.lora is not None:
+            config.lora.children["out_mlp_E"] = {"enabled": False}
+            config.lora.children["out_mlp_F"] = {"enabled": False}
+
+            for i in range(config.backbone.num_blocks + 1):
+                config.lora.children[f"out_blocks_{i}"] = {"enabled": False}
+
+        # Ensure the final layers are being trained.
+        config.freeze.ensure_non_frozen_parameter_patterns.append(
+            "backbone.out_mlp_E.*"
+        )
+        config.freeze.ensure_non_frozen_parameter_patterns.append(
+            "backbone.out_mlp_F.*"
+        )

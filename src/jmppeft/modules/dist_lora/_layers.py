@@ -2,13 +2,12 @@ import functools
 from collections.abc import Iterable
 from typing import TypeAlias, cast
 
-import ll.nn
 import torch
 import torch.func
 import torch.nn as nn
 from ll.typecheck import Float
 
-MLP: TypeAlias = nn.Sequential | ll.nn.ResidualSequential
+MLP: TypeAlias = nn.Module
 
 
 # "Functional" forward method for a single head
@@ -31,9 +30,9 @@ def _forward_mlp(
 
 def run_mlps_in_parallel(
     mlps: Iterable[MLP],
-    x: Float[torch.Tensor, "n d_model"] | Float[torch.Tensor, "num_mlps n d_model"],
+    x: Float[torch.Tensor, "n d_in"] | Float[torch.Tensor, "num_mlps n d_in"],
     is_x_stacked: bool = False,
-) -> Float[torch.Tensor, "num_mlps n d_model"]:
+) -> Float[torch.Tensor, "num_mlps n d_out"]:
     assert mlps, "At least one MLP is required."
     reference_mlp = next(iter(mlps))
 
@@ -45,7 +44,7 @@ def run_mlps_in_parallel(
         functools.partial(_forward_mlp, reference_mlp=reference_mlp),
         in_dims=(
             None  # `x` does not have a stacked dimension.
-            if is_x_stacked
+            if not is_x_stacked
             else 0,  # `x` is batched over the stacked dimension.
             0,  # `params` and `buffers` are batched over the stacked dimension.
         ),

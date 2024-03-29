@@ -40,6 +40,7 @@ from ...models.gemnet.layers.base_layers import ScaledSiLU
 from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
+from ...modules.dist_lora import AdapterLayer, DLoraConfig
 from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
 from ...modules.lora import Linear as LoraLinear
@@ -332,6 +333,8 @@ class FinetuneConfigBase(BaseConfig):
     """Configuration for the output head."""
     lora: LoraRootConfig | None = None
     """Low-rank Adaptation (LoRA) configuration"""
+    dlora: DLoraConfig | None = None
+    """Distributation-Learning of Rank-Adaptation (DLora) configuration"""
 
     batch_size: int
     """Batch size to use."""
@@ -506,7 +509,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             if self.config.lora
             else LoraConfig.disabled(),
             gradient_checkpointing=self.config.gradient_checkpointing,
+            dlora=self.config.dlora,
         )
+        log.critical(f"Constructed backbone with dlora={self.config.dlora}")
 
         return backbone
 
@@ -626,6 +631,13 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     )
                 case _:
                     pass
+
+        if self.config.dlora is not None:
+            # Report the number of new adapter parameters added.
+            num_new_params = sum(
+                p.numel() for _, p in self.dlora_added_parameters().items()
+            )
+            log.critical(f"[DLora]: Added {num_new_params} new parameters.")
 
     def freeze_parameters(self, parameters: Iterable[nn.Parameter], *, name: str):
         n_params = 0
@@ -875,6 +887,25 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         return lora_added_bias_parameters
 
+    def dlora_added_parameters(self):
+        if self.config.dlora is None:
+            return {}
+
+        dlora_added_parameters: dict[str, torch.Tensor] = {}
+        for name, module in self.backbone.named_modules(
+            remove_duplicate=False,
+            # ^ `remove_duplicate=False` is necessary because we have multiple
+            #   modules with the same name (e.g., see `seq_energy_pre` in GemNet's output blocks).
+        ):
+            if not isinstance(module, AdapterLayer):
+                continue
+
+            dlora_added_parameters.update(
+                {f"{name}.{k}": v for k, v in module.state_dict(keep_vars=True).items()}
+            )
+
+        return dlora_added_parameters
+
     def load_backbone_state_dict(
         self,
         *,
@@ -899,6 +930,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         lora_added_bias_parameters = set(self.lora_added_bias_parameters().keys())
         log.debug(f"LoRA added bias parameters: {lora_added_bias_parameters}")
 
+        dlora_added_parameters = set(self.dlora_added_parameters().keys())
+
         def should_ignore_missing_key_fn(k: str):
             if (lc := self.config.lora) is None or not lc.enabled:
                 return False
@@ -909,6 +942,10 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
             # Ignore new bias keys added by us
             if k in lora_added_bias_parameters:
+                return True
+
+            # Ignore adapter layer keys for DLora
+            if k in dlora_added_parameters:
                 return True
 
             return False
