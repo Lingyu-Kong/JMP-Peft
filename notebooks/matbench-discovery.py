@@ -53,3 +53,9 @@ loaded_json
 type(loaded_json)
 
 loaded_json.keys()
+
+# %%
+mpd.DATA_FILES["mp_trj_extxyz_by_yuan"]
+
+
+mpd.load("mp_trj_extxyz_by_yuan")

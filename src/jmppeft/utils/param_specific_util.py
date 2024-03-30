@@ -43,6 +43,7 @@ def make_parameter_specific_optimizer_config(
     num_blocks: int,
     max_lr_scales: dict[str, float],
     lora_lr_scale: float | None = None,
+    include_dlora_in_lora_patterns: bool = False,
 ):
     """
     Create a list of parameter specific optimizers based on the max_lr_scales.
@@ -138,6 +139,9 @@ def make_parameter_specific_optimizer_config(
         for pattern in parameter_patterns:
             assert pattern.endswith("*"), f"pattern must end with '*' but got {pattern}"
             parameter_patterns_new.append(f"{pattern}.lora_*")
+
+            if include_dlora_in_lora_patterns:
+                parameter_patterns_new.append(f"{pattern}*_adapters.*")
 
         parameter_specific_optimizers_lora.append(
             ParamSpecificOptimizerConfig(

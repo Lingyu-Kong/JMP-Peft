@@ -1,7 +1,11 @@
 from pathlib import Path
 from typing import Literal, TypeAlias
 
-from .base import FinetuneLmdbDatasetConfig, FinetunePDBBindDatasetConfig
+from .base import (
+    FinetuneLmdbDatasetConfig,
+    FinetuneMatbenchDiscoveryDatasetConfig,
+    FinetunePDBBindDatasetConfig,
+)
 from .matbench import MatbenchDataset
 from .md22 import MD22Molecule
 from .rmd17 import RMD17Molecule
@@ -84,4 +88,20 @@ def spice_config(
 
 def pdbbind_config(split: Split):
     config = FinetunePDBBindDatasetConfig(split=split)
+    return config
+
+
+def matbench_discovery_config(
+    base_path: Path,
+    split: Split,
+    total_energy: bool = True,
+):
+    config = FinetuneMatbenchDiscoveryDatasetConfig(
+        split_csv_path=base_path / "splits" / f"{split}.csv",
+        base_path=base_path / "mptrj-gga-ggapu",
+    )
+
+    if not total_energy:
+        raise NotImplementedError("Only total energy is supported")
+
     return config

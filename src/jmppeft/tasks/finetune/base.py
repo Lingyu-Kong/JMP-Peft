@@ -31,9 +31,12 @@ from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
 
-from ...datasets.finetune_lmdb import FinetuneDatasetConfig as FinetuneDatasetConfigBase
+from ...datasets.finetune_lmdb import (
+    FinetuneDatasetConfig as FinetuneLmdbDatasetConfigBase,
+)
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
+from ...datasets.matbench_discovery_ase import MatbenchDiscoveryAseDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
@@ -289,7 +292,7 @@ class TestConfig(TypedConfig):
     """Where to save the results for this run (or None to disable)"""
 
 
-class FinetuneLmdbDatasetConfig(FinetuneDatasetConfigBase, CommonDatasetConfig):
+class FinetuneLmdbDatasetConfig(FinetuneLmdbDatasetConfigBase, CommonDatasetConfig):
     name: Literal["lmdb"] = "lmdb"
 
     def create_dataset(self):
@@ -303,8 +306,27 @@ class FinetunePDBBindDatasetConfig(PDBBindConfig, CommonDatasetConfig):
         return PDBBindDataset(task=self.task, split=self.split)
 
 
+class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
+    name: Literal["matbench_discovery"] = "matbench_discovery"
+
+    split_csv_path: Path
+    base_path: Path
+    energy_linref_path: Path | None = None
+    fractional_coordinates: bool = False
+
+    def create_dataset(self):
+        return MatbenchDiscoveryAseDataset(
+            split_csv_path=self.split_csv_path,
+            base_path=self.base_path,
+            energy_linref_path=self.energy_linref_path,
+            fractional_coordinates=self.fractional_coordinates,
+        )
+
+
 FinetuneDatasetConfig: TypeAlias = Annotated[
-    FinetuneLmdbDatasetConfig | FinetunePDBBindDatasetConfig,
+    FinetuneLmdbDatasetConfig
+    | FinetunePDBBindDatasetConfig
+    | FinetuneMatbenchDiscoveryDatasetConfig,
     Field(discriminator="name"),
 ]
 

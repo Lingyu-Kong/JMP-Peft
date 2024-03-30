@@ -1,19 +1,19 @@
 # %%
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-import ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
-from jmppeft.configs.finetune.qm9 import jmp_l_qm9_config_
-from jmppeft.modules import dist_lora as dlora
+from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
 from jmppeft.modules.lora import LoraRootConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
+    RLPConfig,
+    RLPWarmupConfig,
 )
-from jmppeft.tasks.finetune.qm9 import QM9Config, QM9Model, QM9Target
-from jmppeft.utils.param_specific_util import (
-    make_parameter_specific_optimizer_config,
+from jmppeft.tasks.finetune.matbench_discovery import (
+    MatbenchDiscoveryConfig,
+    MatbenchDiscoveryModel,
 )
 
 
@@ -29,7 +29,6 @@ def lora_config_(
     config: FinetuneConfigBase,
     *,
     r: int,
-    alpha: int,
     filter_children: bool,
 ):
     int_block_configs = {
@@ -94,109 +93,51 @@ def lora_config_(
     )
 
     config.lora = LoraRootConfig(
-        enabled_by_default=not filter_children,
+        enabled_by_default=True,
         r=r,
         children=children,
-        alpha=alpha,
-        bias="all",
-        use_rslora=True,
-        add_bias_to_lora_linear=True,
     )
 
 
-# ckpt_path = Path(
-#     "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
-# )
-# base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/qm9/")
-
-ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
-base_path = Path("/mnt/shared/datasets/qm9/")
+ckpt_path = Path(
+    "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
+)
+base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/rmd17/")
 
 
-def create_config(
-    target: QM9Target,
-    lora: bool,
-    lora_lr: float = 2.0e-4,
-):
-    config = QM9Config.draft()
-    config.project = "jmp_peft_nersc"
-    config.name = f"qm9-{target}"
-    jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
-    jmp_l_qm9_config_(config, target, base_path)
+def make_config(filter_children: bool):
+    config = MatbenchDiscoveryConfig.draft()
+    jmp_l_ft_config_(config, ckpt_path, ema_backbone=True)
+    jmp_l_matbench_discovery_config_(config, "aspirin", base_path)
 
-    config.batch_size = 32
+    config.parameter_specific_optimizers = None
+    config.optimizer.lr = 1.0e-4
 
-    lora_lr_scale = None
-    if lora:
-        lora_config_(config, r=8, alpha=16, filter_children=False)
-        config.name += "-lora"
-        lora_lr_scale = lora_lr / config.optimizer.lr
-    else:
-        config.lora = None
-        config.name += "-nolora"
-
-    # bias_config_(config)
-
-    # Set up dlora
-    def adapter_config(in_dim: int, out_dim: int | None = None):
-        if out_dim is None:
-            out_dim = in_dim
-
-        return dlora.AdapterLayerConfig(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            bottleneck_dim=16,
-            nonlinearity=ll.nn.SiLUNonlinearityConfig(),
-        )
-
-    config.dlora = dlora.DLoraConfig(
-        adapter_reduction="sum",
-        num_heads=128,
-        layerdrop=dlora.LayerDropConfig(rate=0.1),
-        seq_energy_pre_output_block=adapter_config(
-            config.backbone.emb_size_edge,
-            config.backbone.emb_size_atom,
+    config.lr_scheduler = RLPConfig(
+        patience=25,
+        factor=0.8,
+        interval="epoch",
+        warmup=RLPWarmupConfig(
+            step_type="epoch",
+            steps=5,
+            start_lr_factor=1.0e-1,
         ),
-        seq_energy2_output_block=adapter_config(config.backbone.emb_size_atom),
-        seq_forces_output_block=adapter_config(config.backbone.emb_size_edge),
-    )
-    config.dlora.disable_lora_for_dlora_(config)
-
-    config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
-        config,
-        config.backbone.num_blocks,
-        {
-            "embedding": 0.3,
-            "blocks_0": 0.55,
-            "blocks_1": 0.40,
-            "blocks_2": 0.30,
-            "blocks_3": 0.40,
-            "blocks_4": 0.55,
-            "blocks_5": 0.625,
-        },
-        lora_lr_scale=lora_lr_scale,
-        include_dlora_in_lora_patterns=True,
     )
 
-    # config.trainer.strategy = "ddp_find_unused_parameters_true"
+    lora_config_(config, r=4, filter_children=filter_children)
+    config.num_workers = 8
 
-    return config.finalize(), QM9Model
+    config.project = "jmppeft_3-12"
+    config.name = "lora_rmd17"
+    if filter_children:
+        config.name += "_filtered"
 
-
-def bias_config_(
-    config: FinetuneConfigBase,
-    bias: Literal["none", "all", "lora_only"] = "all",
-    add_bias_to_lora_linear: bool = True,
-):
-    assert config.lora is not None
-    config.lora.bias = bias
-    config.lora.add_bias_to_lora_linear = add_bias_to_lora_linear
-    config.name += "-bias"
+    return config.finalize(), MatbenchDiscoveryModel
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-configs.append(create_config("eps_HOMO", True))
-# configs.append(create_config("eps_HOMO", False))
+configs.append(make_config(filter_children=False))
+configs.append(make_config(filter_children=True))
 
 # %%
 from jmppeft.utils.finetune_state_dict import (
@@ -233,8 +174,7 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    num_jobs_per_gpu=1,
-    # prologue=["module load conda/Mambaforge-23.1.0-1"],
+    num_jobs_per_gpu=4,
+    prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
-    gpus=[0],
 )
