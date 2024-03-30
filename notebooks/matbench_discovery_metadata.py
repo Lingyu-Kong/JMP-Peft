@@ -8,24 +8,32 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-base_path = Path("/mnt/datasets/matbench-discovery-traj/mptrj-gga-ggapu")
-extxyz_files = list(base_path.glob("*.extxyz"))
-print(len(extxyz_files))
+base_path = Path("/mnt/datasets/matbench-discovery-traj")
 
-natoms: dict[str, int] = {}
-for f in tqdm(extxyz_files):
-    # Read the first frame
-    atoms = ase.io.read(f, 0)
-    assert not isinstance(atoms, Sequence)
-
-    # Get the number of atoms in the molecule
-    natoms[f.stem] = len(atoms)
-
-# Save the dict
 natoms_path = base_path / "natoms"
 natoms_path.mkdir(exist_ok=True)
-with open(natoms_path / "id_to_natoms.pkl", "wb") as f:
-    pickle.dump(natoms, f)
+pkl_file = natoms_path / "id_to_natoms.pkl"
+
+if not pkl_file.exists():
+    extxyz_files = list((base_path / "mptrj-gga-ggapu").glob("*.extxyz"))
+    print(len(extxyz_files))
+
+    natoms: dict[str, int] = {}
+    for f in tqdm(extxyz_files):
+        # Read the first frame
+        atoms = ase.io.read(f, 0)
+        assert not isinstance(atoms, Sequence)
+
+        # Get the number of atoms in the molecule
+        natoms[f.stem] = len(atoms)
+
+    # Save the dict
+    with open(pkl_file, "wb") as f:
+        pickle.dump(natoms, f)
+else:
+    print("Pickle file exists, loading it")
+    with open(pkl_file, "rb") as f:
+        natoms = pickle.load(f)
 
 # For each split, let's make its own dense natoms array
 splits = ["train", "val", "test"]

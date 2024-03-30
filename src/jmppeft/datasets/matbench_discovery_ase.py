@@ -4,6 +4,7 @@ import ase
 import ase.io
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from typing_extensions import override
@@ -43,12 +44,10 @@ def frame_to_data(
     frame_level_properties["pos"] = pos
 
     # energy: ()
-    energy = (
-        np.array(
-            frame.get_potential_energy(apply_constraint=False),
-            dtype=np.float32,
-        )
-    )[np.newaxis]
+    energy = np.array(
+        frame.get_potential_energy(apply_constraint=False),
+        dtype=np.float32,
+    )
     frame_level_properties["energy"] = energy
 
     # forces: (n, 3)
@@ -73,7 +72,16 @@ def frame_to_data(
         "tags": tags,
     }
 
-    data = Data.from_dict(data_dict)
+    # Convert to PT tensors
+    data_dict_pt: dict[str, torch.Tensor] = {}
+    for k, v in data_dict.items():
+        v_pt = torch.from_numpy(v)
+        # Check if v is a floating point numpy array
+        if v.dtype.kind == "f":
+            v_pt = v_pt.float()
+        data_dict_pt[k] = v_pt
+
+    data = Data.from_dict(data_dict_pt)
     return data
 
 
@@ -85,15 +93,19 @@ class MatbenchDiscoveryAseDataset(Dataset[Data]):
         self,
         split_csv_path: Path,
         base_path: Path,
-        atoms_metadata: Path,
+        atoms_metadata: Path | None = None,
         energy_linref_path: Path | None = None,
         fractional_coordinates: bool = False,
     ) -> None:
         super().__init__()
 
         self.df = pd.read_csv(split_csv_path, index_col=False)
-        self.atoms_metadata = np.load(atoms_metadata)
         self.base_path = base_path
+
+        if atoms_metadata is not None:
+            self.atoms_metadata = np.load(atoms_metadata)
+        else:
+            self.atoms_metadata = np.ones(len(self.df), dtype=np.int32)
 
         self.energy_linref = None
         if energy_linref_path is not None:
@@ -121,4 +133,5 @@ class MatbenchDiscoveryAseDataset(Dataset[Data]):
             data.energy -= reference_energy
 
         data.y = data.pop("energy")
+        data.cell = data.cell.unsqueeze(dim=0)
         return data

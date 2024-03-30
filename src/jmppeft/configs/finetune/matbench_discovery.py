@@ -11,6 +11,7 @@ def jmp_l_matbench_discovery_config_(
     config: MatbenchDiscoveryConfig,
     base_path: Path,
     total_energy: bool = True,
+    use_atoms_metadata: bool = True,
 ):
     # Optimizer settings
     config.optimizer = AdamWConfig(
@@ -25,16 +26,19 @@ def jmp_l_matbench_discovery_config_(
         base_path,
         "train",
         total_energy=total_energy,
+        use_atoms_metadata=use_atoms_metadata,
     )
     config.val_dataset = DC.matbench_discovery_config(
         base_path,
         "val",
         total_energy=total_energy,
+        use_atoms_metadata=use_atoms_metadata,
     )
     config.test_dataset = DC.matbench_discovery_config(
         base_path,
         "test",
         total_energy=total_energy,
+        use_atoms_metadata=use_atoms_metadata,
     )
 
     # MatbenchDiscovery specific settings

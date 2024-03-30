@@ -25,9 +25,9 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
         # Generate graphs
         max_neighbors = 30
         if self.config.conditional_max_neighbors:
-            if data.natoms > 300:
+            if (data.natoms > 300).any():
                 max_neighbors = 5
-            elif data.natoms > 200:
+            elif (data.natoms > 200).any():
                 max_neighbors = 10
             else:
                 max_neighbors = 30

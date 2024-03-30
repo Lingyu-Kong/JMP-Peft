@@ -95,11 +95,14 @@ def matbench_discovery_config(
     base_path: Path,
     split: Split,
     total_energy: bool = True,
+    use_atoms_metadata: bool = True,
 ):
     config = FinetuneMatbenchDiscoveryDatasetConfig(
         split_csv_path=base_path / "splits" / f"{split}.csv",
         base_path=base_path / "mptrj-gga-ggapu",
-        atoms_metadata=base_path / "natoms" / f"{split}.npy",
+        atoms_metadata=base_path / "natoms" / f"{split}.npy"
+        if use_atoms_metadata
+        else None,
     )
 
     if not total_energy:

@@ -83,7 +83,9 @@ from .output_head import (
 log = getLogger(__name__)
 
 
-DatasetType: TypeAlias = FinetuneLmdbDataset
+DatasetType: TypeAlias = (
+    FinetuneLmdbDataset | PDBBindDataset | MatbenchDiscoveryAseDataset
+)
 
 
 class RLPWarmupConfig(TypedConfig):
@@ -311,7 +313,7 @@ class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
 
     split_csv_path: Path
     base_path: Path
-    atoms_metadata: Path
+    atoms_metadata: Path | None = None
     energy_linref_path: Path | None = None
     fractional_coordinates: bool = False
 
