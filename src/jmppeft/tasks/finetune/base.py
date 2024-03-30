@@ -311,6 +311,7 @@ class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
 
     split_csv_path: Path
     base_path: Path
+    atoms_metadata: Path
     energy_linref_path: Path | None = None
     fractional_coordinates: bool = False
 
@@ -318,6 +319,7 @@ class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
         return MatbenchDiscoveryAseDataset(
             split_csv_path=self.split_csv_path,
             base_path=self.base_path,
+            atoms_metadata=self.atoms_metadata,
             energy_linref_path=self.energy_linref_path,
             fractional_coordinates=self.fractional_coordinates,
         )

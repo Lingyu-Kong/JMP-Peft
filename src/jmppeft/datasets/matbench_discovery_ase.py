@@ -78,16 +78,21 @@ def frame_to_data(
 
 
 class MatbenchDiscoveryAseDataset(Dataset[Data]):
+    def data_sizes(self, indices: list[int]) -> np.ndarray:
+        return self.atoms_metadata[indices]
+
     def __init__(
         self,
         split_csv_path: Path,
         base_path: Path,
+        atoms_metadata: Path,
         energy_linref_path: Path | None = None,
         fractional_coordinates: bool = False,
     ) -> None:
         super().__init__()
 
         self.df = pd.read_csv(split_csv_path, index_col=False)
+        self.atoms_metadata = np.load(atoms_metadata)
         self.base_path = base_path
 
         self.energy_linref = None
