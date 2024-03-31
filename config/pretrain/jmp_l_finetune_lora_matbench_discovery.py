@@ -1,5 +1,4 @@
 # %%
-import os
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +10,7 @@ from jmppeft.modules.lora import LoraRootConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
+    WarmupCosRLPConfig,
 )
 from jmppeft.tasks.finetune.matbench_discovery import (
     MatbenchDiscoveryConfig,
@@ -20,8 +20,6 @@ from jmppeft.utils.gradient_checkpointing import GradientCheckpointingConfig
 from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
 )
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def _flatten(config: dict[str, dict[str, Any]]):
@@ -130,6 +128,9 @@ def create_config(
         use_linref=True,
     )
 
+    assert isinstance(config.lr_scheduler, WarmupCosRLPConfig)
+    config.lr_scheduler.max_epochs = 1
+
     config.batch_size = 1
     config.gradient_checkpointing = GradientCheckpointingConfig()
     config.trainer.precision = "32-true"
@@ -224,8 +225,7 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = Runner(run)
-# runner.fast_dev_run(configs)
-runner.local(configs)
+runner.fast_dev_run(configs)
 
 # %%
 runner = Runner(run)
