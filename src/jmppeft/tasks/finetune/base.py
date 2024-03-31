@@ -37,6 +37,9 @@ from ...datasets.finetune_lmdb import (
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...datasets.matbench_discovery_ase import MatbenchDiscoveryAseDataset
+from ...datasets.matbench_discovery_megnet_json import (
+    MatbenchDiscoveryMegNetJsonDataset,
+)
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
@@ -84,7 +87,10 @@ log = getLogger(__name__)
 
 
 DatasetType: TypeAlias = (
-    FinetuneLmdbDataset | PDBBindDataset | MatbenchDiscoveryAseDataset
+    FinetuneLmdbDataset
+    | PDBBindDataset
+    | MatbenchDiscoveryAseDataset
+    | MatbenchDiscoveryMegNetJsonDataset
 )
 
 
@@ -327,10 +333,23 @@ class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
         )
 
 
+class FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig(TypedConfig):
+    name: Literal["matbench_discovery_megnet_json"] = "matbench_discovery_megnet_json"
+    json_path: Path
+    energy_linref_path: Path | None = None
+
+    def create_dataset(self):
+        return MatbenchDiscoveryMegNetJsonDataset(
+            json_path=self.json_path,
+            energy_linref_path=self.energy_linref_path,
+        )
+
+
 FinetuneDatasetConfig: TypeAlias = Annotated[
     FinetuneLmdbDatasetConfig
     | FinetunePDBBindDatasetConfig
-    | FinetuneMatbenchDiscoveryDatasetConfig,
+    | FinetuneMatbenchDiscoveryDatasetConfig
+    | FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig,
     Field(discriminator="name"),
 ]
 

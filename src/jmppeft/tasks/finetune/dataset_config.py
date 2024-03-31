@@ -4,6 +4,7 @@ from typing import Literal, TypeAlias
 from .base import (
     FinetuneLmdbDatasetConfig,
     FinetuneMatbenchDiscoveryDatasetConfig,
+    FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig,
     FinetunePDBBindDatasetConfig,
 )
 from .matbench import MatbenchDataset
@@ -94,16 +95,27 @@ def pdbbind_config(split: Split):
 def matbench_discovery_config(
     base_path: Path,
     split: Split,
+    use_megnet_json: bool = True,
     total_energy: bool = True,
     use_atoms_metadata: bool = True,
+    use_linref: bool = False,
 ):
-    config = FinetuneMatbenchDiscoveryDatasetConfig(
-        split_csv_path=base_path / "splits" / f"{split}.csv",
-        base_path=base_path / "mptrj-gga-ggapu",
-        atoms_metadata=base_path / "natoms" / f"{split}.npy"
-        if use_atoms_metadata
-        else None,
-    )
+    if use_megnet_json:
+        config = FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig(
+            json_path=base_path / "megnet-133k.json",
+            energy_linref_path=base_path / "energy_linref_megnet.npy"
+            if use_linref
+            else None,
+        )
+    else:
+        config = FinetuneMatbenchDiscoveryDatasetConfig(
+            split_csv_path=base_path / "splits" / f"{split}.csv",
+            base_path=base_path / "mptrj-gga-ggapu",
+            atoms_metadata=base_path / "natoms" / f"{split}.npy"
+            if use_atoms_metadata
+            else None,
+            energy_linref_path=base_path / "energy_linref.npy" if use_linref else None,
+        )
 
     if not total_energy:
         raise NotImplementedError("Only total energy is supported")

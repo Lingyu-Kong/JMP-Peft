@@ -10,6 +10,7 @@ from ...tasks.finetune.base import PrimaryMetricConfig
 def jmp_l_matbench_discovery_config_(
     config: MatbenchDiscoveryConfig,
     base_path: Path,
+    use_megnet_json: bool = True,
     total_energy: bool = True,
     use_atoms_metadata: bool = True,
 ):
@@ -25,18 +26,21 @@ def jmp_l_matbench_discovery_config_(
     config.train_dataset = DC.matbench_discovery_config(
         base_path,
         "train",
+        use_megnet_json=use_megnet_json,
         total_energy=total_energy,
         use_atoms_metadata=use_atoms_metadata,
     )
     config.val_dataset = DC.matbench_discovery_config(
         base_path,
         "val",
+        use_megnet_json=use_megnet_json,
         total_energy=total_energy,
         use_atoms_metadata=use_atoms_metadata,
     )
     config.test_dataset = DC.matbench_discovery_config(
         base_path,
         "test",
+        use_megnet_json=use_megnet_json,
         total_energy=total_energy,
         use_atoms_metadata=use_atoms_metadata,
     )

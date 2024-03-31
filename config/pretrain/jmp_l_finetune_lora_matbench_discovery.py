@@ -21,7 +21,7 @@ from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
 )
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def _flatten(config: dict[str, dict[str, Any]]):
@@ -124,7 +124,11 @@ def create_config(
     config.name = "matbench_discovery"
     jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
     jmp_l_matbench_discovery_config_(
-        config, base_path, total_energy=True, use_atoms_metadata=True
+        config,
+        base_path,
+        total_energy=True,
+        use_atoms_metadata=True,
+        use_megnet_json=True,
     )
 
     config.batch_size = 1
