@@ -126,12 +126,13 @@ def create_config(
     jmp_l_matbench_discovery_config_(
         config,
         base_path,
-        use_megnet_json=True,
+        use_megnet_133k=True,
         use_linref=True,
     )
 
     config.batch_size = 1
     config.gradient_checkpointing = GradientCheckpointingConfig()
+    config.trainer.precision = "32-true"
 
     lora_lr_scale = None
     if lora:
@@ -223,7 +224,8 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = Runner(run)
-runner.fast_dev_run(configs)
+# runner.fast_dev_run(configs)
+runner.local(configs)
 
 # %%
 runner = Runner(run)
@@ -233,5 +235,5 @@ runner.local_session_per_gpu(
     num_jobs_per_gpu=1,
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
-    gpus=[1],
+    gpus=[0],
 )

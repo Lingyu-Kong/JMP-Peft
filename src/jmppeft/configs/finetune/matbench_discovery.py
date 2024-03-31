@@ -10,7 +10,7 @@ from ...tasks.finetune.base import PrimaryMetricConfig
 def jmp_l_matbench_discovery_config_(
     config: MatbenchDiscoveryConfig,
     base_path: Path,
-    use_megnet_json: bool = True,
+    use_megnet_133k: bool = True,
     use_atoms_metadata: bool = True,
     use_linref: bool = False,
 ):
@@ -26,21 +26,21 @@ def jmp_l_matbench_discovery_config_(
     config.train_dataset = DC.matbench_discovery_config(
         base_path,
         "train",
-        use_megnet_json=use_megnet_json,
+        use_megnet_133k=use_megnet_133k,
         use_atoms_metadata=use_atoms_metadata,
         use_linref=use_linref,
     )
     config.val_dataset = DC.matbench_discovery_config(
         base_path,
         "val",
-        use_megnet_json=use_megnet_json,
+        use_megnet_133k=use_megnet_133k,
         use_atoms_metadata=use_atoms_metadata,
         use_linref=use_linref,
     )
     config.test_dataset = DC.matbench_discovery_config(
         base_path,
         "test",
-        use_megnet_json=use_megnet_json,
+        use_megnet_133k=use_megnet_133k,
         use_atoms_metadata=use_atoms_metadata,
         use_linref=use_linref,
     )
@@ -53,7 +53,7 @@ def jmp_l_matbench_discovery_config_(
     config.trainer.inference_mode = False
 
     # Set up normalization
-    if use_megnet_json:
+    if use_megnet_133k:
         config.normalization["force"] = NC(mean=0.0, std=0.5662145031694755)
         if use_linref:
             config.normalization["y"] = NC(

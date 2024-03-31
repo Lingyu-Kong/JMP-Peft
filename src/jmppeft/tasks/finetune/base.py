@@ -37,10 +37,7 @@ from ...datasets.finetune_lmdb import (
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...datasets.matbench_discovery_ase import MatbenchDiscoveryAseDataset
-from ...datasets.matbench_discovery_megnet_json import (
-    MatbenchDiscoveryMegNetJsonDataset,
-    MatbenchDiscoveryMegNetNdJsonDataset,
-)
+from ...datasets.matbench_discovery_megnet_npz import MatbenchDiscoveryMegNetNpzDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
@@ -91,8 +88,7 @@ DatasetType: TypeAlias = (
     FinetuneLmdbDataset
     | PDBBindDataset
     | MatbenchDiscoveryAseDataset
-    | MatbenchDiscoveryMegNetJsonDataset
-    | MatbenchDiscoveryMegNetNdJsonDataset
+    | MatbenchDiscoveryMegNetNpzDataset
 )
 
 
@@ -335,28 +331,15 @@ class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
         )
 
 
-class FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig(CommonDatasetConfig):
-    name: Literal["matbench_discovery_megnet_json"] = "matbench_discovery_megnet_json"
+class FinetuneMatbenchDiscoveryMegNet133kDatasetConfig(CommonDatasetConfig):
+    name: Literal["matbench_discovery_megnet_133k"] = "matbench_discovery_megnet_133k"
 
-    json_path: Path
-    atoms_metadata: Path | None = None
+    base_path: Path
     energy_linref_path: Path | None = None
 
     def create_dataset(self):
-        # If the file ends in a .ndjson, use the ndjson dataset
-        if self.json_path.suffix == ".ndjson":
-            assert (
-                self.atoms_metadata is not None
-            ), "atoms_metadata must be provided for .ndjson files"
-            return MatbenchDiscoveryMegNetNdJsonDataset(
-                json_path=self.json_path,
-                atoms_metadata=self.atoms_metadata,
-                energy_linref_path=self.energy_linref_path,
-            )
-
-        return MatbenchDiscoveryMegNetJsonDataset(
-            json_path=self.json_path,
-            energy_linref_path=self.energy_linref_path,
+        return MatbenchDiscoveryMegNetNpzDataset(
+            base_path=self.base_path, energy_linref_path=self.energy_linref_path
         )
 
 
@@ -364,7 +347,7 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
     FinetuneLmdbDatasetConfig
     | FinetunePDBBindDatasetConfig
     | FinetuneMatbenchDiscoveryDatasetConfig
-    | FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig,
+    | FinetuneMatbenchDiscoveryMegNet133kDatasetConfig,
     Field(discriminator="name"),
 ]
 

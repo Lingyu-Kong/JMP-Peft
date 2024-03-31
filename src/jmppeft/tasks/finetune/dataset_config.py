@@ -4,7 +4,7 @@ from typing import Literal, TypeAlias
 from .base import (
     FinetuneLmdbDatasetConfig,
     FinetuneMatbenchDiscoveryDatasetConfig,
-    FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig,
+    FinetuneMatbenchDiscoveryMegNet133kDatasetConfig,
     FinetunePDBBindDatasetConfig,
 )
 from .matbench import MatbenchDataset
@@ -95,15 +95,16 @@ def pdbbind_config(split: Split):
 def matbench_discovery_config(
     base_path: Path,
     split: Split,
-    use_megnet_json: bool = True,
+    use_megnet_133k: bool = True,
     use_atoms_metadata: bool = True,
     use_linref: bool = False,
 ):
-    if use_megnet_json:
-        base_path = base_path / "megnet-133k"
-        config = FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig(
-            json_path=base_path / "data.ndjson",
-            atoms_metadata=base_path / "natoms.npy",
+    if use_megnet_133k:
+        assert use_atoms_metadata, "use_atoms_metadata must be True for MegNet-133k"
+
+        base_path = base_path / "megnet-133k-npz"
+        config = FinetuneMatbenchDiscoveryMegNet133kDatasetConfig(
+            base_path=base_path / f"{split}",
             energy_linref_path=base_path / "linrefs.npy" if use_linref else None,
         )
     else:
