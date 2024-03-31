@@ -39,6 +39,7 @@ from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...datasets.matbench_discovery_ase import MatbenchDiscoveryAseDataset
 from ...datasets.matbench_discovery_megnet_json import (
     MatbenchDiscoveryMegNetJsonDataset,
+    MatbenchDiscoveryMegNetNdJsonDataset,
 )
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
@@ -91,6 +92,7 @@ DatasetType: TypeAlias = (
     | PDBBindDataset
     | MatbenchDiscoveryAseDataset
     | MatbenchDiscoveryMegNetJsonDataset
+    | MatbenchDiscoveryMegNetNdJsonDataset
 )
 
 
@@ -333,12 +335,25 @@ class FinetuneMatbenchDiscoveryDatasetConfig(CommonDatasetConfig):
         )
 
 
-class FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig(TypedConfig):
+class FinetuneMatbenchDiscoveryMegNetJsonDatasetConfig(CommonDatasetConfig):
     name: Literal["matbench_discovery_megnet_json"] = "matbench_discovery_megnet_json"
+
     json_path: Path
+    atoms_metadata: Path | None = None
     energy_linref_path: Path | None = None
 
     def create_dataset(self):
+        # If the file ends in a .ndjson, use the ndjson dataset
+        if self.json_path.suffix == ".ndjson":
+            assert (
+                self.atoms_metadata is not None
+            ), "atoms_metadata must be provided for .ndjson files"
+            return MatbenchDiscoveryMegNetNdJsonDataset(
+                json_path=self.json_path,
+                atoms_metadata=self.atoms_metadata,
+                energy_linref_path=self.energy_linref_path,
+            )
+
         return MatbenchDiscoveryMegNetJsonDataset(
             json_path=self.json_path,
             energy_linref_path=self.energy_linref_path,

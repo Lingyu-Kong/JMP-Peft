@@ -254,7 +254,7 @@ class OutputBlock(AtomUpdateBlock):
             x_F_basis = x_F * basis_emb_F
             x_F = self.scale_rbf_F(x_F_basis, ref=x_F)
         else:
-            x_F = 0
+            x_F = None
         # ------------------------------------------------------------------ #
 
         return x_E, x_F

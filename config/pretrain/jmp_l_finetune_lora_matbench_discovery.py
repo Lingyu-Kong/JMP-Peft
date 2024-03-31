@@ -126,9 +126,8 @@ def create_config(
     jmp_l_matbench_discovery_config_(
         config,
         base_path,
-        total_energy=True,
-        use_atoms_metadata=True,
         use_megnet_json=True,
+        use_linref=True,
     )
 
     config.batch_size = 1

@@ -11,8 +11,8 @@ def jmp_l_matbench_discovery_config_(
     config: MatbenchDiscoveryConfig,
     base_path: Path,
     use_megnet_json: bool = True,
-    total_energy: bool = True,
     use_atoms_metadata: bool = True,
+    use_linref: bool = False,
 ):
     # Optimizer settings
     config.optimizer = AdamWConfig(
@@ -27,22 +27,22 @@ def jmp_l_matbench_discovery_config_(
         base_path,
         "train",
         use_megnet_json=use_megnet_json,
-        total_energy=total_energy,
         use_atoms_metadata=use_atoms_metadata,
+        use_linref=use_linref,
     )
     config.val_dataset = DC.matbench_discovery_config(
         base_path,
         "val",
         use_megnet_json=use_megnet_json,
-        total_energy=total_energy,
         use_atoms_metadata=use_atoms_metadata,
+        use_linref=use_linref,
     )
     config.test_dataset = DC.matbench_discovery_config(
         base_path,
         "test",
         use_megnet_json=use_megnet_json,
-        total_energy=total_energy,
         use_atoms_metadata=use_atoms_metadata,
+        use_linref=use_linref,
     )
 
     # MatbenchDiscovery specific settings
@@ -53,16 +53,15 @@ def jmp_l_matbench_discovery_config_(
     config.trainer.inference_mode = False
 
     # Set up normalization
-    if total_energy:
-        """
-        -188.96425528278039 191.08882335828582
-        -6.361073855810166e-12 0.8080419658412661
-        0.6529318185606179
-
-        """
-        config.normalization = {
-            "y": NC(mean=-188.96425528278039, std=191.08882335828582),
-            "force": NC(mean=0.0, std=0.6529318185606179),
-        }
+    if use_megnet_json:
+        config.normalization["force"] = NC(mean=0.0, std=0.5662145031694755)
+        if use_linref:
+            config.normalization["y"] = NC(
+                mean=0.5590934925198368, std=31.5895592795005
+            )
+        else:
+            config.normalization["y"] = NC(
+                mean=-184.37418267781965, std=188.89161113304596
+            )
     else:
-        raise NotImplementedError("Only total energy is supported for now")
+        raise NotImplementedError("Only megnet json is supported for now")
