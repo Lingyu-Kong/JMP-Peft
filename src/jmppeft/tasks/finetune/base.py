@@ -149,9 +149,9 @@ class WarmupCosRLPConfig(TypedConfig):
     name: Literal["warmup_cos_rlp"] = "warmup_cos_rlp"
 
     warmup_steps: int | None = None
-    warmup_epochs: int | None = None
+    warmup_epochs: int | float | None = None
     max_steps: int | None = None
-    max_epochs: int | None = None
+    max_epochs: int | float | None = None
     warmup_start_lr_factor: float = 0.0
     min_lr_factor: float = 1.0e-2
     last_step: int = -1
@@ -1358,7 +1358,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     self.trainer.num_training_batches
                     / self.trainer.accumulate_grad_batches
                 )
-                warmup_steps = warmup_epochs * num_steps_per_epoch
+                warmup_steps = int(warmup_epochs * num_steps_per_epoch)
             else:
                 warmup_steps = 0
         log.critical(f"Computed warmup_steps: {warmup_steps}")
@@ -1370,7 +1370,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     self.trainer.num_training_batches
                     / self.trainer.accumulate_grad_batches
                 )
-                max_steps = max_epochs * num_steps_per_epoch
+                max_steps = int(max_epochs * num_steps_per_epoch)
             else:
                 max_steps = self.trainer.estimated_stepping_batches
                 assert math.isfinite(max_steps), f"{max_steps=} is not finite"

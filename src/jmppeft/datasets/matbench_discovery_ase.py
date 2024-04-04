@@ -29,7 +29,7 @@ def _get_fixed_atoms(atoms: ase.Atoms):
     return fixed
 
 
-def frame_to_data(
+def _frame_to_data(
     frame: ase.Atoms,
     fractional_coordinates: bool = False,
 ) -> Data:
@@ -97,6 +97,16 @@ class MatbenchDiscoveryAseDataset(Dataset[Data]):
         energy_linref_path: Path | None = None,
         fractional_coordinates: bool = False,
     ) -> None:
+        """
+        Dataset for loading a trajectory dataset stored as *.extxyz files.
+
+        Args:
+            split_csv_path: Path to a CSV file with columns `id` and `traj_idx`. `id` is the name of the *.extxyz file (without extension) and `traj_idx` is the index of the frame in the trajectory (0-based).
+            base_path: Path to the directory containing the *.extxyz files.
+            atoms_metadata: Path to a numpy file with the number of atoms in each frame. This is used for efficient batching when used alongside `BalancedBatchSampler`.
+            energy_linref_path: Path to a numpy file with the linear reference energies.
+            fractional_coordinates: Whether to use fractional coordinates.
+        """
         super().__init__()
 
         self.df = pd.read_csv(split_csv_path, index_col=False)
@@ -126,7 +136,7 @@ class MatbenchDiscoveryAseDataset(Dataset[Data]):
         frame = ase.io.read(traj_path, index=traj_idx)
         assert isinstance(frame, ase.Atoms), f"Expected ase.Atoms, got {type(frame)}"
 
-        data = frame_to_data(frame, self.fractional_coordinates)
+        data = _frame_to_data(frame, self.fractional_coordinates)
 
         if self.energy_linref is not None:
             reference_energy = self.energy_linref[data.atomic_numbers].sum()

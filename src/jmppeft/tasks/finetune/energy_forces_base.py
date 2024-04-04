@@ -42,7 +42,7 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         ]
         self.node_targets = []
 
-    def forces_config_(self, *, gradient: bool):
+    def forces_config_(self, *, gradient: bool, coefficient: float = 100.0):
         self.graph_targets = [
             GraphScalarTargetConfig(name="y", loss_coefficient=0.0),
         ]
@@ -50,24 +50,32 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
             GradientForcesTargetConfig(
                 name="force",
                 energy_name="y",
-                loss_coefficient=100.0,
+                loss_coefficient=coefficient,
             )
             if gradient
-            else NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
+            else NodeVectorTargetConfig(name="force", loss_coefficient=coefficient),
         ]
 
-    def energy_forces_config_(self, *, gradient: bool):
+    def energy_forces_config_(
+        self,
+        *,
+        gradient: bool,
+        energy_coefficient: float = 1.0,
+        force_coefficient: float = 100.0,
+    ):
         self.graph_targets = [
-            GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
+            GraphScalarTargetConfig(name="y", loss_coefficient=energy_coefficient),
         ]
         self.node_targets = [
             GradientForcesTargetConfig(
                 name="force",
                 energy_name="y",
-                loss_coefficient=100.0,
+                loss_coefficient=force_coefficient,
             )
             if gradient
-            else NodeVectorTargetConfig(name="force", loss_coefficient=100.0),
+            else NodeVectorTargetConfig(
+                name="force", loss_coefficient=force_coefficient
+            ),
         ]
 
     def supports_inference_mode(self):
@@ -90,6 +98,19 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
 
         if not self.supports_inference_mode():
             assert not self.trainer.inference_mode, "`config.trainer.inference_mode` is True, but the model does not support inference mode."
+
+        if any(
+            isinstance(target, NodeVectorTargetConfig) for target in self.node_targets
+        ):
+            assert (
+                self.trainer.inference_mode
+            ), "NodeVectorTargetConfig requires inference mode to be enabled."
+            assert (
+                self.backbone.regress_forces
+            ), "NodeVectorTargetConfig requires `backbone.regress_forces` to be True."
+            assert (
+                self.backbone.direct_forces
+            ), "NodeVectorTargetConfig requires `backbone.direct_forces` to be True."
 
 
 TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
