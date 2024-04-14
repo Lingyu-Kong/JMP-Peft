@@ -1,14 +1,13 @@
 import argparse
 from pathlib import Path
-from typing import assert_never
 
 import numpy as np
+from jmppeft.datasets.finetune_lmdb import FinetuneDatasetConfig, FinetuneLmdbDataset
+from jmppeft.datasets.pretrain_lmdb import PretrainDatasetConfig, PretrainLmdbDataset
 from torch.utils.data import DataLoader, Dataset
 from torch_geometric.data.data import BaseData
 from tqdm import tqdm
-
-from jmppeft.datasets.finetune_lmdb import FinetuneDatasetConfig, FinetuneLmdbDataset
-from jmppeft.datasets.pretrain_lmdb import PretrainDatasetConfig, PretrainLmdbDataset
+from typing_extensions import assert_never
 
 
 def _gather_metadata(

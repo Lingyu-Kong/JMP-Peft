@@ -4,10 +4,145 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
+from typing import Literal
+
 import numpy as np
 import torch
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo, segment_csr
+
+
+def radius_graph_torchmdnet(
+    pos: torch.Tensor,
+    batch: torch.Tensor | None = None,
+    box: torch.Tensor | None = None,
+    cutoff_lower: float = 0.0,
+    cutoff_upper: float = 5.0,
+    max_num_pairs: int = -32,
+    return_vecs: bool = False,
+    loop: bool = False,
+    strategy: Literal["shared", "brute", "cell"] = "brute",
+    include_transpose: bool = True,
+    resize_to_fit: bool = True,
+    check_errors: bool = True,
+    long_edge_index: bool = True,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None] | None:
+    """Compute the neighbor list for a given cutoff.
+
+    This operation can be placed inside a CUDA graph in some cases.
+    In particular, resize_to_fit and check_errors must be False.
+
+    Note that this module returns neighbors such that :math:`r_{ij} \\ge \\text{cutoff_lower}\\quad\\text{and}\\quad r_{ij} < \\text{cutoff_upper}`.
+
+    This function optionally supports periodic boundary conditions with
+    arbitrary triclinic boxes.  The box vectors `a`, `b`, and `c` must satisfy
+    certain requirements:
+
+    .. code:: python
+
+       a[1] = a[2] = b[2] = 0
+       a[0] >= 2*cutoff, b[1] >= 2*cutoff, c[2] >= 2*cutoff
+       a[0] >= 2*b[0]
+       a[0] >= 2*c[0]
+       b[1] >= 2*c[1]
+
+    These requirements correspond to a particular rotation of the system and
+    reduced form of the vectors, as well as the requirement that the cutoff be
+    no larger than half the box width.
+
+    Parameters
+    ----------
+    cutoff_lower : float
+        Lower cutoff for the neighbor list.
+    cutoff_upper : float
+        Upper cutoff for the neighbor list.
+    max_num_pairs : int
+        Maximum number of pairs to store, if the number of pairs found is less than this, the list is padded with (-1,-1) pairs up to max_num_pairs unless resize_to_fit is True, in which case the list is resized to the actual number of pairs found.
+        If the number of pairs found is larger than this, the pairs are randomly sampled. When check_errors is True, an exception is raised in this case.
+        If negative, it is interpreted as (minus) the maximum number of neighbors per atom.
+    strategy : str
+        Strategy to use for computing the neighbor list. Can be one of :code:`["shared", "brute", "cell"]`.
+
+        1. *Shared*: An O(N^2) algorithm that leverages CUDA shared memory, best for large number of particles.
+        2. *Brute*: A brute force O(N^2) algorithm, best for small number of particles.
+        3. *Cell*:  A cell list algorithm, best for large number of particles, low cutoffs and low batch size.
+    box : torch.Tensor, optional
+        The vectors defining the periodic box.  This must have shape `(3, 3)` or `(max(batch)+1, 3, 3)` if a ox per sample is desired.
+        where `box_vectors[0] = a`, `box_vectors[1] = b`, and `box_vectors[2] = c`.
+        If this is omitted, periodic boundary conditions are not applied.
+    loop : bool, optional
+        Whether to include self-interactions.
+        Default: False
+    include_transpose : bool, optional
+        Whether to include the transpose of the neighbor list.
+        Default: True
+    resize_to_fit : bool, optional
+        Whether to resize the neighbor list to the actual number of pairs found. When False, the list is padded with (-1,-1) pairs up to max_num_pairs
+        Default: True
+        If this is True the operation is not CUDA graph compatible.
+    check_errors : bool, optional
+        Whether to check for too many pairs. If this is True the operation is not CUDA graph compatible.
+        Default: True
+    return_vecs : bool, optional
+        Whether to return the distance vectors.
+        Default: False
+    long_edge_index : bool, optional
+        Whether to return edge_index as int64, otherwise int32.
+        Default: True
+    """
+    try:
+        from torchmdnet.extensions import get_neighbor_pairs_kernel
+    except ImportError:
+        return None
+
+    use_periodic = True
+    if box is None:
+        use_periodic = False
+        box = torch.empty((0, 0))
+        if strategy == "cell":
+            # Default the box to 3 times the cutoff, really inefficient for the cell list
+            lbox = cutoff_upper * 3.0
+            box = torch.tensor([[lbox, 0, 0], [0, lbox, 0], [0, 0, lbox]], device="cpu")
+    box = box.to(pos.dtype)
+    if strategy == "cell":
+        box = box.cpu()
+
+    max_pairs: int = max_num_pairs
+    if max_num_pairs < 0:
+        max_pairs = -max_num_pairs * pos.shape[0]
+    if batch is None:
+        batch = torch.zeros(pos.shape[0], dtype=torch.long, device=pos.device)
+    edge_index, edge_vec, edge_weight, num_pairs = get_neighbor_pairs_kernel(
+        strategy=strategy,
+        positions=pos,
+        batch=batch,
+        max_num_pairs=int(max_pairs),
+        cutoff_lower=cutoff_lower,
+        cutoff_upper=cutoff_upper,
+        loop=loop,
+        include_transpose=include_transpose,
+        box_vectors=box,
+        use_periodic=use_periodic,
+    )
+    if check_errors:
+        if num_pairs[0] > max_pairs:
+            raise AssertionError(
+                "Found num_pairs({}) > max_num_pairs({})".format(
+                    num_pairs[0], max_pairs
+                )
+            )
+    # Remove (-1,-1)  pairs
+    if resize_to_fit:
+        mask = edge_index[0] != -1
+        edge_index = edge_index[:, mask]
+        edge_weight = edge_weight[mask]
+        edge_vec = edge_vec[mask, :]
+    if long_edge_index:
+        edge_index = edge_index.to(torch.long)
+    if return_vecs:
+        return edge_index, edge_weight, edge_vec
+    else:
+        return edge_index, edge_weight, None
 
 
 def radius_graph_pbc(
@@ -15,7 +150,29 @@ def radius_graph_pbc(
     radius: float,
     max_num_neighbors_threshold: int,
     pbc: list[bool] = [True, True, True],
+    try_to_use_torchmdnet: bool = False,
 ):
+    if try_to_use_torchmdnet and False:
+        # Not currently working -- need to figure out the `cell_offset` return value.
+        torchmdnet_result = radius_graph_torchmdnet(
+            pos=data.pos,
+            batch=data.batch,
+            box=data.cell,
+            cutoff_lower=0.0,
+            cutoff_upper=radius,
+            max_num_pairs=-max_num_neighbors_threshold,
+            loop=False,
+            strategy="brute",
+            include_transpose=False,
+            resize_to_fit=True,
+            check_errors=False,
+            long_edge_index=True,
+            return_vecs=False,
+        )
+        if torchmdnet_result is not None:
+            edge_index, _, _ = torchmdnet_result
+            return edge_index, None, None
+
     device = data.pos.device
 
     if isinstance(data.natoms, int):

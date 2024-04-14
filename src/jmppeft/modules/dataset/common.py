@@ -1,9 +1,9 @@
-from typing import assert_never
+from collections.abc import Mapping
 
 import numpy as np
 import torch
-
 from ll import TypedConfig
+from typing_extensions import assert_never
 
 from . import dataset_transform as DT
 from .dataset_typing import TDataset
@@ -18,7 +18,7 @@ class DatasetSampleNConfig(TypedConfig):
 
 
 class DatasetAtomRefConfig(TypedConfig):
-    refs: dict[str, dict[int, float] | list[float] | np.ndarray | torch.Tensor]
+    refs: Mapping[str, Mapping[int, float] | list[float] | np.ndarray | torch.Tensor]
     """
     Reference values for each property.
 
@@ -31,10 +31,10 @@ class DatasetAtomRefConfig(TypedConfig):
 
 
 def _atomref_to_tensor(
-    value: dict[int, float] | list[float] | np.ndarray | torch.Tensor
+    value: Mapping[int, float] | list[float] | np.ndarray | torch.Tensor,
 ) -> torch.Tensor:
     match value:
-        case dict():
+        case Mapping():
             max_atomic_number = max(value.keys())
             tensor = torch.zeros(max_atomic_number + 1)
             for key, val in value.items():

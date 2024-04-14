@@ -112,29 +112,36 @@ def lora_config_(
 ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
 base_path = Path("/mnt/datasets/matbench-discovery-traj/")
 
+# ckpt_path = Path("/ccs/home/nimashoghi/proj-shared/nimashoghi/checkpoints/jmp-l.ckpt")
+# base_path = Path(
+#     "/ccs/home/nimashoghi/proj-shared/nimashoghi/datasets/matbench-trajectory"
+# )
+
 
 def create_config():
     config = MatbenchDiscoveryConfig.draft()
     config.project = "jmp_peft_nersc"
-    config.name = "matbench_discovery-nograd"
+    config.name = "matbench_discovery"
     jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
     jmp_l_matbench_discovery_config_(
         config,
         base_path,
         use_megnet_133k=True,
         use_linref=True,
-        gradient_forces=False,
+        gradient_forces=True,
         force_coefficient=10.0,
     )
-    config.backbone.regress_forces = True
-    config.backbone.direct_forces = True
+    config.backbone.regress_forces = False
+    config.backbone.direct_forces = False
 
     assert isinstance(config.lr_scheduler, WarmupCosRLPConfig)
     config.lr_scheduler.warmup_epochs = 0.1
     config.lr_scheduler.max_epochs = 1
 
-    config.batch_size = 2
-    # config.gradient_checkpointing = GradientCheckpointingConfig()
+    config.batch_size = 1
+    config.gradient_checkpointing = GradientCheckpointingConfig(
+        checkpoint_early_stop=False,
+    )
     # config.trainer.precision = "32-true"
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(

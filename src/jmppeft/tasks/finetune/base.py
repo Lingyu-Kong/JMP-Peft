@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Annotated, Any, Generic, Literal, TypeAlias, assert_never, cast
+from typing import Annotated, Any, Generic, Literal, TypeAlias, cast
 
 import rich
 import rich.console
@@ -29,7 +29,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
-from typing_extensions import TypeVar, override
+from typing_extensions import TypeVar, assert_never, override
 
 from ...datasets.finetune_lmdb import (
     FinetuneDatasetConfig as FinetuneLmdbDatasetConfigBase,

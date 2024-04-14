@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
@@ -17,6 +18,26 @@ class GradientCheckpointingConfig(TypedConfig):
     Whether to use reentrant checkpointing.
     This is recommended to be `False`, see https://pytorch.org/docs/stable/checkpoint.html#torch.utils.checkpoint.checkpoint
     """
+
+    checkpoint_early_stop: bool | None = None
+    """
+    Non-reentrant checkpoint stops recomputation as soon as all needed intermediate activations have been recomputed.
+    Set this to `True` to enable this optimization. Set to `None` to use the default value from PyTorch.
+
+    See https://pytorch.org/docs/stable/checkpoint.html
+    """
+
+    @contextlib.contextmanager
+    def context(self):
+        """
+        Context manager to temporarily set the config.
+        """
+        with contextlib.ExitStack() as stack:
+            if (early_stop := self.checkpoint_early_stop) is not None:
+                stack.enter_context(
+                    torch.utils.checkpoint.set_checkpoint_early_stop(early_stop)
+                )
+            yield
 
 
 TParams = ParamSpec("TParams")

@@ -2,7 +2,7 @@ import math
 from collections.abc import Callable
 from functools import cache, partial
 from logging import getLogger
-from typing import Annotated, Literal, TypeAlias, assert_never, cast
+from typing import Annotated, Literal, TypeAlias, cast
 
 import torch
 import torch.nn as nn
@@ -22,7 +22,7 @@ from torch_geometric.data.data import BaseData
 from torch_geometric.utils import dropout_edge
 from torch_scatter import scatter
 from torchmetrics import SumMetric
-from typing_extensions import override
+from typing_extensions import assert_never, override
 
 from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetConfigBase
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset

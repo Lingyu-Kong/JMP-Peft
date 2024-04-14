@@ -107,8 +107,13 @@ def lora_config_(
 # )
 # base_path = Path("/global/cfs/cdirs/m3641/Nima/jmp/datasets/qm9/")
 
-ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
-base_path = Path("/mnt/shared/datasets/qm9/")
+# ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
+# base_path = Path("/mnt/shared/datasets/qm9/")
+
+ckpt_path = Path("/ccs/home/nimashoghi/proj-shared/nimashoghi/checkpoints/jmp-l.ckpt")
+base_path = Path(
+    "/ccs/home/nimashoghi/proj-shared/nimashoghi/datasets/matbench-trajectory"
+)
 
 
 def create_config(
