@@ -102,7 +102,7 @@ def matbench_discovery_config(
     if use_megnet_133k:
         assert use_atoms_metadata, "use_atoms_metadata must be True for MegNet-133k"
 
-        base_path = base_path / "megnet-133k-npz"
+        base_path = base_path
         config = FinetuneMatbenchDiscoveryMegNet133kDatasetConfig(
             base_path=base_path / f"{split}",
             energy_linref_path=base_path / "linrefs.npy" if use_linref else None,

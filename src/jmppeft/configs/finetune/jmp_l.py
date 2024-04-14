@@ -33,7 +33,7 @@ def jmp_l_ft_config_(
 
     # Optimizer settings
     config.optimizer = AdamWConfig(
-        lr=5.0e-6,
+        lr=8.0e-5,
         amsgrad=False,
         betas=(0.9, 0.95),
         weight_decay=0.1,

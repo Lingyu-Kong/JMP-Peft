@@ -23,14 +23,16 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
     @override
     def generate_graphs_transform(self, data: BaseData):
         # Generate graphs
-        max_neighbors = 25
+        max_neighbors = 30
         if self.config.conditional_max_neighbors:
-            if (data.natoms > 200).any():
+            if (data.natoms > 300).any():
                 max_neighbors = 5
-            elif (data.natoms > 100).any():
+            elif (data.natoms > 200).any():
                 max_neighbors = 10
+            elif (data.natoms > 100).any():
+                max_neighbors = 20
             else:
-                max_neighbors = 25
+                max_neighbors = 30
 
         data = self.generate_graphs(
             data,

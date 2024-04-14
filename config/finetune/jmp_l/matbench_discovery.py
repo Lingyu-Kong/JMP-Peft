@@ -6,7 +6,6 @@ from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
-    WarmupCosRLPConfig,
 )
 from jmppeft.tasks.finetune.matbench_discovery import (
     MatbenchDiscoveryConfig,
@@ -25,7 +24,7 @@ base_path = Path(
 )
 
 
-def create_config():
+def create_config(gradient_forces: bool):
     config = MatbenchDiscoveryConfig.draft()
     config.project = "jmp_peft_nersc"
     config.name = "matbench_discovery"
@@ -35,21 +34,31 @@ def create_config():
         base_path,
         use_megnet_133k=True,
         use_linref=True,
-        gradient_forces=True,
+        gradient_forces=gradient_forces,
         force_coefficient=10.0,
     )
-    config.backbone.regress_forces = False
-    config.backbone.direct_forces = False
 
-    assert isinstance(config.lr_scheduler, WarmupCosRLPConfig)
-    config.lr_scheduler.warmup_epochs = 0.1
-    config.lr_scheduler.max_epochs = 1
+    if gradient_forces:
+        config.trainer.precision = "32-true"
+        config.tags.append("gradient_forces")
+        config.name += "_gradient_forces"
 
-    config.batch_size = 1
-    config.gradient_checkpointing = GradientCheckpointingConfig(
-        checkpoint_early_stop=False,
-    )
-    config.trainer.precision = "32-true"
+        config.backbone.regress_forces = False
+        config.backbone.direct_forces = False
+
+        config.batch_size = 1
+        config.gradient_checkpointing = GradientCheckpointingConfig(
+            checkpoint_early_stop=False,
+        )
+    else:
+        config.tags.append("direct_forces")
+        config.name += "_direct_forces"
+
+        config.batch_size = 2
+        config.gradient_checkpointing = None
+
+        config.backbone.regress_forces = True
+        config.backbone.direct_forces = True
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
         config,
@@ -71,10 +80,8 @@ def create_config():
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-config, model_cls = create_config()
-# # config.meta["resume_ckpt_path"] = ()
-# del config.meta["ckpt_path"]
-# config.trainer.ckpt_path = "/workspaces/repositories/jmp-peft/lightning_logs/m742ekcy/on_exception_m742ekcy.ckpt"
+config, model_cls = create_config(gradient_forces=True)
+# config, model_cls = create_config(gradient_forces=False)
 
 configs.append((config, model_cls))
 
@@ -123,7 +130,7 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    gpus=[1],
+    # gpus=[1],
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )

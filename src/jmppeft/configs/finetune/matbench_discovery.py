@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from ...modules.transforms.normalize import NormalizationConfig as NC
-from ...tasks.config import AdamWConfig
 from ...tasks.finetune import MatbenchDiscoveryConfig
 from ...tasks.finetune import dataset_config as DC
 from ...tasks.finetune.base import PrimaryMetricConfig
@@ -16,14 +15,6 @@ def jmp_l_matbench_discovery_config_(
     gradient_forces: bool = True,
     force_coefficient: float = 100.0,
 ):
-    # Optimizer settings
-    config.optimizer = AdamWConfig(
-        lr=5.0e-6,
-        amsgrad=False,
-        betas=(0.9, 0.95),
-        weight_decay=0.1,
-    )
-
     # Set up dataset
     config.train_dataset = DC.matbench_discovery_config(
         base_path,
