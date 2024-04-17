@@ -202,7 +202,7 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 
 # %%
-runner = Runner(run)
+runner = Runner(run, savedir="/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/")
 runner.submit_summit(
     configs,
     nodes=1,
