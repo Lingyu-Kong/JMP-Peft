@@ -7,10 +7,12 @@ addopts = ["--import-mode=importlib"]
 python_files = ["**/__tests__/*.py"]
 
 [tool.pyright]
+typeCheckingMode = "standard"
 deprecateTypingAliases = true
 strictListInference = true
 strictDictionaryInference = true
 strictSetInference = true
+ignore = ["src/ll/submitit/*"]
 
 [tool.ruff.lint]
 ignore = ["F722", "F821"]

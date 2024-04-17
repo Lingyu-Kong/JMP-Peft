@@ -3,6 +3,7 @@ from pathlib import Path
 
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
+from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
@@ -16,12 +17,8 @@ from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
 )
 
-ckpt_path = Path(
-    "/global/cfs/cdirs/m3641/Nima/jmp/checkpoints/fm_gnoc_large_2_epoch.ckpt"
-)
-base_path = Path(
-    "/global/cfs/cdirs/m3641/Nima/jmp/datasets/matbench-discovery-megnet-133k/"
-)
+ckpt_path = Path("/mnt/shared/checkpoints/fm_gnoc_large_2_epoch.ckpt")
+base_path = Path("/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/")
 
 
 def create_config(gradient_forces: bool):
@@ -35,8 +32,15 @@ def create_config(gradient_forces: bool):
         use_megnet_133k=True,
         use_linref=True,
         gradient_forces=gradient_forces,
-        force_coefficient=10.0,
+        force_coefficient=1.0,
     )
+    config.optimizer = config.optimizer = AdamWConfig(
+        lr=5.0e-6,
+        amsgrad=False,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
+    )
+    config.name += "_fc1"
 
     if gradient_forces:
         config.trainer.precision = "32-true"
@@ -45,6 +49,7 @@ def create_config(gradient_forces: bool):
 
         config.backbone.regress_forces = False
         config.backbone.direct_forces = False
+        config.backbone.regress_energy = True
 
         config.batch_size = 1
         config.gradient_checkpointing = GradientCheckpointingConfig(
@@ -59,6 +64,7 @@ def create_config(gradient_forces: bool):
 
         config.backbone.regress_forces = True
         config.backbone.direct_forces = True
+        config.backbone.regress_energy = False
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
         config,
@@ -80,8 +86,8 @@ def create_config(gradient_forces: bool):
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-config, model_cls = create_config(gradient_forces=True)
-# config, model_cls = create_config(gradient_forces=False)
+# config, model_cls = create_config(gradient_forces=True)
+config, model_cls = create_config(gradient_forces=False)
 
 configs.append((config, model_cls))
 
@@ -130,7 +136,7 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    # gpus=[1],
+    gpus=[0],
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )

@@ -43,9 +43,13 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         self.node_targets = []
 
     def forces_config_(self, *, gradient: bool, coefficient: float = 100.0):
-        self.graph_targets = [
-            GraphScalarTargetConfig(name="y", loss_coefficient=0.0),
-        ]
+        self.graph_targets = (
+            [
+                GraphScalarTargetConfig(name="y", loss_coefficient=0.0),
+            ]
+            if gradient
+            else []
+        )
         self.node_targets = [
             GradientForcesTargetConfig(
                 name="force",

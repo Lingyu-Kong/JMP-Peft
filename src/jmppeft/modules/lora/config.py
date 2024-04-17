@@ -1,7 +1,6 @@
-import math
 from functools import partial
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict
 
 from ll import PrivateAttr, TypedConfig
 from typing_extensions import override

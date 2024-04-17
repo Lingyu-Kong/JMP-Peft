@@ -15,7 +15,6 @@ from scipy.special import binom
 from torch_geometric.data import Batch
 
 from ....modules.scaling import ScaleFactor
-from ..config import BackboneConfig
 
 log = getLogger(__name__)
 
