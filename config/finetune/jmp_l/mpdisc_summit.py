@@ -132,7 +132,7 @@ def create_config():
     config.lr_scheduler.warmup_epochs = 0.1
     config.lr_scheduler.max_epochs = 1
 
-    config.batch_size = 2
+    config.batch_size = 1
     # config.gradient_checkpointing = GradientCheckpointingConfig()
     # config.trainer.precision = "32-true"
 
@@ -208,7 +208,7 @@ runner = Runner(
 )
 runner.submit_summit(
     configs,
-    nodes=1,
+    nodes=2,
     project="MAT273",
     # queue="batch-hm",
     env={"LL_DISABLE_TYPECHECKING": "1"},
