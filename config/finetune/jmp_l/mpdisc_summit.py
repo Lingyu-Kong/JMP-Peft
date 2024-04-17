@@ -208,7 +208,7 @@ runner.submit_summit(
     nodes=1,
     project="MAT273",
     queue="batch-hm",
-    lsf_kwargs={"command_prefix": "jsrun -n1 -c42 -g6"},
+    # lsf_kwargs={"command_prefix": "jsrun -n1 -c42 -g6"},
 )
 
 
