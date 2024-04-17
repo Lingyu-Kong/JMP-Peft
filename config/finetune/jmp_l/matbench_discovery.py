@@ -133,6 +133,16 @@ runner.fast_dev_run(configs)
 
 # %%
 runner = Runner(run)
+runner.submit_summit(
+    configs,
+    nodes=1,
+    project="MAT273",
+    queue="batch-hm",
+    # lsf_kwargs={"command_prefix": "jsrun -n1 -c42 -g6"},
+)
+
+# %%
+runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
