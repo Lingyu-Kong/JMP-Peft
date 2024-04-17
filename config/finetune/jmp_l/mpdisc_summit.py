@@ -211,7 +211,7 @@ runner = Runner(
 )
 runner.submit_summit(
     configs,
-    nodes=1,
+    nodes=2,
     project="MAT273",
     # queue="batch-hm",
     env={"LL_DISABLE_TYPECHECKING": "1"},
