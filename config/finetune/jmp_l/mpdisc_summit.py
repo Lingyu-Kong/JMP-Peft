@@ -198,16 +198,20 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
         model = model_cls(config)
 
     trainer = Trainer(config)
-    trainer.fit(model)
+    trainer.validate(model)
 
 
 # %%
-runner = Runner(run, savedir="/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/",)
+runner = Runner(
+    run,
+    savedir="/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/",
+)
 runner.submit_summit(
     configs,
     nodes=1,
     project="MAT273",
-    queue="batch-hm",
+    # queue="batch-hm",
+    env={"LL_DISABLE_TYPECHECKING": "1"},
     # lsf_kwargs={"command_prefix": "jsrun -n1 -c42 -g6"},
 )
 
