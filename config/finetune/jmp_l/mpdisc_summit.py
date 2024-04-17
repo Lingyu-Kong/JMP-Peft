@@ -108,7 +108,7 @@ def lora_config_(
 # base_path = Path("/mnt/datasets/matbench-discovery-traj/")
 ckpt_path = Path("/ccs/home/nimashoghi/proj-shared/nimashoghi/checkpoints/jmp-l.ckpt")
 base_path = Path(
-    "/ccs/home/nimashoghi/proj-shared/nimashoghi/datasets/matbench-trajectory"
+    "/ccs/home/nimashoghi/proj-shared/nimashoghi/datasets/matbench-trajectory-m3gnet/"
 )
 
 
