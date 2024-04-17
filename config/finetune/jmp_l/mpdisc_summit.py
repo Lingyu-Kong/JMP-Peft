@@ -154,6 +154,9 @@ def create_config():
 
     config.with_base_dir_("/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/")
 
+    if (wandb_config := config.trainer.logging.wandb) is not None:
+        wandb_config.enabled = False
+
     return config.finalize(), MatbenchDiscoveryModel
 
 
@@ -208,7 +211,7 @@ runner = Runner(
 )
 runner.submit_summit(
     configs,
-    nodes=2,
+    nodes=1,
     project="MAT273",
     # queue="batch-hm",
     env={"LL_DISABLE_TYPECHECKING": "1"},
