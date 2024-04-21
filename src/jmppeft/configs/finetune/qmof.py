@@ -1,10 +1,11 @@
 from pathlib import Path
 
+from ll.model import PrimaryMetricConfig
+
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
 from ...tasks.finetune import QMOFConfig
 from ...tasks.finetune import dataset_config as DC
-from ...tasks.finetune.base import PrimaryMetricConfig
 
 STATS: dict[str, NC] = {
     "y": NC(mean=2.1866251527, std=1.175752521125648),

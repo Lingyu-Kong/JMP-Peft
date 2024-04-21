@@ -1,15 +1,12 @@
 from pathlib import Path
 
+from ll.model import EarlyStoppingConfig, PrimaryMetricConfig
+
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
 from ...tasks.finetune import RMD17Config
 from ...tasks.finetune import dataset_config as DC
-from ...tasks.finetune.base import (
-    EarlyStoppingConfig,
-    PrimaryMetricConfig,
-    RLPConfig,
-    WarmupCosRLPConfig,
-)
+from ...tasks.finetune.base import RLPConfig, WarmupCosRLPConfig
 
 STATS: dict[str, dict[str, NC]] = {
     "aspirin": {
@@ -93,7 +90,7 @@ def jmp_l_rmd17_config_(
     #   (we essentially copy Allegro here).
     config.trainer.max_epochs = 100_000
     config.trainer.max_time = "07:00:00:00"
-    config.early_stopping = EarlyStoppingConfig(
+    config.trainer.early_stopping = EarlyStoppingConfig(
         patience=1000,
         min_delta=1.0e-8,
         min_lr=1.0e-10,

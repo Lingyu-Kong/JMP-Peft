@@ -1,16 +1,12 @@
 from pathlib import Path
 
 from ll import GradientClippingConfig
+from ll.model import EarlyStoppingConfig
 
 from ...models.gemnet.config import BackboneConfig
 from ...tasks.config import AdamWConfig
 from ...tasks.finetune import FinetuneConfigBase
-from ...tasks.finetune.base import (
-    CheckpointBestConfig,
-    EarlyStoppingConfig,
-    RLPConfig,
-    WarmupCosRLPConfig,
-)
+from ...tasks.finetune.base import RLPConfig, WarmupCosRLPConfig
 from ...utils.param_specific_util import make_parameter_specific_optimizer_config
 
 
@@ -78,12 +74,11 @@ def jmp_l_ft_config_(
     # Base early stopping settings
     config.trainer.max_epochs = 500
     config.trainer.max_time = "07:00:00:00"
-    config.early_stopping = EarlyStoppingConfig(
+    config.trainer.early_stopping = EarlyStoppingConfig(
         patience=50,
         min_delta=1.0e-8,
         min_lr=1.0e-8,
     )
-    config.ckpt_best = CheckpointBestConfig()
 
     # If we are not using force output heads, we need to disable them
     if disable_force_output_heads:

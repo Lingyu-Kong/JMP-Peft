@@ -1,10 +1,11 @@
 from pathlib import Path
 
+from ll.model import PrimaryMetricConfig
+
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
 from ...tasks.finetune import SPICEConfig
 from ...tasks.finetune import dataset_config as DC
-from ...tasks.finetune.base import PrimaryMetricConfig
 
 STATS: dict[str, dict[str, NC]] = {
     "dipeptides": {

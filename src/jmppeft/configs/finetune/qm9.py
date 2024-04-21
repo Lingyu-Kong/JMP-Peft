@@ -1,10 +1,11 @@
 from pathlib import Path
 
+from ll.model import PrimaryMetricConfig
+
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig
 from ...tasks.finetune import QM9Config
 from ...tasks.finetune import dataset_config as DC
-from ...tasks.finetune.base import PrimaryMetricConfig
 from ...tasks.finetune.output_head import GraphScalarTargetConfig
 from ...tasks.finetune.qm9 import GraphSpatialExtentScalarTargetConfig, QM9Target
 

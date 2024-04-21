@@ -119,8 +119,9 @@ config.meta["resume_ckpt_path"] = next(
         "/workspaces/repositories/jmp-peft/lightning_logs/dc5rlskx/jmp_peft_nersc/dc5rlskx/checkpoints/"
     ).glob("*.ckpt")
 )
-config = ddp_(config, use_balanced_batch_sampler=True, batch_size=2)
-# debug_high_loss_(config)
+# config = ddp_(config, use_balanced_batch_sampler=True, batch_size=2)
+debug_high_loss_(config)
+# ^ act path: /workspaces/repositories/jmp-peft/config/finetune/jmp_l/lltrainer/mcezpn6d/activation
 
 
 configs.append((config, model_cls))

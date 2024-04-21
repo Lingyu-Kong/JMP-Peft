@@ -17,7 +17,6 @@ import rich.tree
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.core.optimizer import LightningOptimizer
 from lightning.pytorch.utilities.types import (
     OptimizerLRScheduler,
@@ -52,7 +51,6 @@ from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.dist_lora import AdapterLayer, DLoraConfig
-from ...modules.early_stopping import EarlyStoppingWithMinLR
 from ...modules.ema import EMAConfig
 from ...modules.lora import Linear as LoraLinear
 from ...modules.lora import LoraConfig, LoRALayer, LoraRootConfig
@@ -240,63 +238,6 @@ class CheckpointLoadConfig(TypedConfig):
     """
 
 
-class CheckpointBestConfig(TypedConfig):
-    monitor: str | None = None
-    """
-    The metric to monitor for checkpointing.
-    If None, the primary metric will be used.
-    """
-    mode: Literal["min", "max"] | None = None
-    """
-    The mode for the metric to monitor for checkpointing.
-    If None, the primary metric mode will be used.
-    """
-
-
-class EarlyStoppingConfig(TypedConfig):
-    monitor: str | None = None
-    """
-    The metric to monitor for early stopping.
-    If None, the primary metric will be used.
-    """
-    mode: Literal["min", "max"] | None = None
-    """
-    The mode for the metric to monitor for early stopping.
-    If None, the primary metric mode will be used.
-    """
-
-    patience: int
-    """
-    Number of epochs with no improvement after which training will be stopped.
-    """
-
-    min_delta: float = 1.0e-8
-    """
-    Minimum change in the monitored quantity to qualify as an improvement.
-    """
-    min_lr: float | None = None
-    """
-    Minimum learning rate. If the learning rate of the model is less than this value,
-    the training will be stopped.
-    """
-    strict: bool = True
-    """
-    Whether to enforce that the monitored quantity must improve by at least `min_delta`
-    to qualify as an improvement.
-    """
-
-
-class PrimaryMetricConfig(TypedConfig):
-    name: str
-    """The name of the primary metric"""
-    mode: Literal["min", "max"]
-    """
-    The mode of the primary metric:
-    - "min" for metrics that should be minimized (e.g., loss)
-    - "max" for metrics that should be maximized (e.g., accuracy)
-    """
-
-
 class TestConfig(TypedConfig):
     save_checkpoint_base_dir: Path | None = None
     """Where to save the checkpoint information for this run (or None to disable)"""
@@ -413,13 +354,6 @@ class FinetuneConfigBase(BaseConfig):
                 raise NotImplementedError(
                     f"Activation {self.backbone.activation=} is not implemented"
                 )
-
-    primary_metric: PrimaryMetricConfig
-    """Primary metric to use for early stopping and checkpointing"""
-    early_stopping: EarlyStoppingConfig | None = None
-    """Configuration for early stopping"""
-    ckpt_best: CheckpointBestConfig | None = CheckpointBestConfig()
-    """Configuration for saving the best checkpoint"""
 
     test: TestConfig | None = None
     """Configuration for test stage"""
@@ -650,35 +584,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         log.info(f"List of ignored parameters: {ignored_parameters_list}")
 
         self.process_freezing()
-
-        if (ckpt_best := self.config.ckpt_best) is not None:
-            if (monitor := ckpt_best.monitor) is None:
-                monitor, mode = self.primary_metric()
-            else:
-                if (mode := ckpt_best.mode) is None:
-                    mode = "min"
-
-            self.register_callback(
-                lambda: ModelCheckpoint(monitor=monitor, mode=mode or "min")
-            )
-
-        if (early_stopping := self.config.early_stopping) is not None:
-            if (monitor := early_stopping.monitor) is None:
-                monitor, mode = self.primary_metric()
-            else:
-                if (mode := early_stopping.mode) is None:
-                    mode = "min"
-
-            self.register_callback(
-                lambda: EarlyStoppingWithMinLR(
-                    monitor=monitor,
-                    mode=mode,
-                    patience=early_stopping.patience,
-                    min_delta=early_stopping.min_delta,
-                    min_lr=early_stopping.min_lr,
-                    strict=early_stopping.strict,
-                )
-            )
 
         for target in self.config.graph_targets:
             match target:
