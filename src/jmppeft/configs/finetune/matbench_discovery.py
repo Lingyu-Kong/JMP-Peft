@@ -12,8 +12,6 @@ def jmp_l_matbench_discovery_config_(
     use_megnet_133k: bool = True,
     use_atoms_metadata: bool = True,
     use_linref: bool = False,
-    gradient_forces: bool = True,
-    force_coefficient: float = 100.0,
 ):
     # Set up dataset
     config.train_dataset = DC.matbench_discovery_config(
@@ -40,11 +38,6 @@ def jmp_l_matbench_discovery_config_(
 
     # MatbenchDiscovery specific settings
     config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
-
-    # Gradient forces
-    config.forces_config_(gradient=gradient_forces, coefficient=force_coefficient)
-    if gradient_forces:
-        config.trainer.inference_mode = False
 
     # Set up normalization
     if use_megnet_133k:

@@ -209,8 +209,9 @@ runner = Runner(
     run,
     savedir="/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/",
 )
-runner.submit_summit(
+runner.submit_generic(
     configs,
+    "slurm",
     nodes=2,
     project="MAT273",
     # queue="batch-hm",

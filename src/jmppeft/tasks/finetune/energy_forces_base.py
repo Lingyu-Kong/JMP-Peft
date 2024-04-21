@@ -60,6 +60,9 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
             else NodeVectorTargetConfig(name="force", loss_coefficient=coefficient),
         ]
 
+        if gradient:
+            self.trainer.inference_mode = False
+
     def energy_forces_config_(
         self,
         *,
@@ -81,6 +84,9 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
                 name="force", loss_coefficient=force_coefficient
             ),
         ]
+
+        if gradient:
+            self.trainer.inference_mode = False
 
     def supports_inference_mode(self):
         return all(t.supports_inference_mode() for t in self.node_targets)

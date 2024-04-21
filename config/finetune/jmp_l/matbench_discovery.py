@@ -31,10 +31,10 @@ def create_config(gradient_forces: bool):
         base_path,
         use_megnet_133k=True,
         use_linref=True,
-        gradient_forces=gradient_forces,
-        force_coefficient=1.0,
     )
-    config.optimizer = config.optimizer = AdamWConfig(
+    config.forces_config_(gradient=gradient_forces, coefficient=1.0)
+
+    config.optimizer = AdamWConfig(
         lr=5.0e-6,
         amsgrad=False,
         betas=(0.9, 0.95),
@@ -80,14 +80,22 @@ def create_config(gradient_forces: bool):
         },
     )
 
-    # config.trainer.strategy = "ddp_find_unused_parameters_true"
-
     return config.finalize(), MatbenchDiscoveryModel
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 # config, model_cls = create_config(gradient_forces=True)
 config, model_cls = create_config(gradient_forces=False)
+config.meta["resume_ckpt_path"] = next(
+    Path(
+        "/workspaces/repositories/jmp-peft/lightning_logs/dc5rlskx/jmp_peft_nersc/dc5rlskx/checkpoints/"
+    ).glob("*.ckpt")
+)
+config.batch_size = 1
+config.use_balanced_batch_sampler = True
+config.trainer.use_distributed_sampler = False
+config.trainer.strategy = "ddp_find_unused_parameters_true"
+
 
 configs.append((config, model_cls))
 
@@ -124,29 +132,20 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
         model = model_cls(config)
 
     trainer = Trainer(config)
-    trainer.fit(model)
+    trainer.fit(model, ckpt_path=resume_ckpt_path)
 
 
 # %%
 runner = Runner(run)
 runner.fast_dev_run(configs)
 
-# %%
-runner = Runner(run)
-runner.submit_summit(
-    configs,
-    nodes=1,
-    project="MAT273",
-    queue="batch-hm",
-    # lsf_kwargs={"command_prefix": "jsrun -n1 -c42 -g6"},
-)
 
 # %%
 runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    gpus=[0],
+    gpus=[(0, 1)],
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )
