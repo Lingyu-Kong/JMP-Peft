@@ -1,10 +1,12 @@
 # %%
 from pathlib import Path
 
+import ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune.base import (
+    BatchDumpConfig,
     FinetuneConfigBase,
     FinetuneModelBase,
 )
@@ -83,6 +85,32 @@ def create_config(gradient_forces: bool):
     return config.finalize(), MatbenchDiscoveryModel
 
 
+def ddp_(
+    config: FinetuneConfigBase,
+    *,
+    use_balanced_batch_sampler: bool = True,
+    batch_size: int | None = None,
+):
+    config.trainer.strategy = "ddp_find_unused_parameters_true"
+    config.use_balanced_batch_sampler = use_balanced_batch_sampler
+    if use_balanced_batch_sampler:
+        config.trainer.use_distributed_sampler = False
+    if batch_size is not None:
+        config.batch_size = batch_size
+
+    return config
+
+
+def debug_high_loss_(config: FinetuneConfigBase):
+    config.trainer.actsave = ll.model.ActSaveConfig()
+    config.batch_dump = BatchDumpConfig(dump_if_loss_gt=2.5)
+    config.trainer.devices = (0,)
+    if config.trainer.logging.wandb:
+        config.trainer.logging.wandb.disable_()
+
+    config.name += "_debug_high_loss"
+
+
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 # config, model_cls = create_config(gradient_forces=True)
 config, model_cls = create_config(gradient_forces=False)
@@ -91,10 +119,8 @@ config.meta["resume_ckpt_path"] = next(
         "/workspaces/repositories/jmp-peft/lightning_logs/dc5rlskx/jmp_peft_nersc/dc5rlskx/checkpoints/"
     ).glob("*.ckpt")
 )
-config.batch_size = 1
-config.use_balanced_batch_sampler = True
-config.trainer.use_distributed_sampler = False
-config.trainer.strategy = "ddp_find_unused_parameters_true"
+config = ddp_(config, use_balanced_batch_sampler=True, batch_size=2)
+# debug_high_loss_(config)
 
 
 configs.append((config, model_cls))
@@ -134,6 +160,10 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer = Trainer(config)
     trainer.fit(model, ckpt_path=resume_ckpt_path)
 
+
+# %%
+runner = Runner(run)
+runner.local(configs)
 
 # %%
 runner = Runner(run)

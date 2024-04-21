@@ -22,7 +22,14 @@ from lightning.pytorch.core.optimizer import LightningOptimizer
 from lightning.pytorch.utilities.types import (
     OptimizerLRScheduler,
 )
-from ll import AllowMissing, BaseConfig, Field, LightningModuleBase, TypedConfig
+from ll import (
+    ActSave,
+    AllowMissing,
+    BaseConfig,
+    Field,
+    LightningModuleBase,
+    TypedConfig,
+)
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -352,6 +359,11 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
 ]
 
 
+class BatchDumpConfig(TypedConfig):
+    dump_if_loss_gt: float | None = None
+    """Dump the batch if the loss is greater than this value"""
+
+
 class FinetuneConfigBase(BaseConfig):
     gradient_checkpointing: GradientCheckpointingConfig | None = None
     """Gradient checkpointing configuration"""
@@ -457,6 +469,9 @@ class FinetuneConfigBase(BaseConfig):
     debug_print_every: int | None = None
     """Print debug information every `debug_print_every` iterations. `None` to disable."""
 
+    batch_dump: BatchDumpConfig | None = None
+    """Configuration for dumping batches"""
+
     @override
     def __post_init__(self):
         super().__post_init__()
@@ -474,6 +489,9 @@ class FinetuneConfigBase(BaseConfig):
             "At least one target must be specified, "
             f"but none are specified: {self.targets=}"
         )
+
+        if self.batch_dump is not None:
+            assert self.trainer.actsave, "Batch dump requires actsave to be enabled"
 
 
 TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
@@ -1228,11 +1246,36 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             preds = self(batch)
 
             loss = self.compute_losses(batch, preds)
+            self._process_batch_dump(batch, loss)
+
             self.log_dict(self.train_metrics(batch, preds))
 
             self._lora_debug_print()
 
             return loss
+
+    @torch.no_grad()
+    def _process_batch_dump(self, batch: BaseData, loss: torch.Tensor):
+        if (batch_dump := self.config.batch_dump) is None:
+            return
+        if batch_dump.dump_if_loss_gt is None:
+            return
+
+        loss_float = loss.item()
+        if loss_float > batch_dump.dump_if_loss_gt:
+            log.critical(
+                f"Loss {loss_float} is greater than {batch_dump.dump_if_loss_gt}. Dumping batch."
+            )
+
+            ActSave(
+                {
+                    f"batch_dump_if_loss_gt::{k}": v
+                    for k, v in {
+                        **batch.to_dict(),
+                        "loss": loss_float,
+                    }.items()
+                }
+            )
 
     @override
     def validation_step(self, batch: BaseData, batch_idx: int):

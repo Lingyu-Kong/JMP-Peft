@@ -8,6 +8,12 @@ from .energy_forces_base import EnergyForcesConfigBase, EnergyForcesModelBase
 
 class MatbenchDiscoveryConfig(EnergyForcesConfigBase):
     conditional_max_neighbors: bool = True
+    """
+    If True, the number of neighbors will be set based on the number of atoms in the system.
+
+    This is necessary when running the model on GPUs with limited memory, as the number of neighbors
+    is a major factor in the memory consumption of the model.
+    """
 
 
 class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
