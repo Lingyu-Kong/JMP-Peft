@@ -77,5 +77,7 @@ def matbench_config_(
 
     # MatBench specific settings
     config.dataset = dataset
-    config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(
+        name=f"matbench/{dataset}/y_mae", mode="min"
+    )
     config.default_target_()

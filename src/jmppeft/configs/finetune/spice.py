@@ -42,7 +42,9 @@ def jmp_l_spice_config_(
 
     # Spice specific settings
     config.dataset = dataset
-    config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(
+        name=f"spice/{dataset}/force_mae", mode="min"
+    )
 
     # Gradient forces
     config.forces_config_(gradient=True)

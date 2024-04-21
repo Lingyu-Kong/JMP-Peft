@@ -75,7 +75,9 @@ def jmp_l_rmd17_config_(
 
     # RMD17 specific settings
     config.molecule = molecule
-    config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(
+        name=f"md17/{molecule}/force_mae", mode="min"
+    )
 
     # Gradient forces
     config.forces_config_(gradient=True)

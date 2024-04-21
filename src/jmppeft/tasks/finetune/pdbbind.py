@@ -15,7 +15,7 @@ from .metrics import MetricPair
 class PDBBindConfig(FinetuneConfigBase):
     ALL_PDBBIND_TASKS: ClassVar[list[PDBBindTask]] = ["-logKd/Ki"]
 
-    pbdbind_task: PDBBindTask
+    pdbbind_task: PDBBindTask
 
     cutoff: float = 12.0
     max_neighbors: int = 30
@@ -26,8 +26,8 @@ class PDBBindConfig(FinetuneConfigBase):
         super().__post_init__()
 
         assert (
-            self.pbdbind_task in self.ALL_PDBBIND_TASKS
-        ), f"{self.pbdbind_task=} is not valid"
+            self.pdbbind_task in self.ALL_PDBBIND_TASKS
+        ), f"{self.pdbbind_task=} is not valid"
 
         all_datasets: list[FinetunePDBBindDatasetConfig] = []
         if self.train_dataset is not None:
@@ -51,7 +51,7 @@ class PDBBindConfig(FinetuneConfigBase):
         # Make sure all datasets have the same task
         for dataset in all_datasets:
             assert (
-                dataset.task == self.pbdbind_task
+                dataset.task == self.pdbbind_task
             ), "All datasets must have the same task"
 
 
@@ -64,7 +64,7 @@ class PDBBindModel(FinetuneModelBase[PDBBindConfig]):
 
     @override
     def metric_prefix(self) -> str:
-        return f"pdbbind/{self.config.pbdbind_task}"
+        return f"pdbbind/{self.config.pdbbind_task}"
 
     @override
     def metrics_provider(

@@ -22,8 +22,8 @@ def jmp_l_pdbbind_config_(config: PDBBindConfig):
     config.batch_size = 1
 
     # PDBBind specific settings
-    config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
-
-    # PDBBind specific settings
-    config.pbdbind_task = "-logKd/Ki"
+    config.pdbbind_task = "-logKd/Ki"
     config.metrics.report_rmse = True
+    config.primary_metric = PrimaryMetricConfig(
+        name=f"pdbbind/{config.pdbbind_task}/y_mae", mode="min"
+    )

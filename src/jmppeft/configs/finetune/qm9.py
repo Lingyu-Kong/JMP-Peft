@@ -52,7 +52,7 @@ def jmp_l_qm9_config_(config: QM9Config, target: QM9Target, base_path: Path):
     config.normalization = {target: normalization_config}
 
     # QM9 specific settings
-    config.primary_metric = PrimaryMetricConfig(name=f"{target}_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(name=f"qm9/{target}_mae", mode="min")
 
     # Handle R_2_Abs separately
     match target:

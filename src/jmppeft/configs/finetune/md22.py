@@ -62,7 +62,9 @@ def jmp_l_md22_config_(
 
     # MD22 specific settings
     config.molecule = molecule
-    config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(
+        name=f"md22/{molecule}/force_mae", mode="min"
+    )
 
     # Gradient forces
     config.forces_config_(gradient=True)

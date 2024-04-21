@@ -38,7 +38,9 @@ def jmp_l_matbench_discovery_config_(
     )
 
     # MatbenchDiscovery specific settings
-    config.primary_metric = PrimaryMetricConfig(name="force_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(
+        name="matbench_discovery/force_mae", mode="min"
+    )
 
     # Set up normalization
     if use_megnet_133k:

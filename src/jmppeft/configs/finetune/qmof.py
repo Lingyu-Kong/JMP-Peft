@@ -32,4 +32,4 @@ def jmp_l_qmof_config_(config: QMOFConfig, base_path: Path):
     config.normalization = {"y": normalization_config}
 
     # QMOF specific settings
-    config.primary_metric = PrimaryMetricConfig(name="y_mae", mode="min")
+    config.primary_metric = PrimaryMetricConfig(name="qmof/y_mae", mode="min")
