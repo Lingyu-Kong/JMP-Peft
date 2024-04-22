@@ -3,11 +3,8 @@ from pathlib import Path
 
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
-from jmppeft.tasks.finetune.base import (
-    FinetuneConfigBase,
-    FinetuneModelBase,
-    WarmupCosRLPConfig,
-)
+from jmppeft.tasks.config import AdamWConfig
+from jmppeft.tasks.finetune.base import FinetuneConfigBase, FinetuneModelBase
 from jmppeft.tasks.finetune.matbench_discovery import (
     MatbenchDiscoveryConfig,
     MatbenchDiscoveryModel,
@@ -32,19 +29,23 @@ def create_config():
         use_linref=True,
     )
     config.forces_config_(gradient=False, coefficient=1.0)
+
+    config.optimizer = AdamWConfig(
+        lr=5.0e-6,
+        amsgrad=False,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
+    )
+
     config.tags.append("direct_forces")
     config.name += "_direct_forces"
+    config.trainer.precision = "fp16-mixed"
 
-    config.batch_size = 2
-    config.gradient_checkpointing = None
+    config.batch_size = 4
 
     config.backbone.regress_forces = True
     config.backbone.direct_forces = True
     config.backbone.regress_energy = False
-
-    assert isinstance(config.lr_scheduler, WarmupCosRLPConfig)
-    config.lr_scheduler.warmup_epochs = 0.1
-    config.lr_scheduler.max_epochs = 1
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
         config,
@@ -114,7 +115,7 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 runner = Runner(run)
 runner.submit(
     configs,
-    nodes=2,
+    nodes=1,
     project="MAT273",
     queue="batch-hm",
     env={"LL_DISABLE_TYPECHECKING": "1"},
