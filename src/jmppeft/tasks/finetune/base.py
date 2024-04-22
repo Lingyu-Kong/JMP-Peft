@@ -479,8 +479,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 pass
 
     def primary_metric(self, split: Literal["train", "val", "test"] | None = "val"):
-        config = self.config.primary_metric
-        metric = f"{self.metric_prefix()}/{config.name}"
+        if (config := self.config.primary_metric) is None:
+            raise ValueError("Primary metric not set in config")
+        metric = config.name
         if split is not None:
             metric = f"{split}/{metric}"
         return metric, config.mode

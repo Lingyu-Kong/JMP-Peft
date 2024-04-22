@@ -98,8 +98,6 @@ def ddp_(
     if batch_size is not None:
         config.batch_size = batch_size
 
-    return config
-
 
 def debug_high_loss_(config: FinetuneConfigBase):
     config.trainer.actsave = ll.model.ActSaveConfig()
@@ -119,8 +117,8 @@ config.meta["resume_ckpt_path"] = next(
         "/workspaces/repositories/jmp-peft/lightning_logs/dc5rlskx/jmp_peft_nersc/dc5rlskx/checkpoints/"
     ).glob("*.ckpt")
 )
-# config = ddp_(config, use_balanced_batch_sampler=True, batch_size=2)
-debug_high_loss_(config)
+ddp_(config, use_balanced_batch_sampler=True, batch_size=2)
+# debug_high_loss_(config)
 # ^ act path: /workspaces/repositories/jmp-peft/config/finetune/jmp_l/lltrainer/mcezpn6d/activation
 
 
