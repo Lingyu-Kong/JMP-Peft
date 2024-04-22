@@ -1,4 +1,5 @@
 # %%
+from datetime import timedelta
 from pathlib import Path
 
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
@@ -119,6 +120,7 @@ runner.submit(
     project="MAT273",
     queue="batch-hm",
     env={"LL_DISABLE_TYPECHECKING": "1"},
+    walltime=timedelta(hours=24),
     # lsf_kwargs={"command_prefix": "jsrun -n1 -c42 -g6"},
 )
 
