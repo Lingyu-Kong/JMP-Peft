@@ -12,17 +12,25 @@ from jmppeft.tasks.finetune.matbench_discovery import (
 )
 from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_config
 
-ckpt_path = Path("/ccs/home/nimashoghi/proj-shared/nimashoghi/checkpoints/mpd.ckpt")
-base_path = Path(
-    "/ccs/home/nimashoghi/proj-shared/nimashoghi/datasets/matbench-trajectory-m3gnet/"
-)
+SUMMIT = True
+
+if SUMMIT:
+    ckpt_path = Path("/ccs/home/nimashoghi/proj-shared/nimashoghi/checkpoints/mpd.ckpt")
+    base_path = Path(
+        "/ccs/home/nimashoghi/proj-shared/nimashoghi/datasets/matbench-trajectory-m3gnet/"
+    )
+else:
+    ckpt_path = Path(
+        "/workspaces/repositories/jmp-peft/lightning_logs/dc5rlskx/jmp_peft_nersc/dc5rlskx/checkpoints/epoch=28-step=2449311.ckpt"
+    )
+    base_path = Path("/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/")
 
 
 def create_config():
     config = MatbenchDiscoveryConfig.draft()
     config.project = "jmp_peft_nersc"
     config.name = "matbench_discovery-nograd"
-    jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
+    jmp_l_ft_config_(config, ckpt_path, ema_backbone=False, use_bf16=True)
     jmp_l_matbench_discovery_config_(
         config,
         base_path,
@@ -42,11 +50,14 @@ def create_config():
     config.name += "_direct_forces"
     config.trainer.precision = "fp16-mixed"
 
-    config.batch_size = 4
+    config.batch_size = 1
 
     config.backbone.regress_forces = True
     config.backbone.direct_forces = True
     config.backbone.regress_energy = False
+
+    config.meta["ft_ckpt_path"] = config.meta.pop("ckpt_path")
+    config.meta["ema_backbone"] = False
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
         config,
@@ -64,7 +75,10 @@ def create_config():
 
     # config.trainer.strategy = "ddp_find_unused_parameters_true"
 
-    config.with_project_root_("/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/")
+    if SUMMIT:
+        config.with_project_root_(
+            "/gpfs/alpine2/proj-shared/mat273/nimashoghi/jmp-peft/"
+        )
 
     if (wandb_config := config.trainer.logging.wandb) is not None:
         wandb_config.disable_()
@@ -88,6 +102,12 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     if (resume_ckpt_path := config.meta.get("resume_ckpt_path")) is not None:
         model = model_cls.load_from_checkpoint(
             resume_ckpt_path,
+            strict=True,
+            hparams=config,
+        )
+    elif (ft_ckpt_path := config.meta.get("ft_ckpt_path")) is not None:
+        model = model_cls.load_from_checkpoint(
+            ft_ckpt_path,
             strict=True,
             hparams=config,
         )
