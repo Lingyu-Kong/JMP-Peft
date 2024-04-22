@@ -50,7 +50,10 @@ def create_config():
     config.name += "_direct_forces"
     config.trainer.precision = "fp16-mixed"
 
-    config.batch_size = 1
+    if SUMMIT:
+        config.batch_size = 4
+    else:
+        config.batch_size = 1
 
     config.backbone.regress_forces = True
     config.backbone.direct_forces = True
