@@ -1,12 +1,18 @@
+import argparse
+import zipfile
+from logging import getLogger
 from pathlib import Path
 from typing import TypedDict, cast
 
 import numpy as np
+import requests
 import torch
 from ll.typecheck import Float, Int
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from typing_extensions import override
+
+log = getLogger(__name__)
 
 
 class _NpzData(TypedDict):
@@ -19,7 +25,7 @@ class _NpzData(TypedDict):
     forces: Float[np.ndarray, "n_atoms 3"]
 
 
-class MatbenchDiscoveryMegNetNpzDataset(Dataset[Data]):
+class MatbenchTrajectoryDataset(Dataset[Data]):
     def data_sizes(self, indices: list[int]) -> np.ndarray:
         return self.atoms_metadata[indices]
 
@@ -76,3 +82,77 @@ class MatbenchDiscoveryMegNetNpzDataset(Dataset[Data]):
         data.cell = data.cell.unsqueeze(dim=0)
 
         return data
+
+    @staticmethod
+    def download(args: argparse.Namespace):
+        url: str = args.url
+        dest: Path = args.dest
+        force: bool = args.force or False
+
+        assert url is not None, "Please specify a URL"
+        assert dest is not None, "Please specify a destination directory"
+
+        # If the dest exists, check if we need to force download
+        if dest.exists():
+            if not force:
+                log.error(f"{dest} already exists, skipping download")
+                return
+
+            log.warning(
+                f"{dest} already exists, but force download is enabled"
+                " so we will overwrite the existing files."
+            )
+        else:
+            dest.mkdir(parents=True)
+
+        # Download the data
+        log.info(f"Downloading data from {url}")
+
+        response = requests.get(url)
+        response.raise_for_status()
+
+        # Save the data
+        with open(dest / "data.zip", "wb") as f:
+            f.write(response.content)
+
+        # Unzip the data
+        with zipfile.ZipFile(dest / "data.zip", "r") as zip_ref:
+            zip_ref.extractall(dest)
+
+        log.info(f"Data downloaded and extracted to {dest}")
+
+        # Clean up the zip file
+        (dest / "data.zip").unlink()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    task_subparsers = parser.add_subparsers(dest="task")
+
+    # Add the download task
+    download_parser = task_subparsers.add_parser("download")
+    download_parser.add_argument(
+        "--url",
+        type=str,
+        help="URL to download the data from",
+        default="https://fm-datasets.s3.amazonaws.com/matbench-trajectory-m3gnet.zip",
+    )
+    download_parser.add_argument(
+        "--dest",
+        type=Path,
+        required=True,
+        help="Destination directory to save the data",
+    )
+    download_parser.add_argument(
+        "--force",
+        action=argparse.BooleanOptionalAction,
+        help="Force download even if the file already exists",
+        default=False,
+    )
+    download_parser.set_defaults(func=MatbenchTrajectoryDataset.download)
+
+    # Parse the arguments and call the appropriate function
+    args = parser.parse_args()
+    assert args.task is not None, "Please specify a task"
+
+    args.func(args)
