@@ -3,7 +3,7 @@ import fnmatch
 import math
 import time
 from abc import abstractmethod
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import partial
 from logging import getLogger
 from pathlib import Path
@@ -1464,12 +1464,12 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 non_trainable_parameters.append(name)
 
         trainable_parameters_str = "\n".join(f"\t-{p}" for p in trainable_parameters)
-        log.info(f"Trainable parameters {trainable_parameters_str}")
+        log.debug(f"Trainable parameters {trainable_parameters_str}")
 
         non_trainable_parameters_str = "\n".join(
             f"\t-{p}" for p in non_trainable_parameters
         )
-        log.info(f"Non-trainable parameters {non_trainable_parameters_str}")
+        log.debug(f"Non-trainable parameters {non_trainable_parameters_str}")
 
     @override
     def configure_optimizers(self):
@@ -1631,12 +1631,22 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         dataset = self._apply_dataset_transforms(dataset)
         return dataset
 
-    def distributed_sampler(self, dataset: Dataset, shuffle: bool):
+    def distributed_sampler(
+        self,
+        dataset: Dataset,
+        shuffle: bool,
+        world_size: int | None = None,
+        global_rank: int | None = None,
+    ):
+        if world_size is None:
+            world_size = self.trainer.world_size
+        if global_rank is None:
+            global_rank = self.trainer.global_rank
         return DistributedSampler(
             dataset,
-            num_replicas=self.trainer.world_size,
-            rank=self.trainer.global_rank,
             shuffle=shuffle,
+            num_replicas=world_size,
+            rank=global_rank,
         )
 
     @override
@@ -1731,3 +1741,29 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     def collate_fn(self, data_list: list[BaseData]):
         return Batch.from_data_list(data_list)
+
+    def debug_get_distributed_batch(
+        self,
+        dataset_fn: Callable[[], DatasetType],
+        step_idx: int,
+        world_size: int,
+    ):
+        dataloaders = [
+            DataLoader(
+                dataset_fn(),
+                batch_size=self.config.batch_size,
+                collate_fn=self.collate_fn,
+                num_workers=self.config.num_workers,
+                sampler=self.distributed_sampler(
+                    dataset_fn(), shuffle=True, world_size=world_size, global_rank=i
+                ),
+            )
+            for i in range(world_size)
+        ]
+        dataloader_iters = [iter(dl) for dl in dataloaders]
+
+        for _ in range(step_idx):
+            for dl_iter in dataloader_iters:
+                next(dl_iter)
+
+        return [cast(BaseData, next(dl_iter)) for dl_iter in dataloader_iters]

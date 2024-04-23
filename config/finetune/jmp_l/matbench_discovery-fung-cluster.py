@@ -35,7 +35,7 @@ def create_config():
     )
 
     config.optimizer = AdamWConfig(
-        lr=5.0e-6,
+        lr=2.0e-5,
         amsgrad=False,
         betas=(0.9, 0.95),
         weight_decay=0.1,
@@ -46,7 +46,7 @@ def create_config():
     config.trainer.precision = "16-mixed-auto"
 
     # Set data config
-    config.batch_size = 10
+    config.batch_size = 8
     config.num_workers = 2
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
@@ -74,15 +74,13 @@ def create_config():
 
     config.with_project_root_(project_root)
 
-    if (wandb_config := config.trainer.logging.wandb) is not None:
-        wandb_config.disable_()
-
     return config.finalize(), MatbenchDiscoveryModel
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 config, model_cls = create_config()
 configs.append((config, model_cls))
+
 
 # %%
 from ll import Runner, Trainer
@@ -112,5 +110,8 @@ runner.local_session_per_gpu(
     configs,
     snapshot=True,
     gpus=[(1, 2, 3, 4)],
-    env={"LL_DISABLE_TYPECHECKING": "1"},
+    env={
+        "LL_DISABLE_TYPECHECKING": "1",
+        "NCCL_DEBUG": "INFO",
+    },
 )
