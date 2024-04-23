@@ -12,7 +12,7 @@ from ...utils.param_specific_util import make_parameter_specific_optimizer_confi
 
 def jmp_l_ft_config_(
     config: FinetuneConfigBase,
-    ckpt_path: Path,
+    ckpt_path: Path | None = None,
     ema_backbone: bool = True,
     disable_force_output_heads: bool = True,
     use_bf16: bool = False,
@@ -65,8 +65,9 @@ def jmp_l_ft_config_(
 
     # Checkpoint loading settings
     # We want to use EMA weights from pretraining
-    config.meta["ckpt_path"] = ckpt_path
-    config.meta["ema_backbone"] = ema_backbone
+    if ckpt_path is not None:
+        config.meta["ckpt_path"] = ckpt_path
+        config.meta["ema_backbone"] = ema_backbone
 
     # Set data config
     config.num_workers = 8

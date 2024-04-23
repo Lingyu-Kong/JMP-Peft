@@ -43,7 +43,9 @@ from ...datasets.finetune_lmdb import (
 from ...datasets.finetune_lmdb import FinetuneLmdbDataset
 from ...datasets.finetune_pdbbind import PDBBindConfig, PDBBindDataset
 from ...datasets.matbench_discovery_ase import MatbenchDiscoveryAseDataset
-from ...datasets.matbench_discovery_megnet_npz import MatbenchDiscoveryMegNetNpzDataset
+from ...datasets.matbench_discovery_megnet_npz import (
+    MatbenchTrajectoryDataset as MatbenchDiscoveryMegNetNpzDataset,
+)
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
