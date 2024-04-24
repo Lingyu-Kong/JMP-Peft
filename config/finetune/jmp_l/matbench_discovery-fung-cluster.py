@@ -46,7 +46,7 @@ def create_config():
     config.trainer.precision = "16-mixed-auto"
 
     # Set data config
-    config.batch_size = 8
+    config.batch_size = 5
     config.num_workers = 2
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
@@ -109,9 +109,11 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    gpus=[(1, 2, 3, 4)],
+    gpus=[(1, 2, 3, 4, 5, 6)],
     env={
         "LL_DISABLE_TYPECHECKING": "1",
-        "NCCL_DEBUG": "INFO",
+        # "NCCL_DEBUG": "TRACE",
+        # "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
+        # "TORCH_CPP_LOG_LEVEL": "INFO",
     },
 )
