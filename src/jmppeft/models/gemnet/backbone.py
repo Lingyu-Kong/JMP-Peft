@@ -7,9 +7,9 @@ LICENSE file in the root directory of this source tree.
 from functools import partial
 from typing import Any, TypedDict, cast
 
+import ll
 import torch
 import torch.nn as nn
-from ll.nn import TypedModuleList
 from ll.typecheck import Float, tassert
 from torch_geometric.data.data import BaseData
 from torch_scatter import segment_coo
@@ -297,7 +297,7 @@ class GemNetOCBackbone(nn.Module):
         if not self.config.unique_basis_per_layer:
             self.shared_parameters.extend(self.bases.shared_parameters)
         else:
-            self.per_layer_bases = TypedModuleList(
+            self.per_layer_bases = ll.nn.TypedModuleList(
                 [
                     Bases(
                         BasesConfig.from_backbone_config(self.config),
@@ -364,6 +364,14 @@ class GemNetOCBackbone(nn.Module):
                 )
             )
         self.out_blocks = nn.ModuleList(out_blocks)
+
+        if self.config.ln_per_layer:
+            self.h_lns = ll.nn.TypedModuleList(
+                [nn.LayerNorm(emb_size_atom) for _ in range(len(int_blocks))]
+            )
+            self.m_lns = ll.nn.TypedModuleList(
+                [nn.LayerNorm(emb_size_edge) for _ in range(len(int_blocks))]
+            )
 
         # out_mlp_E = [
         #     Dense(
@@ -733,6 +741,10 @@ class GemNetOCBackbone(nn.Module):
         trip_idx_e2a: dict[Any, Any],
         quad_idx: dict[Any, Any],
     ):
+        if self.config.ln_per_layer:
+            h = self.h_lns[i](h)
+            m = self.m_lns[i](m)
+
         # Interaction block
         h, m = self.int_blocks[i](
             h=h,

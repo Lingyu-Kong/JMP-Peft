@@ -1,8 +1,6 @@
 from ll import TypedConfig
 from typing_extensions import override
 
-from ...modules.dist_lora import DLoraConfig
-
 
 class BackboneConfig(TypedConfig):
     num_targets: int = 1
@@ -59,6 +57,8 @@ class BackboneConfig(TypedConfig):
     dropout: float | None
     edge_dropout: float | None
 
+    ln_per_layer: bool = False
+
     @classmethod
     def base(cls):
         return cls(
@@ -109,6 +109,7 @@ class BackboneConfig(TypedConfig):
             absolute_rbf_cutoff=12.0,
             dropout=None,
             edge_dropout=None,
+            ln=False,
         )
 
     @classmethod
@@ -166,6 +167,7 @@ class BackboneConfig(TypedConfig):
             absolute_rbf_cutoff=12.0,
             dropout=None,
             edge_dropout=None,
+            ln=False,
         )
 
 
