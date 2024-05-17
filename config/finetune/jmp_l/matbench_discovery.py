@@ -112,11 +112,7 @@ def debug_high_loss_(config: FinetuneConfigBase):
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 # config, model_cls = create_config(gradient_forces=True)
 config, model_cls = create_config(gradient_forces=False)
-config.meta["resume_ckpt_path"] = next(
-    Path(
-        "/workspaces/repositories/jmp-peft/lightning_logs/dc5rlskx/jmp_peft_nersc/dc5rlskx/checkpoints/"
-    ).glob("*.ckpt")
-)
+config.meta["resume_ckpt_path"] = Path("/mnt/checkpoints/mpd.ckpt")
 ddp_(config, use_balanced_batch_sampler=False, batch_size=1)
 # debug_high_loss_(config)
 # ^ act path: /workspaces/repositories/jmp-peft/config/finetune/jmp_l/lltrainer/mcezpn6d/activation
