@@ -109,11 +109,17 @@ def debug_high_loss_(config: FinetuneConfigBase):
     config.name += "_debug_high_loss"
 
 
+def ln_(config: FinetuneConfigBase):
+    config.backbone.ln_per_layer = True
+    config.backbone.scale_factor_to_ln = True
+
+
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 # config, model_cls = create_config(gradient_forces=True)
 config, model_cls = create_config(gradient_forces=False)
-config.meta["resume_ckpt_path"] = Path("/mnt/checkpoints/mpd.ckpt")
-ddp_(config, use_balanced_batch_sampler=False, batch_size=1)
+ln_(config)
+# config.meta["resume_ckpt_path"] = Path("/mnt/checkpoints/mpd.ckpt")
+# ddp_(config, use_balanced_batch_sampler=False, batch_size=1)
 # debug_high_loss_(config)
 # ^ act path: /workspaces/repositories/jmp-peft/config/finetune/jmp_l/lltrainer/mcezpn6d/activation
 
@@ -158,11 +164,12 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = Runner(run)
-runner.local(configs)
+runner.fast_dev_run(configs)
+
 
 # %%
 runner = Runner(run)
-runner.fast_dev_run(configs)
+runner.local(configs)
 
 
 # %%
@@ -170,7 +177,7 @@ runner = Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    gpus=[(0, 1)],
+    gpus=[(1,)],
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )

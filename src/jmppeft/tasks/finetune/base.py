@@ -902,20 +902,28 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         dlora_added_parameters = set(self.dlora_added_parameters().keys())
 
         def should_ignore_missing_key_fn(k: str):
-            if (lc := self.config.lora) is None or not lc.enabled:
-                return False
+            # LoRA added params
+            if (lc := self.config.lora) is not None and lc.enabled:
+                # Ignore non-existant LoRA A/B keys
+                if k.endswith(".lora_A") or k.endswith(".lora_B"):
+                    return True
 
-            # Ignore non-existant LoRA A/B keys
-            if k.endswith(".lora_A") or k.endswith(".lora_B"):
-                return True
+                # Ignore new bias keys added by us
+                if k in lora_added_bias_parameters:
+                    return True
 
-            # Ignore new bias keys added by us
-            if k in lora_added_bias_parameters:
-                return True
+                # Ignore adapter layer keys for DLora
+                if k in dlora_added_parameters:
+                    return True
 
-            # Ignore adapter layer keys for DLora
-            if k in dlora_added_parameters:
-                return True
+            # New LN layers
+            if self.config.backbone.ln_per_layer:
+                if "h_lns" in k or "m_lns" in k:
+                    return True
+
+            if self.config.backbone.scale_factor_to_ln:
+                if "scale" in k and "ln" in k:
+                    return True
 
             return False
 

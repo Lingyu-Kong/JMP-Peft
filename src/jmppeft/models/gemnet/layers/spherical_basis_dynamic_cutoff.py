@@ -41,7 +41,7 @@ class CircularBasisLayer(nn.Module):
 
         self.scale_basis = scale_basis
         if self.scale_basis:
-            self.scale_cbf = ScaleFactor()
+            self.scale_cbf = ScaleFactor(dim_size=num_spherical)
 
         cbf_name = cbf["name"].lower()
         cbf_hparams = cbf.copy()
@@ -97,7 +97,7 @@ class SphericalBasisLayer(nn.Module):
 
         self.scale_basis = scale_basis
         if self.scale_basis:
-            self.scale_sbf = ScaleFactor()
+            self.scale_sbf = ScaleFactor(dim_size=num_spherical**2)
 
         sbf_name = sbf["name"].lower()
         sbf_hparams = sbf.copy()

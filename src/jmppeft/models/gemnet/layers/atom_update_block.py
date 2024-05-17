@@ -53,7 +53,7 @@ class AtomUpdateBlock(torch.nn.Module):
             dropout=dropout,
             lora=lora("dense_rbf"),
         )
-        self.scale_sum = ScaleFactor()
+        self.scale_sum = ScaleFactor(dim_size=emb_size_edge)
 
         self.layers = self.get_mlp(
             emb_size_edge,
@@ -186,7 +186,7 @@ class OutputBlock(AtomUpdateBlock):
             self.seq_energy2 = None
 
         if self.direct_forces:
-            self.scale_rbf_F = ScaleFactor()
+            self.scale_rbf_F = ScaleFactor(dim_size=emb_size_edge)
             self.seq_forces = self.get_mlp(
                 emb_size_edge,
                 emb_size_edge,

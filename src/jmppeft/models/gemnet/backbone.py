@@ -8,6 +8,7 @@ from functools import partial
 from typing import Any, TypedDict, cast
 
 import ll
+import ll.typecheck as tc
 import torch
 import torch.nn as nn
 from ll.typecheck import Float, tassert
@@ -18,6 +19,7 @@ from typing_extensions import override
 from ...modules.dist_lora import AdapterOutput, DLoraConfig
 from ...modules.dist_lora.gemnet import DLoraOutputBlock
 from ...modules.lora import LoraConfig
+from ...modules.scaling import ScaleFactor
 from ...modules.scaling.compat import load_scales_compat
 from ...utils.goc_graph import Graph, graphs_from_batch
 from ...utils.gradient_checkpointing import GradientCheckpointingConfig, checkpoint
@@ -87,6 +89,46 @@ class FinalMLP(nn.Module):
         x: Float[torch.Tensor, "... d"],
     ) -> torch.Tensor:
         return self.out_mlp(x)
+
+
+class _PatchedScaleFactor(nn.Module):
+    scale_factor: tc.Float[torch.Tensor, ""]
+
+    def __init__(self, original: ScaleFactor):
+        super().__init__()
+
+        if original.dim_size is None:
+            raise ValueError("dim_size must be set.")
+        self.dim_size = original.dim_size
+
+        self.register_buffer("scale_factor", torch.tensor(0.0))
+        self.ln = nn.LayerNorm(self.dim_size)
+
+    @override
+    def forward(
+        self,
+        x: torch.Tensor,
+        *,
+        ref: torch.Tensor | None = None,
+    ):
+        assert self.scale_factor != 0.0, "Must be fitted."
+        assert (
+            x.shape[-1] == self.dim_size
+        ), f"Expected {self.dim_size} but got {x.shape[-1]=}"
+
+        x = self.ln(x)
+        x = x * self.scale_factor
+
+        return x
+
+
+def _patch_scale_factors(module: nn.Module):
+    for name, child in module.named_children():
+        match child:
+            case ScaleFactor():
+                setattr(module, name, _PatchedScaleFactor(child))
+            case _:
+                _patch_scale_factors(child)
 
 
 class GemNetOCBackbone(nn.Module):
@@ -421,6 +463,9 @@ class GemNetOCBackbone(nn.Module):
             )
 
         load_scales_compat(self, scale_file)
+
+        if self.config.scale_factor_to_ln:
+            _patch_scale_factors(self)
 
     def calculate_quad_angles(
         self,

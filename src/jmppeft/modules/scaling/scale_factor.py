@@ -30,6 +30,7 @@ def _check_consistency(old: torch.Tensor, new: torch.Tensor, key: str):
 class ScaleFactor(nn.Module):
     scale_factor: torch.Tensor
 
+    dim_size: int | None = None
     name: str | None = None
     index_fn: IndexFn | None = None
     stats: _Stats | None = None
@@ -38,10 +39,12 @@ class ScaleFactor(nn.Module):
         self,
         name: str | None = None,
         enforce_consistency: bool = True,
+        dim_size: int | None = None,
     ):
         super().__init__()
 
         self.name = name
+        self.dim_size = dim_size
 
         self.index_fn = None
         self.stats = None
@@ -161,5 +164,10 @@ class ScaleFactor(nn.Module):
 
         if not torch.jit.is_scripting():
             self._observe(x, ref=ref)
+
+        if self.dim_size is not None:
+            assert (
+                x.shape[-1] == self.dim_size
+            ), f"Expected {self.dim_size} but got {x.shape[-1]=}"
 
         return x

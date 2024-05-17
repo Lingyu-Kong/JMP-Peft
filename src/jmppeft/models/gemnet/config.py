@@ -58,6 +58,7 @@ class BackboneConfig(TypedConfig):
     edge_dropout: float | None
 
     ln_per_layer: bool = False
+    scale_factor_to_ln: bool = False
 
     @classmethod
     def base(cls):

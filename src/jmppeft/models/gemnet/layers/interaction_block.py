@@ -450,7 +450,7 @@ class QuadrupletInteraction(torch.nn.Module):
             dropout=dropout,
             lora=lora("mlp_rbf"),
         )
-        self.scale_rbf = ScaleFactor()
+        self.scale_rbf = ScaleFactor(dim_size=emb_size_edge)
 
         self.mlp_cbf = Dense(
             emb_size_cbf,
@@ -460,7 +460,7 @@ class QuadrupletInteraction(torch.nn.Module):
             dropout=dropout,
             lora=lora("mlp_cbf"),
         )
-        self.scale_cbf = ScaleFactor()
+        self.scale_cbf = ScaleFactor(dim_size=emb_size_quad_in)
 
         self.mlp_sbf = EfficientInteractionBilinear(
             emb_size_quad_in,
@@ -469,7 +469,7 @@ class QuadrupletInteraction(torch.nn.Module):
             dropout=dropout,
             lora=lora("mlp_sbf"),
         )
-        self.scale_sbf_sum = ScaleFactor()
+        self.scale_sbf_sum = ScaleFactor(dim_size=emb_size_quad_out)
         # combines scaling for bilinear layer and summation
 
         # Down and up projections
@@ -627,7 +627,7 @@ class TripletInteraction(torch.nn.Module):
             dropout=dropout,
             lora=lora("mlp_rbf"),
         )
-        self.scale_rbf = ScaleFactor()
+        self.scale_rbf = ScaleFactor(dim_size=emb_size_in)
 
         self.mlp_cbf = EfficientInteractionBilinear(
             emb_size_trip_in,
@@ -636,7 +636,7 @@ class TripletInteraction(torch.nn.Module):
             dropout=dropout,
             lora=lora("mlp_cbf"),
         )
-        self.scale_cbf_sum = ScaleFactor()
+        self.scale_cbf_sum = ScaleFactor(dim_size=emb_size_trip_out)
         # combines scaling for bilinear layer and summation
 
         # Down and up projections
@@ -776,7 +776,7 @@ class PairInteraction(torch.nn.Module):
             dropout=dropout,
             lora=lora("bilinear"),
         )
-        self.scale_rbf_sum = ScaleFactor()
+        self.scale_rbf_sum = ScaleFactor(dim_size=emb_size_pair_out)
 
         # Down and up projections
         self.down_projection = Dense(
