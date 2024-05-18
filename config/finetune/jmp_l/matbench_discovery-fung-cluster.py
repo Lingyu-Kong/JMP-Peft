@@ -6,6 +6,7 @@ from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune.base import (
+    BatchDumpConfig,
     FinetuneConfigBase,
     FinetuneModelBase,
     RLPConfig,
@@ -98,8 +99,25 @@ def create_config():
     return config.finalize(), MatbenchDiscoveryModel
 
 
+def debug_high_loss_(config: FinetuneConfigBase):
+    # config.trainer.actsave = ll.model.ActSaveConfig()
+    config.batch_dump = BatchDumpConfig(dump_if_loss_gt=2.5)
+    # config.trainer.devices = (0,)
+    # if config.trainer.logging.wandb:
+    #     config.trainer.logging.wandb.disable_()
+
+    config.name += "_debug_high_loss"
+
+
+def ln_(config: FinetuneConfigBase):
+    config.backbone.ln_per_layer = True
+    config.backbone.scale_factor_to_ln = True
+
+
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 config, model_cls = create_config()
+debug_high_loss_(config)
+ln_(config)
 configs.append((config, model_cls))
 
 

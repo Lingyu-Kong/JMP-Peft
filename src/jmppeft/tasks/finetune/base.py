@@ -9,6 +9,8 @@ from logging import getLogger
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeAlias, cast
 
+import ll
+import numpy as np
 import rich
 import rich.console
 import rich.markdown
@@ -30,7 +32,6 @@ from ll import (
     TypedConfig,
 )
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
-from ll.util.typed import TypedModuleDict
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
@@ -306,6 +307,12 @@ class BatchDumpConfig(TypedConfig):
     dump_if_loss_gt: float | None = None
     """Dump the batch if the loss is greater than this value"""
 
+    actsave: bool = False
+    """Save the activations using ActSave"""
+
+    dump_cif: bool = False
+    """Dump the CIF file"""
+
 
 class FinetuneConfigBase(BaseConfig):
     gradient_checkpointing: GradientCheckpointingConfig | None = None
@@ -425,9 +432,6 @@ class FinetuneConfigBase(BaseConfig):
             "At least one target must be specified, "
             f"but none are specified: {self.targets=}"
         )
-
-        if self.batch_dump is not None:
-            assert self.trainer.actsave, "Batch dump requires actsave to be enabled"
 
 
 TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
@@ -818,7 +822,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         )
 
     def construct_output_heads(self):
-        self.outputs = TypedModuleDict(
+        self.outputs = ll.nn.TypedModuleDict(
             {
                 target.name: target.construct_output_head(
                     self.config.output,
@@ -1070,7 +1074,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
             losses.append(loss)
 
-        loss = sum(losses)
+        loss = cast(torch.Tensor, sum(losses))
         self.log("loss", loss)
 
         return loss
@@ -1170,7 +1174,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             preds = self(batch)
 
             loss = self.compute_losses(batch, preds)
-            self._process_batch_dump(batch, loss)
+            self._process_batch_dump(batch, batch_idx, loss)
 
             self.log_dict(self.train_metrics(batch, preds))
 
@@ -1179,27 +1183,68 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             return loss
 
     @torch.no_grad()
-    def _process_batch_dump(self, batch: BaseData, loss: torch.Tensor):
+    def _process_batch_dump(self, data: BaseData, batch_idx: int, loss: torch.Tensor):
         if (batch_dump := self.config.batch_dump) is None:
             return
         if batch_dump.dump_if_loss_gt is None:
             return
 
         loss_float = loss.item()
-        if loss_float > batch_dump.dump_if_loss_gt:
-            log.critical(
-                f"Loss {loss_float} is greater than {batch_dump.dump_if_loss_gt}. Dumping batch."
-            )
+        if loss_float <= batch_dump.dump_if_loss_gt:
+            return
 
+        log.critical(
+            f"Loss {loss_float} is greater than {batch_dump.dump_if_loss_gt}. Dumping batch."
+        )
+        if batch_dump.actsave:
             ActSave(
-                {
+                lambda: {
                     f"batch_dump_if_loss_gt::{k}": v
                     for k, v in {
-                        **batch.to_dict(),
+                        **data.to_dict(),
                         "loss": loss_float,
                     }.items()
                 }
             )
+
+        if batch_dump.dump_cif:
+            from pymatgen.core.periodic_table import Element
+            from pymatgen.core.structure import Structure
+            from pymatgen.io.cif import CifWriter
+
+            base_path = self.log_dir / "batch_dumps" / f"{batch_idx}"
+            base_path.mkdir(parents=True, exist_ok=True)
+
+            # Dump the loss
+            loss_path = base_path / "loss.npy"
+            np.save(loss_path, loss_float)
+
+            # Dump the CIFs for each element of batch
+            batch_size = int(data.batch.max().item()) + 1
+            for i in range(batch_size):
+                node_mask = data.batch == i
+                pos = data.pos[node_mask].cpu().numpy()
+                force = data.force[node_mask].cpu().numpy()
+                energy = data.y[i].item()
+                atomic_numbers = data.atomic_numbers[node_mask].cpu().numpy()
+                cell = data.cell[i].view(3, 3).cpu().numpy()
+
+                structure = Structure(
+                    lattice=cell,
+                    species=[Element.from_Z(z) for z in atomic_numbers],
+                    coords=pos,
+                    coords_are_cartesian=True,
+                )
+
+                cif_path = base_path / f"{i}.cif"
+                writer = CifWriter(structure)
+                writer.write_file(str(cif_path.absolute()))
+
+                force_path = base_path / f"{i}_force.npy"
+                np.save(force_path, force)
+
+                energy_path = base_path / f"{i}_energy.npy"
+                np.save(energy_path, energy)
 
     @override
     def validation_step(self, batch: BaseData, batch_idx: int):
