@@ -142,6 +142,9 @@ GraphTargetConfig: TypeAlias = Annotated[
 class NodeVectorTargetConfig(BaseTargetConfig):
     kind: Literal["vector"] = "vector"
 
+    loss: Literal["mae", "l2mae"] = "l2mae"
+    """The loss function to use for the target"""
+
     @override
     def construct_output_head(
         self,
@@ -160,6 +163,9 @@ class NodeVectorTargetConfig(BaseTargetConfig):
 
 class GradientForcesTargetConfig(BaseTargetConfig):
     kind: Literal["gradient_forces"] = "gradient_forces"
+
+    loss: Literal["mae", "l2mae"] = "l2mae"
+    """The loss function to use for the target"""
 
     energy_name: str
     """

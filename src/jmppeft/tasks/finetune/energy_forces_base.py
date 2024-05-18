@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
 from logging import getLogger
-from typing import Generic, cast
+from typing import Generic, Literal, cast
 
 import torch
 import torch.nn as nn
@@ -69,6 +69,7 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         gradient: bool,
         energy_coefficient: float = 1.0,
         force_coefficient: float = 100.0,
+        force_loss: Literal["mae", "l2mae"] = "l2mae",
     ):
         self.graph_targets = [
             GraphScalarTargetConfig(name="y", loss_coefficient=energy_coefficient),
@@ -81,7 +82,7 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
             )
             if gradient
             else NodeVectorTargetConfig(
-                name="force", loss_coefficient=force_coefficient
+                name="force", loss_coefficient=force_coefficient, loss=force_loss
             ),
         ]
 

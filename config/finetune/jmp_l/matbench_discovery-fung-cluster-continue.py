@@ -5,12 +5,7 @@ import ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
-from jmppeft.tasks.finetune.base import (
-    FinetuneConfigBase,
-    FinetuneModelBase,
-    RLPConfig,
-    WarmupCosRLPConfig,
-)
+from jmppeft.tasks.finetune.base import FinetuneConfigBase, FinetuneModelBase
 from jmppeft.tasks.finetune.matbench_discovery import (
     MatbenchDiscoveryConfig,
     MatbenchDiscoveryModel,
@@ -19,7 +14,9 @@ from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_
 
 project_root = Path("/nimahome/experiment-data/")
 
-ckpt_path = Path("/nimahome/checkpoints/mpd.ckpt")
+ckpt_path = Path(
+    "/net/csefiles/coc-fung-cluster/nima/experiment-data/lltrainer/5xrq84ta/checkpoint/latest_epoch16_step119663.ckpt"
+)
 dataset_base_path = Path("/nimahome/datasets/matbench_discovery/")
 
 
@@ -38,11 +35,6 @@ def create_config():
         gradient=False,
         energy_coefficient=0.01,
         force_coefficient=1.0,
-        force_loss="mae",
-    )
-    config.trainer.optimizer.gradient_clipping = ll.GradientClippingConfig(
-        value=2.0,
-        algorithm="norm",
     )
 
     config.optimizer = AdamWConfig(
@@ -50,14 +42,6 @@ def create_config():
         amsgrad=False,
         betas=(0.9, 0.95),
         weight_decay=0.1,
-    )
-    config.lr_scheduler = WarmupCosRLPConfig(
-        warmup_epochs=5,
-        warmup_start_lr_factor=1.0e-1,
-        should_restart=False,
-        max_epochs=32,
-        min_lr_factor=0.5,
-        rlp=RLPConfig(patience=3, factor=0.8),
     )
 
     config.tags.append("direct_forces")
@@ -75,7 +59,8 @@ def create_config():
     config.backbone.direct_forces = True
     config.backbone.regress_energy = True
 
-    config.meta["ft_ckpt_path"] = ckpt_path
+    config.meta["continue_ckpt_path"] = ckpt_path
+    config.name += "_continue"
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
         config,
@@ -93,8 +78,6 @@ def create_config():
 
     config.with_project_root_(project_root)
 
-    config.name += "_fmae"
-
     return config.finalize(), MatbenchDiscoveryModel
 
 
@@ -104,29 +87,26 @@ configs.append((config, model_cls))
 
 
 # %%
-from ll import Runner, Trainer
-
-
 def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
-    if (ft_ckpt_path := config.meta.get("ft_ckpt_path")) is None:
-        raise ValueError("ft_ckpt_path is not set in config")
+    if (ckpt_path := config.meta.get("continue_ckpt_path")) is None:
+        raise ValueError("ckpt_path is not set in config")
 
-    model = model_cls.load_from_checkpoint(ft_ckpt_path, strict=False, hparams=config)
-    trainer = Trainer(config)
-    trainer.fit(model)
+    model = model_cls.load_from_checkpoint(ckpt_path, strict=True, hparams=config)
+    trainer = ll.Trainer(config)
+    trainer.fit(model, ckpt_path=ckpt_path)
 
 
 # %%
-runner = Runner(run)
+runner = ll.Runner(run)
 runner.fast_dev_run(configs)
 
 # %%
-runner = Runner(run)
+runner = ll.Runner(run)
 runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
 
 
 # %%
-runner = Runner(run)
+runner = ll.Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
