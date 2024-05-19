@@ -309,6 +309,21 @@ def inner_product_clamped(x, y):
     return torch.sum(x * y, dim=-1).clamp(min=-1, max=1)
 
 
+def _safenorm(
+    x: torch.Tensor,  # E 3
+    dim: int = -1,
+):
+    mask = (x.abs() > 1.0e-6).all(dim=dim)  # E
+    return torch.where(
+        mask,  # E
+        torch.norm(
+            torch.where(mask[..., None], x, 1.0),
+            dim=dim,
+        ),  # E
+        0.0,
+    )
+
+
 def get_angle(R_ac, R_ab):
     """Calculate angles between atoms c -> a <- b.
 
@@ -327,10 +342,23 @@ def get_angle(R_ac, R_ab):
     # cos(alpha) = (u * v) / (|u|*|v|)
     x = torch.sum(R_ac * R_ab, dim=-1)  # shape = (N,)
     # sin(alpha) = |u x v| / (|u|*|v|)
-    y = torch.cross(R_ac, R_ab, dim=-1).norm(dim=-1)  # shape = (N,)
-    y = y.clamp(min=1e-9)  # Avoid NaN gradient for y = (0,0,0)
+    y = torch.cross(R_ac, R_ab, dim=-1)
 
-    angle = torch.atan2(y, x)
+    # y = y.norm(dim=-1)  # shape = (N,)
+    y = _safenorm(y, dim=-1)
+
+    # y = y.clamp(min=1e-9)  # Avoid NaN gradient for y = (0,0,0)
+
+    # angle = torch.atan2(y, x)
+    mask = y.abs() > 1.0e-6
+    angle = torch.where(
+        mask,
+        torch.atan2(
+            torch.where(mask, y, y.new_tensor(1.0)),
+            x,
+        ),
+        0.0,
+    )
     return angle
 
 
