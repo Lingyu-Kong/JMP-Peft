@@ -4,7 +4,7 @@ from typing import Any
 
 import ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
-from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
+from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.modules import dist_lora as dlora
 from jmppeft.modules.lora import LoraRootConfig
 from jmppeft.tasks.finetune.base import (
@@ -123,7 +123,7 @@ def create_config():
     config.project = "jmp_peft_nersc"
     config.name = "matbench_discovery"
     jmp_l_ft_config_(config, ckpt_path, ema_backbone=True, use_bf16=True)
-    jmp_l_matbench_discovery_config_(
+    jmp_matbench_discovery_config_(
         config,
         base_path,
         use_megnet_133k=True,

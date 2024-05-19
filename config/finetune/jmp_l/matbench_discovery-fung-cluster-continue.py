@@ -3,7 +3,7 @@ from pathlib import Path
 
 import ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
-from jmppeft.configs.finetune.matbench_discovery import jmp_l_matbench_discovery_config_
+from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune.base import FinetuneConfigBase, FinetuneModelBase
 from jmppeft.tasks.finetune.matbench_discovery import (
@@ -25,7 +25,7 @@ def create_config():
     config.project = "jmp_peft_nersc"
     config.name = "matbench_discovery-nograd"
     jmp_l_ft_config_(config)
-    jmp_l_matbench_discovery_config_(
+    jmp_matbench_discovery_config_(
         config,
         dataset_base_path,
         use_megnet_133k=True,

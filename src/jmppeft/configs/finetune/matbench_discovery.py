@@ -7,7 +7,7 @@ from ...tasks.finetune import MatbenchDiscoveryConfig
 from ...tasks.finetune import dataset_config as DC
 
 
-def jmp_l_matbench_discovery_config_(
+def jmp_matbench_discovery_config_(
     config: MatbenchDiscoveryConfig,
     base_path: Path,
     use_megnet_133k: bool = True,

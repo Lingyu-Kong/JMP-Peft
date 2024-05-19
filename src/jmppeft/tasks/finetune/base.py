@@ -61,6 +61,10 @@ from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
 )
 from ...modules.transforms.normalize import NormalizationConfig
+from ...utils.finetune_state_dict import (
+    filter_state_dict,
+    retreive_state_dict_for_finetuning,
+)
 from ...utils.goc_graph import (
     Cutoffs,
     Graph,
@@ -224,6 +228,35 @@ class ParamSpecificOptimizerConfig(TypedConfig):
     """
 
 
+class PretrainedCheckpointConfig(TypedConfig):
+    kind: Literal["pretrained"] = "pretrained"
+
+    path: Path
+    """
+    Path to the pretrain checkpoint
+    """
+
+    ema: bool = True
+    """
+    Whether to use the EMA checkpoint for pretraining (if `path` is set).
+    If False, the regular checkpoint is used.
+    """
+
+
+class ResumeCheckpointConfig(TypedConfig):
+    kind: Literal["resume"] = "resume"
+
+    path: Path
+    """
+    Path to the resume checkpoint
+    """
+
+
+CheckpointConfig: TypeAlias = Annotated[
+    PretrainedCheckpointConfig | ResumeCheckpointConfig, Field(discriminator="kind")
+]
+
+
 class CheckpointLoadConfig(TypedConfig):
     ignored_key_patterns: list[str] = []
     """Patterns to ignore when loading the checkpoint"""
@@ -238,6 +271,11 @@ class CheckpointLoadConfig(TypedConfig):
     """
     If true, it will reset the embeddings to the initial state
     after loading the checkpoint
+    """
+
+    checkpoint: CheckpointConfig | None = None
+    """
+    Configuration for loading the checkpoint
     """
 
 
@@ -312,6 +350,9 @@ class BatchDumpConfig(TypedConfig):
 
     dump_cif: bool = False
     """Dump the CIF file"""
+
+    rank_zero_only: bool = False
+    """Only dump the batch if rank is zero"""
 
 
 class FinetuneConfigBase(BaseConfig):
@@ -438,6 +479,38 @@ TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
 
 
 class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
+    @classmethod
+    def construct_and_load_checkpoint(cls, config: TConfig):
+        match config.ckpt_load.checkpoint:
+            case PretrainedCheckpointConfig() as ckpt:
+                if ckpt.path is None:
+                    raise ValueError("No pretrain checkpoint path specified")
+
+                model = cls(config)
+
+                # Load the checkpoint
+                state_dict = retreive_state_dict_for_finetuning(
+                    ckpt.path, load_emas=ckpt.ema
+                )
+                embedding = filter_state_dict(state_dict, "embedding.atom_embedding.")
+                backbone = filter_state_dict(state_dict, "backbone.")
+                model.load_backbone_state_dict(
+                    backbone=backbone,
+                    embedding=embedding,
+                    strict=True,
+                )
+
+            case ResumeCheckpointConfig() as ckpt:
+                model = cls.load_from_checkpoint(
+                    ckpt.path, strict=False, hparams=config
+                )
+            case None:
+                model = cls(config)
+            case _:
+                assert_never(config.ckpt_load.checkpoint)
+
+        return model
+
     @abstractmethod
     def metric_prefix(self) -> str: ...
 
@@ -1189,6 +1262,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         if batch_dump.dump_if_loss_gt is None:
             return
 
+        if batch_dump.rank_zero_only and self.global_rank != 0:
+            return
+
         loss_float = loss.item()
         if loss_float <= batch_dump.dump_if_loss_gt:
             return
@@ -1212,7 +1288,12 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             from pymatgen.core.structure import Structure
             from pymatgen.io.cif import CifWriter
 
-            base_path = self.log_dir / "batch_dumps" / f"{batch_idx}"
+            base_path = (
+                self.log_dir
+                / "batch_dumps"
+                / f"rank{self.global_rank}"
+                / f"{batch_idx}"
+            )
             base_path.mkdir(parents=True, exist_ok=True)
 
             # Dump the loss

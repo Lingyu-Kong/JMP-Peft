@@ -2,7 +2,7 @@
 from pathlib import Path
 
 import ll
-from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
+from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base
@@ -21,7 +21,7 @@ from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_
 
 project_root = Path("/nimahome/experiment-data/")
 
-ckpt_path = Path("/nimahome/checkpoints/jmp-l.pt")
+ckpt_path = Path("/nimahome/checkpoints/jmp-s.pt")
 dataset_base_path = Path("/nimahome/datasets/matbench_discovery/")
 
 
@@ -29,15 +29,16 @@ def create_config():
     config = MatbenchDiscoveryConfig.draft()
     config.project = "jmp_peft_nersc"
     config.name = "matbench_discovery-nograd"
-    jmp_l_ft_config_(config)
+    jmp_s_ft_config_(config)
     jmp_matbench_discovery_config_(
         config,
         dataset_base_path,
         use_megnet_133k=True,
         use_linref=True,
     )
+    config.conditional_max_neighbors = False
     config.energy_forces_config_(
-        gradient=False,
+        gradient=True,
         energy_coefficient=0.01,
         force_coefficient=1.0,
         force_loss="mae",
@@ -62,19 +63,20 @@ def create_config():
         rlp=RLPConfig(patience=3, factor=0.8),
     )
 
-    config.tags.append("direct_forces")
-    config.name += "_direct_forces"
+    config.tags.append("grad_forces")
+    config.name += "_grad_forces"
     config.trainer.precision = "16-mixed-auto"
 
     # Set data config
-    config.batch_size = 3
+    config.batch_size = 8
     config.num_workers = 2
-    # Balanced batch sampler
-    config.use_balanced_batch_sampler = True
-    config.trainer.use_distributed_sampler = False
 
-    config.backbone.regress_forces = True
-    config.backbone.direct_forces = True
+    # # Balanced batch sampler
+    # config.use_balanced_batch_sampler = True
+    # config.trainer.use_distributed_sampler = False
+
+    config.backbone.regress_forces = False
+    config.backbone.direct_forces = False
     config.backbone.regress_energy = True
 
     # config.meta["ft_ckpt_path"] = ckpt_path
@@ -88,12 +90,10 @@ def create_config():
         config.backbone.num_blocks,
         {
             "embedding": 0.3,
-            "blocks_0": 0.55,
+            "blocks_0": 0.30,
             "blocks_1": 0.40,
-            "blocks_2": 0.30,
-            "blocks_3": 0.40,
-            "blocks_4": 0.55,
-            "blocks_5": 0.625,
+            "blocks_2": 0.55,
+            "blocks_3": 0.625,
         },
     )
 
@@ -119,10 +119,16 @@ def ln_(config: FinetuneConfigBase):
     config.backbone.scale_factor_to_ln = True
 
 
+def debug_nans_(config: FinetuneConfigBase):
+    config.trainer.detect_anomaly = True
+    config.trainer.python_logging.lovely_tensors = True
+
+
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 config, model_cls = create_config()
 debug_high_loss_(config)
 ln_(config)
+# debug_nans_(config)
 configs.append((config, model_cls))
 
 
@@ -135,11 +141,14 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs)
+runner.fast_dev_run(
+    configs,
+    env={"CUDA_VISIBLE_DEVICES": "1"},
+)
 
 # %%
 runner = ll.Runner(run)
-runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
+runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "1"})
 
 
 # %%
@@ -147,7 +156,7 @@ runner = ll.Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    gpus=[(0, 2, 3, 4, 5, 6)],
+    gpus=[(1,)],
     env={
         "LL_DISABLE_TYPECHECKING": "1",
         # "NCCL_DEBUG": "TRACE",
