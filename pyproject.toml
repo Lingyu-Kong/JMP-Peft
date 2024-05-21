@@ -13,7 +13,6 @@ deprecateTypingAliases = true
 strictListInference = true
 strictDictionaryInference = true
 strictSetInference = true
-ignore = ["src/ll/submitit/*"]
 
 [tool.ruff.lint]
 ignore = ["F722", "F821"]
