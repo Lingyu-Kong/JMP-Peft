@@ -358,6 +358,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/42/d7/1ec15b46af6af88f19b8e5ffea08fa375d433c998b8a7639e76935c14f1f/markdown_it_py-3.0.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/87/67/a37f6214d0e9fe57f6ae54b2956d550ca8365857f42a1ce0392bb21d9410/rich-13.7.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/fa/13/dd0ff7a488ace95676486c9d4d0202fc15d64a6491748e2ce8876df87870/ruff-0.4.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/9a/bb/d43e5c75054e53efce310e79d63df0ac3f25e34c926be5dffb7d283fb2a8/typeguard-2.13.3-py3-none-any.whl
       - pypi: .
 packages:
@@ -2016,7 +2017,7 @@ packages:
   name: jmp-peft
   version: 0.0.1
   path: .
-  sha256: d59ba24aa6ab6371947b53fa570d45819526cf8f55175bcce1d5f2be894ff42d
+  sha256: ff5efa5e4ef74fa5f0c7bfd9dfb1169ec2e329cd2a978c9a6cb0ab1f8d202e4c
   requires_dist:
   - ll @ https://github.com/nimashoghi/ll/archive/main.zip
   - rich
@@ -5409,6 +5410,12 @@ packages:
   - pkg:pypi/ruamel-yaml-clib
   size: 135856
   timestamp: 1707314709100
+- kind: pypi
+  name: ruff
+  version: 0.4.4
+  url: https://files.pythonhosted.org/packages/fa/13/dd0ff7a488ace95676486c9d4d0202fc15d64a6491748e2ce8876df87870/ruff-0.4.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+  sha256: b5eb0a4bfd6400b7d07c09a7725e1a98c3b838be557fee229ac0f84d9aa49c36
+  requires_python: '>=3.7'
 - kind: conda
   name: scikit-learn
   version: 1.4.2

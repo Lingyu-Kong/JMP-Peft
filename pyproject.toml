@@ -1,7 +1,7 @@
 [project]
 name = "jmp-peft"
 version = "0.0.1"
-dependencies = ["ll @ https://github.com/nimashoghi/ll/archive/main.zip", "rich", "lmdb", "beartype", "jaxtyping"]
+dependencies = ["ll @ https://github.com/nimashoghi/ll/archive/main.zip", "rich", "lmdb", "beartype", "jaxtyping", "ruff"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

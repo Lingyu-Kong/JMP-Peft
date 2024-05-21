@@ -169,7 +169,7 @@ class Relaxer:
 
     def relax(
         self,
-        atoms_in: Atoms,
+        atoms: Atoms,
         fmax: float = 0.1,
         steps: int = 500,
         traj_file: str | None = None,
@@ -189,8 +189,6 @@ class Relaxer:
             **kwargs:
         Returns:
         """
-        atoms = atoms_in
-
         if isinstance(atoms, (Structure, Molecule)):
             atoms = self.ase_adaptor.get_atoms(atoms)
         atoms.set_calculator(self.calculator)
@@ -198,7 +196,7 @@ class Relaxer:
         with contextlib.redirect_stdout(stream):
             obs = TrajectoryObserver(atoms)
             if self.relax_cell:
-                atoms = ExpCellFilter(atoms)
+                atoms = cast(Atoms, ExpCellFilter(atoms))
             optimizer = self.optimizer_cls(atoms, **kwargs)
             optimizer.attach(obs, interval=interval)
             optimizer.run(fmax=fmax, steps=steps)

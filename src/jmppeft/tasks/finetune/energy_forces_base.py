@@ -1,15 +1,19 @@
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
+from dataclasses import dataclass
 from logging import getLogger
 from typing import Generic, Literal, cast
 
+import ll
 import torch
 import torch.nn as nn
 from ll.nn import TypedModuleDict
-from torch_geometric.data.data import BaseData
-from typing_extensions import TypeVar, override
+from torch_geometric.data.batch import Batch
+from torch_geometric.data.data import BaseData, Data
+from typing_extensions import TypeVar, assert_never, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
+from ...modules.relaxer import GraphConverter, Potential, Relaxer
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
     GradientForcesTargetConfig,
@@ -24,6 +28,78 @@ from .output_head import (
 log = getLogger(__name__)
 
 
+class RelaxerConfig(ll.TypedConfig):
+    enabled: bool = False
+
+    energy_key: str = "y"
+    """Key for the energy in the graph data."""
+
+    force_key: str = "force"
+    """Key for the forces in the node data."""
+
+    stress_key: str | None = None
+    """Key for the stress in the graph data (or `None` if stress is not computed)."""
+
+    optimizer: Literal[
+        "FIRE",
+        "BFGS",
+        "LBFGS",
+        "LBFGSLineSearch",
+        "MDMin",
+        "SciPyFminCG",
+        "SciPyFminBFGS",
+        "BFGSLineSearch",
+    ] = "FIRE"
+    """Optimizer to use for relaxation."""
+
+    relax_cell: bool = False
+    """Whether to relax the cell."""
+
+    stress_weight: float = 0.01
+    """Weight for the stress loss."""
+
+    @property
+    def optimizer_cls(self):
+        match self.optimizer:
+            case "FIRE":
+                from ase.optimize.fire import FIRE
+
+                return FIRE
+            case "BFGS":
+                from ase.optimize.bfgs import BFGS
+
+                return BFGS
+            case "LBFGS":
+                from ase.optimize.lbfgs import LBFGS
+
+                return LBFGS
+            case "LBFGSLineSearch":
+                from ase.optimize.lbfgs import LBFGSLineSearch
+
+                return LBFGSLineSearch
+            case "MDMin":
+                from ase.optimize.mdmin import MDMin
+
+                return MDMin
+            case "SciPyFminCG":
+                from ase.optimize.sciopt import SciPyFminCG
+
+                return SciPyFminCG
+            case "SciPyFminBFGS":
+                from ase.optimize.sciopt import SciPyFminBFGS
+
+                return SciPyFminBFGS
+            case "BFGSLineSearch":
+                from ase.optimize.bfgslinesearch import BFGSLineSearch
+
+                return BFGSLineSearch
+            case _:
+                assert_never(self.optimizer)
+
+    def __bool__(self):
+        return self.enabled
+
+
 class EnergyForcesConfigBase(FinetuneConfigBase):
     graph_targets: list[GraphTargetConfig] = [
         GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
@@ -35,6 +111,9 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
             loss_coefficient=100.0,
         ),
     ]
+
+    relaxer: RelaxerConfig | None = None
+    """Relaxer configuration. If None, relaxer is disabled."""
 
     def energy_config_(self):
         self.graph_targets = [
@@ -209,3 +288,85 @@ class EnergyForcesModelBase(
 
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
+
+    def relaxer_graph_converter(self):
+        return RelaxerGraphConverter(self)
+
+    def relaxer_potential(self):
+        return RelaxerPotential(self)
+
+    def relaxer(self):
+        assert self.config.relaxer, "Relaxer is not enabled in the config."
+
+        return Relaxer(
+            potential=self.relaxer_potential(),
+            graph_converter=self.relaxer_graph_converter(),
+            optimizer_cls=self.config.relaxer.optimizer_cls,
+            relax_cell=self.config.relaxer.relax_cell,
+            stress_weight=self.config.relaxer.stress_weight,
+        )
+
+
+@dataclass
+class RelaxerGraphConverter(GraphConverter, Generic[TConfig]):
+    model: EnergyForcesModelBase[TConfig]
+
+    @property
+    def config(self):
+        return self.model.config
+
+    @override
+    def __call__(self, atoms):
+        assert self.config.relaxer, "Relaxer is not enabled in the config."
+
+        atomic_numbers = torch.tensor(atoms.numbers, dtype=torch.long)
+        pos = torch.tensor(atoms.positions, dtype=torch.float)
+        cell = torch.tensor(atoms.cell.array, dtype=torch.float)
+        tags = (2 * torch.ones_like(atomic_numbers)).long()
+        fixed = torch.zeros_like(tags, dtype=torch.bool)
+        natoms = len(atoms)
+
+        data = Data.from_dict(
+            {
+                "atomic_numbers": atomic_numbers,
+                "pos": pos,
+                "cell": cell,
+                "tags": tags,
+                "fixed": fixed,
+                "natoms": natoms,
+            }
+        )
+        batch = self.model.collate_fn([data])
+
+        return batch
+
+
+@dataclass
+class RelaxerPotential(Potential, Generic[TConfig]):
+    model: EnergyForcesModelBase[TConfig]
+
+    @property
+    def config(self):
+        return self.model.config
+
+    @override
+    def get_efs_tensor(self, graph: Batch, include_stresses: bool = True):
+        assert (c := self.config.relaxer), "Relaxer is not enabled in the config."
+
+        # First, move the graph to the model's device
+        graph = graph.to(self.model.device)
+
+        # Compute the energy and forces
+        out: dict[str, torch.Tensor] = self.model(graph)
+        energy = out[c.energy_key].detach().float().cpu().numpy()
+        forces = out[c.force_key].detach().float().cpu().numpy()
+
+        if include_stresses:
+            assert (
+                c.stress_key is not None
+            ), "Stress key is not set in the relaxer config."
+
+            stress = out[c.stress_key].detach().float().cpu().numpy()
+            return energy, forces, stress
+        else:
+            return energy, forces
