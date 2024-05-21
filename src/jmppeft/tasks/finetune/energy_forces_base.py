@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
 from logging import getLogger
@@ -10,10 +11,10 @@ import torch.nn as nn
 from ll.nn import TypedModuleDict
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData, Data
-from typing_extensions import TypeVar, assert_never, override
+from typing_extensions import TypeVar, assert_never, final, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
-from ...modules.relaxer import GraphConverter, Potential, Relaxer
+from ...modules.relaxer import LightningModuleRelaxerMixin, RelaxerConfig
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
     GradientForcesTargetConfig,
@@ -26,78 +27,6 @@ from .output_head import (
 )
 
 log = getLogger(__name__)
-
-
-class RelaxerConfig(ll.TypedConfig):
-    enabled: bool = False
-
-    energy_key: str = "y"
-    """Key for the energy in the graph data."""
-
-    force_key: str = "force"
-    """Key for the forces in the node data."""
-
-    stress_key: str | None = None
-    """Key for the stress in the graph data (or `None` if stress is not computed)."""
-
-    optimizer: Literal[
-        "FIRE",
-        "BFGS",
-        "LBFGS",
-        "LBFGSLineSearch",
-        "MDMin",
-        "SciPyFminCG",
-        "SciPyFminBFGS",
-        "BFGSLineSearch",
-    ] = "FIRE"
-    """Optimizer to use for relaxation."""
-
-    relax_cell: bool = False
-    """Whether to relax the cell."""
-
-    stress_weight: float = 0.01
-    """Weight for the stress loss."""
-
-    @property
-    def optimizer_cls(self):
-        match self.optimizer:
-            case "FIRE":
-                from ase.optimize.fire import FIRE
-
-                return FIRE
-            case "BFGS":
-                from ase.optimize.bfgs import BFGS
-
-                return BFGS
-            case "LBFGS":
-                from ase.optimize.lbfgs import LBFGS
-
-                return LBFGS
-            case "LBFGSLineSearch":
-                from ase.optimize.lbfgs import LBFGSLineSearch
-
-                return LBFGSLineSearch
-            case "MDMin":
-                from ase.optimize.mdmin import MDMin
-
-                return MDMin
-            case "SciPyFminCG":
-                from ase.optimize.sciopt import SciPyFminCG
-
-                return SciPyFminCG
-            case "SciPyFminBFGS":
-                from ase.optimize.sciopt import SciPyFminBFGS
-
-                return SciPyFminBFGS
-            case "BFGSLineSearch":
-                from ase.optimize.bfgslinesearch import BFGSLineSearch
-
-                return BFGSLineSearch
-            case _:
-                assert_never(self.optimizer)
-
-    def __bool__(self):
-        return self.enabled
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
@@ -207,6 +136,7 @@ TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
 
 
 class EnergyForcesModelBase(
+    LightningModuleRelaxerMixin[TConfig],
     FinetuneModelBase[TConfig],
     nn.Module,
     ABC,
@@ -289,19 +219,10 @@ class EnergyForcesModelBase(
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
 
-    def relaxer_graph_converter(self):
-        return RelaxerGraphConverter(self)
+    @override
+    def relaxer_config(self) -> RelaxerConfig | None:
+        return self.config.relaxer
 
-    def relaxer_potential(self):
-        return RelaxerPotential(self)
-
-    def relaxer(self):
-        assert self.config.relaxer, "Relaxer is not enabled in the config."
-
-        return Relaxer(
-            potential=self.relaxer_potential(),
-            graph_converter=self.relaxer_graph_converter(),
-            optimizer_cls=self.config.relaxer.optimizer_cls,
-            relax_cell=self.config.relaxer.relax_cell,
-            stress_weight=self.config.relaxer.stress_weight,
-        )
+    @override
+    def relaxer_collate_fn(self, data_list: list[BaseData]) -> Batch:
+        return self.collate_fn(data_list)

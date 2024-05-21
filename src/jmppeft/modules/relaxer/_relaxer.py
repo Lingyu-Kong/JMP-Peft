@@ -13,7 +13,8 @@ from typing import Protocol, TypeAlias, cast, runtime_checkable
 import numpy as np
 import torch
 from ase import Atoms
-from ase.calculators.calculator import Calculator, all_changes
+from ase.calculators.calculator import Calculator as ASECalculator
+from ase.calculators.calculator import all_changes
 from ase.constraints import ExpCellFilter
 from ase.optimize.bfgs import BFGS
 from ase.optimize.bfgslinesearch import BFGSLineSearch
@@ -60,7 +61,7 @@ OPTIMIZERS = {
 }
 
 
-class JMPCalculator(Calculator):
+class Calculator(ASECalculator):
     implemented_properties: list[Property] = [
         "energy",
         "free_energy",
@@ -163,7 +164,7 @@ class Relaxer:
         """
 
         self.optimizer_cls = optimizer_cls
-        self.calculator = JMPCalculator(
+        self.calculator = Calculator(
             potential=potential,
             graph_converter=graph_converter,
             stress_weight=stress_weight,
