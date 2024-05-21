@@ -218,3 +218,7 @@ slurm_logs/
 *.ckpt
 core
 /logs_to_analyze/
+# pixi environments
+.pixi
+*.egg-info
+
