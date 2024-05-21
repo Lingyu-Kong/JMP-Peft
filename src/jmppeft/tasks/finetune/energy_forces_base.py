@@ -1,17 +1,14 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass
 from logging import getLogger
 from typing import Generic, Literal, cast
 
-import ll
 import torch
 import torch.nn as nn
 from ll.nn import TypedModuleDict
 from torch_geometric.data.batch import Batch
-from torch_geometric.data.data import BaseData, Data
-from typing_extensions import TypeVar, assert_never, final, override
+from torch_geometric.data.data import BaseData
+from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...modules.relaxer import LightningModuleRelaxerMixin, RelaxerConfig
