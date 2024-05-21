@@ -19,16 +19,18 @@ from jmppeft.tasks.finetune.matbench_discovery import (
 )
 from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_config
 
-project_root = Path("/nimahome/experiment-data/")
+project_root = Path("/net/csefiles/coc-fung-cluster/nima/experiment-data-cluster2/")
 
-ckpt_path = Path("/nimahome/checkpoints/jmp-s.pt")
-dataset_base_path = Path("/nimahome/datasets/matbench_discovery/")
+ckpt_path = Path("/net/csefiles/coc-fung-cluster/nima/checkpoints/jmp-s.pt")
+dataset_base_path = Path(
+    "/net/csefiles/coc-fung-cluster/nima/datasets/matbench_discovery/"
+)
 
 
 def create_config():
     config = MatbenchDiscoveryConfig.draft()
     config.project = "jmp_peft_nersc"
-    config.name = "matbench_discovery-nograd"
+    config.name = "matbench_discovery-grad"
     jmp_s_ft_config_(config)
     jmp_matbench_discovery_config_(
         config,
@@ -68,12 +70,12 @@ def create_config():
     config.trainer.precision = "16-mixed-auto"
 
     # Set data config
-    config.batch_size = 8
+    config.batch_size = 6
     config.num_workers = 2
 
-    # # Balanced batch sampler
-    # config.use_balanced_batch_sampler = True
-    # config.trainer.use_distributed_sampler = False
+    # Balanced batch sampler
+    config.use_balanced_batch_sampler = True
+    config.trainer.use_distributed_sampler = False
 
     config.backbone.regress_forces = False
     config.backbone.direct_forces = False
@@ -156,7 +158,7 @@ runner = ll.Runner(run)
 runner.local_session_per_gpu(
     configs,
     snapshot=True,
-    gpus=[(1,)],
+    gpus=[(0, 1, 2, 3)],
     env={
         "LL_DISABLE_TYPECHECKING": "1",
         # "NCCL_DEBUG": "TRACE",
