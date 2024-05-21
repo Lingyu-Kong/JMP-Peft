@@ -7,7 +7,7 @@ import contextlib
 import io
 import pickle
 import sys
-from abc import ABC
+from dataclasses import dataclass
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
 import numpy as np
@@ -131,6 +131,12 @@ class JMPCalculator(Calculator):
             self.results.update(stress=results[2].numpy()[0] * self.stress_weight)
 
 
+@dataclass
+class RelaxationOutput:
+    final_structure: Structure
+    trajectory: TrajectoryObserver
+
+
 class Relaxer:
     """
     Relaxer is a class for structural relaxation
@@ -205,10 +211,15 @@ class Relaxer:
         if isinstance(atoms, ExpCellFilter):
             atoms = cast(Atoms, atoms.atoms)
 
-        return {
-            "final_structure": self.ase_adaptor.get_structure(atoms),
-            "trajectory": obs,
-        }
+        # return {
+        #     "final_structure": self.ase_adaptor.get_structure(atoms),
+        #     "trajectory": obs,
+        # }
+
+        final_structure = self.ase_adaptor.get_structure(atoms)
+        trajectory = obs
+
+        return RelaxationOutput(final_structure, trajectory)
 
 
 class TrajectoryObserver:
