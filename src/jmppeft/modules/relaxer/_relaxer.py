@@ -136,15 +136,15 @@ class TrajectoryObserver:
     intermediate structures
     """
 
-    def __init__(self, atoms: Atoms):
+    def __init__(self, atoms: Atoms, compute_stress: bool = False):
         """
         Args:
             atoms (Atoms): the structure to observe
         """
         self.atoms = atoms
-        self.energies: list[float] = []
+        self.energies: list[float | np.float32 | np.float64] = []
         self.forces: list[np.ndarray] = []
-        self.stresses: list[np.ndarray] = []
+        self.stresses: list[np.ndarray] | None = [] if compute_stress else None
         self.atom_positions: list[np.ndarray] = []
         self.cells: list[np.ndarray] = []
 
@@ -155,11 +155,12 @@ class TrajectoryObserver:
         """
         self.energies.append(self.compute_energy())
         self.forces.append(self.atoms.get_forces())
-        self.stresses.append(self.atoms.get_stress())
+        if self.stresses is not None:
+            self.stresses.append(self.atoms.get_stress())
         self.atom_positions.append(self.atoms.get_positions())
         self.cells.append(self.atoms.get_cell()[:])
 
-    def compute_energy(self) -> float:
+    def compute_energy(self) -> float | np.float32 | np.float64:
         """
         calculate the energy, here we just use the potential energy
         Returns:
@@ -228,6 +229,7 @@ class Relaxer:
             stress_weight=stress_weight,
             compute_stress=compute_stress,
         )
+        self.compute_stress = compute_stress
         self.relax_cell = relax_cell
         self.potential = potential
         self.ase_adaptor = AseAtomsAdaptor()
@@ -259,7 +261,7 @@ class Relaxer:
         atoms.set_calculator(self.calculator)
         stream = sys.stdout if verbose else io.StringIO()
         with contextlib.redirect_stdout(stream):
-            obs = TrajectoryObserver(atoms)
+            obs = TrajectoryObserver(atoms, self.compute_stress)
             if self.relax_cell:
                 atoms = cast(Atoms, ExpCellFilter(atoms))
             optimizer = self.optimizer_cls(atoms, **kwargs)

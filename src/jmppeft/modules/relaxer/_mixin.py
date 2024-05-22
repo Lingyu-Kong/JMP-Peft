@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import ll
+import numpy as np
 import torch
 from ase import Atoms
 from lightning.pytorch import LightningModule
@@ -166,7 +167,7 @@ class Relaxer:
         """
         atomic_numbers = torch.tensor(atoms.numbers, dtype=torch.long)
         pos = torch.tensor(atoms.positions, dtype=torch.float)
-        cell = torch.tensor(atoms.cell.array, dtype=torch.float)
+        cell = torch.tensor(atoms.cell.array, dtype=torch.float).view(1, 3, 3)
         tags = (2 * torch.ones_like(atomic_numbers)).long()
         fixed = torch.zeros_like(tags, dtype=torch.bool)
         natoms = len(atoms)
@@ -208,7 +209,7 @@ class Relaxer:
 
         atomic_numbers = graph.atomic_numbers.detach().cpu().numpy()
         pos = graph.pos.detach().cpu().numpy()
-        cell = graph.cell.detach().cpu().numpy()
+        cell = graph.cell.detach().cpu().view(3, 3).numpy()
 
         atoms = Atoms(numbers=atomic_numbers, positions=pos, cell=cell, pbc=True)
 
@@ -242,12 +243,12 @@ class Relaxer:
 
         # Compute the energy and forces
         energy, forces, stress = self.model(graph)
-        energy = energy.detach().float().cpu().numpy()
-        forces = forces.detach().float().cpu().numpy()
+        energy = energy.detach().float().cpu()
+        forces = forces.detach().float().cpu()
 
         if self.config.compute_stress:
             assert stress is not None, "Stress key must be set in the relaxer config."
-            stress = stress.detach().float().cpu().numpy()
+            stress = stress.detach().float().cpu()
             return energy, forces, stress
         else:
             return energy, forces
@@ -295,9 +296,7 @@ class Relaxer:
         relax_out = self._relax(input)
 
         # Add to state
-        state.y_pred.append(
-            float(relax_out.final_structure.get_potential_energy().item())
-        )
+        state.y_pred.append(float(relax_out.trajectory.energies[-1]))
         state.y_true.append(float(y_true.float().item()))
 
         self.state = state
@@ -310,18 +309,35 @@ class Relaxer:
             metrics (dict): A dictionary containing the calculated metrics.
         """
 
-        y_pred = self.state.y_pred
-        y_true = self.state.y_true
+        y_pred = torch.tensor(
+            self.state.y_pred, dtype=torch.float, device=self.device
+        ).view(-1)
+        y_true = torch.tensor(
+            self.state.y_true, dtype=torch.float, device=self.device
+        ).view(-1)
         assert (
             len(y_pred) == len(y_true)
         ), f"Shapes of y_pred and y_true must match, got {len(y_pred)=} and {len(y_true)=}."
 
         # Gather all the metrics from all nodes
-        y_pred = cast(list[float], module.all_gather(y_pred))
-        y_true = cast(list[float], module.all_gather(y_true))
+        y_pred = cast(torch.Tensor | list[torch.Tensor], module.all_gather(y_pred))
+        y_true = cast(torch.Tensor | list[torch.Tensor], module.all_gather(y_true))
+
+        # Flatten the tensors
+        if isinstance(y_pred, list):
+            y_pred = torch.cat(y_pred, dim=0)
+        if isinstance(y_true, list):
+            y_true = torch.cat(y_true, dim=0)
+
+        # Convert to lists of floats
+        y_pred = cast(list[float], y_pred.tolist())
+        y_true = cast(list[float], y_true.tolist())
         assert (
             len(y_pred) == len(y_true)
         ), f"Shapes of y_pred and y_true must match, got {len(y_pred)=} and {len(y_true)=}."
+
+        y_true = np.array(y_true)
+        y_pred = np.array(y_pred)
 
         # Compute the metrics
         metrics = stable_metrics(

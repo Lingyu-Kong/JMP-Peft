@@ -47,6 +47,7 @@ from ...datasets.matbench_discovery_ase import MatbenchDiscoveryAseDataset
 from ...datasets.matbench_discovery_megnet_npz import (
     MatbenchTrajectoryDataset as MatbenchDiscoveryMegNetNpzDataset,
 )
+from ...datasets.mpd_is2re import MatBenchDiscoveryIS2REDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
@@ -101,6 +102,7 @@ DatasetType: TypeAlias = (
     | PDBBindDataset
     | MatbenchDiscoveryAseDataset
     | MatbenchDiscoveryMegNetNpzDataset
+    | MatBenchDiscoveryIS2REDataset
 )
 
 
@@ -332,11 +334,21 @@ class FinetuneMatbenchDiscoveryMegNet133kDatasetConfig(CommonDatasetConfig):
         )
 
 
+class FinetuneMatBenchDiscoveryIS2REDatasetConfig(CommonDatasetConfig):
+    name: Literal["matbench_discovery_is2re"] = "matbench_discovery_is2re"
+
+    energy_linref_path: Path | None = None
+
+    def create_dataset(self):
+        return MatBenchDiscoveryIS2REDataset(energy_linref_path=self.energy_linref_path)
+
+
 FinetuneDatasetConfig: TypeAlias = Annotated[
     FinetuneLmdbDatasetConfig
     | FinetunePDBBindDatasetConfig
     | FinetuneMatbenchDiscoveryDatasetConfig
-    | FinetuneMatbenchDiscoveryMegNet133kDatasetConfig,
+    | FinetuneMatbenchDiscoveryMegNet133kDatasetConfig
+    | FinetuneMatBenchDiscoveryIS2REDatasetConfig,
     Field(discriminator="name"),
 ]
 

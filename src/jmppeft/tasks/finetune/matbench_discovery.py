@@ -52,9 +52,10 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
     def data_transform(self, data: BaseData):
         data = super().data_transform(data)
 
-        if not torch.is_tensor(data.y):
-            data.y = torch.tensor(data.y)
-        data.y = data.y.view(-1)
+        if getattr(data, "y", None) is not None:
+            if not torch.is_tensor(data.y):
+                data.y = torch.tensor(data.y)
+            data.y = data.y.view(-1)
 
         data.atomic_numbers = data.atomic_numbers.long()
         assert data.num_nodes is not None

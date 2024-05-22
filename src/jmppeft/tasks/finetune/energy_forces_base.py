@@ -14,6 +14,7 @@ from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...modules.relaxer import Relaxer, RelaxerConfig
+from ...modules.transforms.normalize import denormalize_batch
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
     GradientForcesTargetConfig,
@@ -43,6 +44,17 @@ class RelaxationConfig(ll.TypedConfig):
 
     stress_key: str | None = None
     """Key for the stress in the model's output. If None, stress is not computed."""
+
+    relaxed_energy_key: str = "y_relaxed"
+    """Key for the relaxed energy in the PyG `Batch` object."""
+
+    add_dummy_y_and_force: bool = True
+    """Whether to add dummy `y` and `force` keys to the batch if they are not present.
+    This is to prevent errors when the model does not output `y` and `force` during validation and testing.
+    """
+
+    def __bool__(self):
+        return self.validation is not None or self.test is not None
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
@@ -234,16 +246,9 @@ class EnergyForcesModelBase(
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
 
-    def relaxation_y_relaxed(self, batch: BaseData):
-        if (y_relaxed := getattr(batch, "y_relaxed", None)) is None:
-            raise AttributeError(
-                "Batch does not have `y_relaxed` attribute. Please either set it or override `relaxation_y_relaxed`."
-            )
-
-        return y_relaxed
-
     def _relaxer_forward(self, batch: Batch, *, config: RelaxerConfig):
         out = self(batch)
+        batch, out = denormalize_batch(batch, out)
 
         energy = out[self.config.relaxation.energy_key]
         force = out[self.config.relaxation.force_key]
@@ -252,6 +257,17 @@ class EnergyForcesModelBase(
             stress = out[self.config.relaxation.stress_key]
 
         return energy, force, stress
+
+    def _relaxer_y_relaxed(self, batch: BaseData):
+        # First, denormalize the batch
+        batch, _ = denormalize_batch(batch.clone())
+
+        if (y_relaxed := getattr(batch, "y_relaxed", None)) is None:
+            raise AttributeError(
+                "Batch does not have `y_relaxed` attribute. Please either set it or override `_relaxer_y_relaxed`."
+            )
+
+        return y_relaxed
 
     @override
     def on_validation_epoch_start(self):
@@ -275,7 +291,7 @@ class EnergyForcesModelBase(
         with self.log_context(prefix=f"val/{self.metric_prefix()}/"):
             self.val_relaxer.step(
                 batch,
-                self.relaxation_y_relaxed(batch),
+                self._relaxer_y_relaxed(batch),
             )
 
     @override
@@ -311,7 +327,7 @@ class EnergyForcesModelBase(
         with self.log_context(prefix=f"test/{self.metric_prefix()}/"):
             self.test_relaxer.step(
                 batch,
-                self.relaxation_y_relaxed(batch),
+                self._relaxer_y_relaxed(batch),
             )
 
     @override
@@ -324,3 +340,12 @@ class EnergyForcesModelBase(
             # Compute the relaxation metrics and report them.
             with self.log_context(prefix=f"test/relax/{self.metric_prefix()}/"):
                 self.log_dict(self.test_relaxer.compute_metrics(self), on_epoch=True)
+
+    @override
+    def data_transform(self, data: BaseData):
+        if self.config.relaxation and self.config.relaxation.add_dummy_y_and_force:
+            data.y = 0.0
+            data.force = torch.zeros_like(data.pos)
+
+        data = super().data_transform(data)
+        return data
