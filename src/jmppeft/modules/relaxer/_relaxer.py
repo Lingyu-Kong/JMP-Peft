@@ -35,9 +35,7 @@ Graph: TypeAlias = Batch
 @runtime_checkable
 class Potential(Protocol):
     def __call__(
-        self,
-        graph: Graph,
-        include_stresses: bool = True,
+        self, graph: Graph
     ) -> (
         tuple[torch.Tensor, torch.Tensor]
         | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -121,7 +119,7 @@ class Calculator(ASECalculator):
         )
 
         graph = self.graph_converter(atoms)
-        results = self.potential(graph, include_stresses=self.compute_stress)
+        results = self.potential(graph)
         self.results.update(
             energy=results[0].numpy().ravel()[0],
             free_energy=results[0].numpy().ravel()[0],

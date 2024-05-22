@@ -16,15 +16,6 @@ from ._relaxer import Relaxer as _Relaxer
 
 
 class RelaxerConfig(ll.TypedConfig):
-    energy_key: str = "y"
-    """Key for the energy in the graph data."""
-
-    force_key: str = "force"
-    """Key for the forces in the node data."""
-
-    stress_key: str | None = None
-    """Key for the stress in the graph data (or `None` if stress is not computed)."""
-
     optimizer: Literal[
         "FIRE",
         "BFGS",
@@ -139,7 +130,9 @@ class Relaxer:
     def __init__(
         self,
         config: RelaxerConfig,
-        model: Callable[[Batch], Mapping[str, torch.Tensor]],
+        model: Callable[
+            [Batch], tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+        ],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
         state: RelaxationEpochState | None = None,
@@ -230,17 +223,15 @@ class Relaxer:
 
         return atoms
 
-    def _potential(self, graph: Batch, include_stresses: bool = False):
+    def _potential(self, graph: Batch):
         """
         Compute the potential energy, forces, and stresses of the given graph.
 
         Args:
             graph (Batch): The input graph.
-            include_stresses (bool, optional): Whether to include stresses in the output.
-                Defaults to False.
 
         Returns:
-            tuple: A tuple containing the potential energy and forces. If `include_stresses`
+            tuple: A tuple containing the potential energy and forces. If `config.compute_stress`
             is True, the tuple also includes the stresses.
 
         Raises:
@@ -250,16 +241,13 @@ class Relaxer:
         graph = graph.to(self.device)
 
         # Compute the energy and forces
-        out = self.model(graph)
-        energy = out[self.config.energy_key].detach().float().cpu().numpy()
-        forces = out[self.config.force_key].detach().float().cpu().numpy()
+        energy, forces, stress = self.model(graph)
+        energy = energy.detach().float().cpu().numpy()
+        forces = forces.detach().float().cpu().numpy()
 
-        if include_stresses:
-            assert (
-                self.config.stress_key is not None
-            ), "Stress key is not set in the relaxer config."
-
-            stress = out[self.config.stress_key].detach().float().cpu().numpy()
+        if self.config.compute_stress:
+            assert stress is not None, "Stress key must be set in the relaxer config."
+            stress = stress.detach().float().cpu().numpy()
             return energy, forces, stress
         else:
             return energy, forces

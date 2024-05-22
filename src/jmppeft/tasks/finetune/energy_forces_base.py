@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
+from functools import partial
 from logging import getLogger
 from typing import Generic, Literal, cast
 
@@ -33,6 +34,15 @@ class RelaxationConfig(ll.TypedConfig):
 
     test: RelaxerConfig | None = None
     """Relaxer configuration for testing. If None, relaxer is disabled for testing."""
+
+    energy_key: str = "y"
+    """Key for the energy in the model's output."""
+
+    force_key: str = "force"
+    """Key for the forces in the model's output."""
+
+    stress_key: str | None = None
+    """Key for the stress in the model's output. If None, stress is not computed."""
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
@@ -232,18 +242,26 @@ class EnergyForcesModelBase(
 
         return y_relaxed
 
-    def _relaxer_forward(self, batch: Batch):
+    def _relaxer_forward(self, batch: Batch, *, config: RelaxerConfig):
         out = self(batch)
+
+        energy = out[self.config.relaxation.energy_key]
+        force = out[self.config.relaxation.force_key]
+        stress = None
+        if config.compute_stress and self.config.relaxation.stress_key is not None:
+            stress = out[self.config.relaxation.stress_key]
+
+        return energy, force, stress
 
     @override
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
 
         self.val_relaxer = None
-        if self.config.relaxation.validation is not None:
+        if (config := self.config.relaxation.validation) is not None:
             self.val_relaxer = Relaxer(
-                self.config.relaxation.validation,
-                self._relaxer_forward,
+                config,
+                partial(self._relaxer_forward, config=config),
                 self.collate_fn,
                 self.device,
             )
@@ -276,10 +294,10 @@ class EnergyForcesModelBase(
         super().on_test_epoch_start()
 
         self.test_relaxer = None
-        if self.config.relaxation.test is not None:
+        if (config := self.config.relaxation.test) is not None:
             self.test_relaxer = Relaxer(
-                self.config.relaxation.test,
-                self,
+                config,
+                partial(self._relaxer_forward, config=config),
                 self.collate_fn,
                 self.device,
             )
