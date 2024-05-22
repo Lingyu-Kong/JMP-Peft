@@ -1,5 +1,6 @@
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -41,7 +42,7 @@ class RelaxerConfig(ll.TypedConfig):
     stress_weight: float = 0.01
     """Weight for the stress loss."""
 
-    fmax: float = 0.1
+    fmax: float = 0.05
     """
     Total force tolerance for relaxation convergence.
         Here fmax is a sum of force and stress forces
@@ -132,7 +133,7 @@ class Relaxer:
         self,
         config: RelaxerConfig,
         model: Callable[
-            [Batch], tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+            [Batch, Batch], tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
         ],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
@@ -145,15 +146,6 @@ class Relaxer:
         self.collate_fn = collate_fn
         self.device = device
         self.state = self.initialize_state() if state is None else state
-
-        self.relaxer = _Relaxer(
-            potential=self._potential,
-            graph_converter=self._atoms_to_graph,
-            optimizer_cls=self.config.optimizer_cls,
-            relax_cell=self.config.relax_cell,
-            compute_stress=self.config.compute_stress,
-            stress_weight=self.config.stress_weight,
-        )
 
     def _atoms_to_graph(self, atoms: Atoms) -> Batch:
         """
@@ -224,11 +216,12 @@ class Relaxer:
 
         return atoms
 
-    def _potential(self, graph: Batch):
+    def _potential(self, graph: Batch, initial_graph: Batch):
         """
         Compute the potential energy, forces, and stresses of the given graph.
 
         Args:
+            initial_graph (Batch): The initial graph (from the original dataset).
             graph (Batch): The input graph.
 
         Returns:
@@ -242,7 +235,7 @@ class Relaxer:
         graph = graph.to(self.device)
 
         # Compute the energy and forces
-        energy, forces, stress = self.model(graph)
+        energy, forces, stress = self.model(graph, initial_graph)
         energy = energy.detach().float().cpu()
         forces = forces.detach().float().cpu()
 
@@ -253,24 +246,31 @@ class Relaxer:
         else:
             return energy, forces
 
-    def _relax(self, atoms: Atoms | Data | Batch):
+    def _relax(self, graph: Batch):
         """
         Perform relaxation on the given atoms.
 
         Args:
-            atoms (Atoms | Data | Batch): The atoms to be relaxed.
+            graph (Batch): The input graph.
 
         Returns:
-            Atoms: The relaxed atoms.
+            RelaxationOutput: The relaxation output.
 
         Raises:
             None
 
         """
-        if not isinstance(atoms, Atoms):
-            atoms = self._graph_to_atoms(atoms)
+        atoms = self._graph_to_atoms(graph)
 
-        return self.relaxer.relax(
+        relaxer = _Relaxer(
+            potential=partial(self._potential, initial_graph=graph),
+            graph_converter=self._atoms_to_graph,
+            optimizer_cls=self.config.optimizer_cls,
+            relax_cell=self.config.relax_cell,
+            compute_stress=self.config.compute_stress,
+            stress_weight=self.config.stress_weight,
+        )
+        return relaxer.relax(
             atoms,
             fmax=self.config.fmax,
             steps=self.config.steps,

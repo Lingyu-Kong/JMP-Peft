@@ -48,6 +48,9 @@ class RelaxationConfig(ll.TypedConfig):
     relaxed_energy_key: str = "y_relaxed"
     """Key for the relaxed energy in the PyG `Batch` object."""
 
+    relaxed_energy_per_atom: bool = True
+    """If true, relaxed energy metrics are reported in `eV/atom` units. Otherwise, they are reported in `eV` units."""
+
     add_dummy_y_and_force: bool = True
     """Whether to add dummy `y` and `force` keys to the batch if they are not present.
     This is to prevent errors when the model does not output `y` and `force` during validation and testing.
@@ -246,9 +249,15 @@ class EnergyForcesModelBase(
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
 
-    def _relaxer_forward(self, batch: Batch, *, config: RelaxerConfig):
+    def _relaxer_forward(
+        self,
+        batch: Batch,
+        initial_graph: Batch,
+        *,
+        config: RelaxerConfig,
+    ):
         out = self(batch)
-        batch, out = denormalize_batch(batch, out)
+        _, out = denormalize_batch(initial_graph.clone(), out)
 
         energy = out[self.config.relaxation.energy_key]
         force = out[self.config.relaxation.force_key]
@@ -256,16 +265,26 @@ class EnergyForcesModelBase(
         if config.compute_stress and self.config.relaxation.stress_key is not None:
             stress = out[self.config.relaxation.stress_key]
 
+        # If the relaxed energy is per atom, we need to multiply it by the number of atoms
+        energy = self._process_energy(energy, batch)
+
         return energy, force, stress
+
+    def _process_energy(self, energy: torch.Tensor, batch: BaseData):
+        if self.config.relaxation.relaxed_energy_per_atom:
+            return energy / int(batch.atomic_numbers.numel())
+        return energy
 
     def _relaxer_y_relaxed(self, batch: BaseData):
         # First, denormalize the batch
         batch, _ = denormalize_batch(batch.clone())
 
-        if (y_relaxed := getattr(batch, "y_relaxed", None)) is None:
-            raise AttributeError(
-                "Batch does not have `y_relaxed` attribute. Please either set it or override `_relaxer_y_relaxed`."
-            )
+        key = self.config.relaxation.relaxed_energy_key
+        if (y_relaxed := getattr(batch, key, None)) is None:
+            raise AttributeError(f"Batch does not have `{key}` attribute.")
+
+        # If the relaxed energy is per atom, we need to multiply it by the number of atoms
+        y_relaxed = self._process_energy(y_relaxed, batch)
 
         return y_relaxed
 

@@ -1,12 +1,14 @@
 from collections.abc import Mapping
+from logging import getLogger
 from typing import cast
 
 import numpy as np
 import torch
+from ll import TypedConfig
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar
 
-from ll import TypedConfig
+log = getLogger(__name__)
 
 T = TypeVar("T", float, torch.Tensor, np.ndarray, infer_variance=True)
 
@@ -38,7 +40,9 @@ def normalize(properties: Mapping[str, NormalizationConfig]):
                 raise ValueError(f"Property {key} not found in data")
 
             value = _process_value(value)
-            value = d.normalize(value)
+            new_value = d.normalize(value)
+            # log.critical(f"Normalized {key}: {value} -> {new_value}.")
+            value = new_value
             setattr(data, key, value)
             setattr(data, f"{key}_norm_mean", torch.full_like(value, d.mean))
             setattr(data, f"{key}_norm_std", torch.full_like(value, d.std))
@@ -67,10 +71,17 @@ def denormalize_batch(
         std = getattr(batch, f"{key}_norm_std")
         value = getattr(batch, key)
 
-        value = (value * std) + mean
-        setattr(batch, key, value)
+        new_value = (value * std) + mean
+        # log.critical(
+        #     f"Denormalized batch {key}: {value} -> {new_value}. {additional_tensors.keys()=}"
+        # )
+        setattr(batch, key, new_value)
 
         if (additional_value := additional_tensors.pop(key, None)) is not None:
-            additional_tensors[key] = (additional_value * std) + mean
+            new_value = (additional_value * std) + mean
+            # log.critical(
+            #     f"Denormalized additional tensor {key}: {additional_value} -> {new_value}"
+            # )
+            additional_tensors[key] = new_value
 
     return batch, additional_tensors

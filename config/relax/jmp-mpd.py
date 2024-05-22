@@ -26,22 +26,13 @@ def update_for_relaxation_(config: ef.EnergyForcesConfigBase):
     config.train_dataset = None
     config.val_dataset = None
 
-    """ dataset=config.test_dataset.create_dataset()
-
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
-
-    cse=ComputedStructureEntry.from_dict(dataset.df.iloc[0].computed_structure_entry)
-    cse
-    """
-
     config.batch_size = 1
     config.eval_batch_size = 1
     config.relaxation = ef.RelaxationConfig(
         validation=None,
-        test=ef.RelaxerConfig(),
+        test=ef.RelaxerConfig(fmax=0.02),
     )
 
-    # config.normalization.pop("force")
     config.normalization["y_relaxed"] = config.normalization["y"].model_copy()
 
 
@@ -66,4 +57,8 @@ def run(config: base.FinetuneConfigBase, model_cls: type[base.FinetuneModelBase]
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs, n_batches=32)
+runner.fast_dev_run(configs, n_batches=128)
+
+# %%
+runner = ll.Runner(run)
+runner.local_session_per_gpu(configs, gpus=(1,))
