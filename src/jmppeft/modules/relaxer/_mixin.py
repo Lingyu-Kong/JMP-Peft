@@ -1,7 +1,5 @@
-from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -9,17 +7,14 @@ import ll
 import torch
 from ase import Atoms
 from matbench_discovery.metrics import STABILITY_THRESHOLD, stable_metrics
-from torch.utils.data import DataLoader
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
-from typing_extensions import TypeVar, assert_never
+from typing_extensions import assert_never
 
-from ._relaxer import Relaxer
+from ._relaxer import Relaxer as _Relaxer
 
 
 class RelaxerConfig(ll.TypedConfig):
-    enabled: bool = False
-
     energy_key: str = "y"
     """Key for the energy in the graph data."""
 
@@ -120,9 +115,6 @@ class RelaxerConfig(ll.TypedConfig):
             case _:
                 assert_never(self.optimizer)
 
-    def __bool__(self):
-        return self.enabled
-
 
 @dataclass
 class RelaxationEpochState:
@@ -130,19 +122,41 @@ class RelaxationEpochState:
     y_true: list[float] = field(default_factory=lambda: [])
 
 
-TConfig = TypeVar("TConfig", bound=ll.BaseConfig)
+class Relaxer:
+    def __init__(
+        self,
+        config: RelaxerConfig,
+        model: Callable[[Batch], Mapping[str, torch.Tensor]],
+        collate_fn: Callable[[list[BaseData]], Batch],
+        device: torch.device,
+        state: RelaxationEpochState | None = None,
+    ):
+        super().__init__()
 
+        self.config = config
+        self.model = model
+        self.collate_fn = collate_fn
+        self.device = device
+        self.state = self.initialize_state() if state is None else state
 
-class LightningModuleRelaxerMixin(ll.LightningModuleBase[TConfig], ABC):
-    @abstractmethod
-    def relaxer_config(self) -> RelaxerConfig | None: ...
+        self.relaxer = _Relaxer(
+            potential=self._potential,
+            graph_converter=self._atoms_to_graph,
+            optimizer_cls=self.config.optimizer_cls,
+            relax_cell=self.config.relax_cell,
+            stress_weight=self.config.stress_weight,
+        )
 
-    @abstractmethod
-    def relaxer_collate_fn(self, data_list: list[BaseData]) -> Batch: ...
+    def _atoms_to_graph(self, atoms: Atoms) -> Batch:
+        """
+        Convert the given ASE `Atoms` object to a PyG `Batch` object.
 
-    def _relaxer_atoms_to_graph(self, atoms: Atoms) -> Batch:
-        assert self.relaxer_config(), "Relaxer is not enabled in the config."
+        Args:
+            atoms (Atoms): The input `Atoms` object.
 
+        Returns:
+            Batch: The converted `Batch` object.
+        """
         atomic_numbers = torch.tensor(atoms.numbers, dtype=torch.long)
         pos = torch.tensor(atoms.positions, dtype=torch.float)
         cell = torch.tensor(atoms.cell.array, dtype=torch.float)
@@ -160,13 +174,24 @@ class LightningModuleRelaxerMixin(ll.LightningModuleBase[TConfig], ABC):
                 "natoms": natoms,
             }
         )
-        batch = self.relaxer_collate_fn([data])
+        batch = self.collate_fn([data])
 
         return batch
 
-    def _relaxer_graph_to_atoms(self, data_or_batch: Data | Batch) -> Atoms:
-        assert self.relaxer_config(), "Relaxer is not enabled in the config."
+    def _graph_to_atoms(self, data_or_batch: Data | Batch) -> Atoms:
+        """
+        Convert a graph representation to an `Atoms` object.
 
+        Args:
+            data_or_batch (Data | Batch): The input graph or batch of graphs.
+
+        Returns:
+            Atoms: The converted `Atoms` object.
+
+        Raises:
+            AssertionError: If the batch size is not 1 for relaxation.
+            AssertionError: If the fixed flag is not a boolean tensor.
+        """
         graph = data_or_batch
         if isinstance(graph, Batch):
             data_list = graph.to_data_list()
@@ -191,70 +216,97 @@ class LightningModuleRelaxerMixin(ll.LightningModuleBase[TConfig], ABC):
 
         return atoms
 
-    def _relaxer_potential(self, graph: Batch, include_stresses: bool = True):
-        assert (c := self.relaxer_config()), "Relaxer is not enabled in the config."
+    def _potential(self, graph: Batch, include_stresses: bool = False):
+        """
+        Compute the potential energy, forces, and stresses of the given graph.
 
+        Args:
+            graph (Batch): The input graph.
+            include_stresses (bool, optional): Whether to include stresses in the output.
+                Defaults to False.
+
+        Returns:
+            tuple: A tuple containing the potential energy and forces. If `include_stresses`
+            is True, the tuple also includes the stresses.
+
+        Raises:
+            AssertionError: If the stress key is not set in the relaxer config.
+        """
         # First, move the graph to the model's device
         graph = graph.to(self.device)
 
         # Compute the energy and forces
-        out: dict[str, torch.Tensor] = self(graph)
-        energy = out[c.energy_key].detach().float().cpu().numpy()
-        forces = out[c.force_key].detach().float().cpu().numpy()
+        out = self.model(graph)
+        energy = out[self.config.energy_key].detach().float().cpu().numpy()
+        forces = out[self.config.force_key].detach().float().cpu().numpy()
 
         if include_stresses:
             assert (
-                c.stress_key is not None
+                self.config.stress_key is not None
             ), "Stress key is not set in the relaxer config."
 
-            stress = out[c.stress_key].detach().float().cpu().numpy()
+            stress = out[self.config.stress_key].detach().float().cpu().numpy()
             return energy, forces, stress
         else:
             return energy, forces
 
-    @property
-    @cache
-    def _relaxer(self):
-        if (c := self.relaxer_config()) is None:
-            raise ValueError("Relaxer is not enabled in the config.")
+    def _relax(self, atoms: Atoms | Data | Batch):
+        """
+        Perform relaxation on the given atoms.
 
-        return Relaxer(
-            potential=self._relaxer_potential,
-            graph_converter=self._relaxer_atoms_to_graph,
-            optimizer_cls=c.optimizer_cls,
-            relax_cell=c.relax_cell,
-            stress_weight=c.stress_weight,
-        )
+        Args:
+            atoms (Atoms | Data | Batch): The atoms to be relaxed.
 
-    def relaxer_validate_dataloader(self, dl: DataLoader):
-        # Make sure the batch size is 1, as ASE doesn't support batched relaxation
-        assert dl.batch_size == 1, "Batch size must be 1 for relaxation."
+        Returns:
+            Atoms: The relaxed atoms.
 
-    def relaxer_relax(self, atoms: Atoms | Data | Batch):
-        assert (c := self.relaxer_config()), "Relaxer is not enabled in the config."
+        Raises:
+            None
 
+        """
         if not isinstance(atoms, Atoms):
-            atoms = self._relaxer_graph_to_atoms(atoms)
+            atoms = self._graph_to_atoms(atoms)
 
-        return self._relaxer.relax(
+        return self.relaxer.relax(
             atoms,
-            fmax=c.fmax,
-            steps=c.steps,
-            traj_file=str(c.traj_file.absolute()) if c.traj_file else None,
-            interval=c.interval,
-            verbose=c.verbose,
-            **c.optimizer_kwargs,
+            fmax=self.config.fmax,
+            steps=self.config.steps,
+            traj_file=str(self.config.traj_file.absolute())
+            if self.config.traj_file
+            else None,
+            interval=self.config.interval,
+            verbose=self.config.verbose,
+            **self.config.optimizer_kwargs,
         )
 
-    def relaxer_step(
+    def initialize_state(self):
+        """
+        Initializes the state for relaxation epoch.
+
+        Returns:
+            RelaxationEpochState: The initialized relaxation epoch state.
+        """
+        return RelaxationEpochState()
+
+    def step(
         self,
         input: Batch,
         y_true: torch.Tensor,
         state: RelaxationEpochState,
     ) -> RelaxationEpochState:
+        """
+        Perform a relaxation step on the input structure.
+
+        Args:
+            input (Batch): The input batch of structures.
+            y_true (torch.Tensor): The true target values.
+            state (RelaxationEpochState): The current relaxation epoch state.
+
+        Returns:
+            RelaxationEpochState: The updated relaxation epoch state.
+        """
         # Relax the structure
-        atoms = self._relaxer_graph_to_atoms(input)
-        relax_out = self._relaxer.relax(atoms)
+        relax_out = self._relax(input)
 
         # Add to state
         state.y_pred.append(
@@ -264,11 +316,16 @@ class LightningModuleRelaxerMixin(ll.LightningModuleBase[TConfig], ABC):
 
         return state
 
-    def relaxer_epoch_start(self):
-        return RelaxationEpochState()
+    def epoch_end(self, state: RelaxationEpochState):
+        """
+        Calculates the metrics at the end of a relaxation epoch.
 
-    def relaxer_epoch_end(self, state: RelaxationEpochState):
-        assert (c := self.relaxer_config()), "Relaxer is not enabled in the config."
+        Args:
+            state (RelaxationEpochState): The state object containing the predicted and true values.
+
+        Returns:
+            metrics (dict): A dictionary containing the calculated metrics.
+        """
         assert (
             len(state.y_pred) == len(state.y_true)
         ), f"Shapes of y_pred and y_true must match, got {len(state.y_pred)=} and {len(state.y_true)=}."
@@ -276,8 +333,6 @@ class LightningModuleRelaxerMixin(ll.LightningModuleBase[TConfig], ABC):
         metrics = stable_metrics(
             state.y_true,
             state.y_pred,
-            stability_threshold=c.stability_threshold,
+            stability_threshold=self.config.stability_threshold,
         )
-
-        self.log_dict(metrics, on_epoch=True)
         return metrics

@@ -3,15 +3,17 @@ from contextlib import ExitStack
 from logging import getLogger
 from typing import Generic, Literal, cast
 
+import ll
 import torch
 import torch.nn as nn
 from ll.nn import TypedModuleDict
+from sklearn.neighbors import VALID_METRICS
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
-from ...modules.relaxer import LightningModuleRelaxerMixin, RelaxerConfig
+from ...modules.relaxer import Relaxer, RelaxerConfig
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
     GradientForcesTargetConfig,
@@ -26,6 +28,14 @@ from .output_head import (
 log = getLogger(__name__)
 
 
+class RelaxationConfig(ll.TypedConfig):
+    validation: RelaxerConfig | None = None
+    """Relaxer configuration for validation. If None, relaxer is disabled for validation."""
+
+    test: RelaxerConfig | None = None
+    """Relaxer configuration for testing. If None, relaxer is disabled for testing."""
+
+
 class EnergyForcesConfigBase(FinetuneConfigBase):
     graph_targets: list[GraphTargetConfig] = [
         GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
@@ -38,8 +48,8 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         ),
     ]
 
-    relaxer: RelaxerConfig | None = None
-    """Relaxer configuration. If None, relaxer is disabled."""
+    relaxation: RelaxationConfig = RelaxationConfig()
+    """Relaxation configuration for validation and testing."""
 
     def energy_config_(self):
         self.graph_targets = [
@@ -133,7 +143,6 @@ TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
 
 
 class EnergyForcesModelBase(
-    LightningModuleRelaxerMixin[TConfig],
     FinetuneModelBase[TConfig],
     nn.Module,
     ABC,
@@ -217,9 +226,14 @@ class EnergyForcesModelBase(
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
 
     @override
-    def relaxer_config(self) -> RelaxerConfig | None:
-        return self.config.relaxer
+    def on_validation_epoch_start(self):
+        super().on_validation_epoch_start()
 
-    @override
-    def relaxer_collate_fn(self, data_list: list[BaseData]) -> Batch:
-        return self.collate_fn(data_list)
+        self.val_relaxer = None
+        if self.config.relaxation.validation is not None:
+            self.val_relaxer = Relaxer(
+                self.config.relaxation.validation,
+                self,
+                self.collate_fn,
+                self.device,
+            )
