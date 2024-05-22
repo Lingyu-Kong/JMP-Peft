@@ -73,7 +73,7 @@ class Calculator(ASECalculator):
         self,
         potential: Potential,
         graph_converter: GraphConverter,
-        compute_stress: bool = True,
+        compute_stress: bool = False,
         stress_weight: float = 1.0,
         **kwargs,
     ):
@@ -132,97 +132,6 @@ class Calculator(ASECalculator):
             self.results.update(stress=results[2].numpy()[0] * self.stress_weight)
 
 
-@dataclass
-class RelaxationOutput:
-    final_structure: Structure
-    trajectory: TrajectoryObserver
-
-
-class Relaxer:
-    """
-    Relaxer is a class for structural relaxation
-    """
-
-    def __init__(
-        self,
-        potential: Potential,
-        graph_converter: GraphConverter,
-        optimizer_cls: type[Optimizer],
-        relax_cell: bool = True,
-        stress_weight: float = 0.01,
-    ):
-        """
-
-        Args:
-            potential (Optional[Union[Potential, str]]): a potential,
-                a str path to a saved model or a short name for saved model
-                that comes with M3GNet distribution
-            optimizer_cls (str or ase Optimizer): the optimization algorithm.
-                Defaults to "FIRE"
-            relax_cell (bool): whether to relax the lattice cell
-            stress_weight (float): the stress weight for relaxation
-        """
-
-        self.optimizer_cls = optimizer_cls
-        self.calculator = Calculator(
-            potential=potential,
-            graph_converter=graph_converter,
-            stress_weight=stress_weight,
-        )
-        self.relax_cell = relax_cell
-        self.potential = potential
-        self.ase_adaptor = AseAtomsAdaptor()
-
-    def relax(
-        self,
-        atoms: Atoms,
-        fmax: float = 0.1,
-        steps: int = 500,
-        traj_file: str | None = None,
-        interval=1,
-        verbose=False,
-        **kwargs,
-    ):
-        """
-
-        Args:
-            atoms (Atoms): the atoms for relaxation
-            fmax (float): total force tolerance for relaxation convergence.
-                Here fmax is a sum of force and stress forces
-            steps (int): max number of steps for relaxation
-            traj_file (str): the trajectory file for saving
-            interval (int): the step interval for saving the trajectories
-            **kwargs:
-        Returns:
-        """
-        if isinstance(atoms, (Structure, Molecule)):
-            atoms = self.ase_adaptor.get_atoms(atoms)
-        atoms.set_calculator(self.calculator)
-        stream = sys.stdout if verbose else io.StringIO()
-        with contextlib.redirect_stdout(stream):
-            obs = TrajectoryObserver(atoms)
-            if self.relax_cell:
-                atoms = cast(Atoms, ExpCellFilter(atoms))
-            optimizer = self.optimizer_cls(atoms, **kwargs)
-            optimizer.attach(obs, interval=interval)
-            optimizer.run(fmax=fmax, steps=steps)
-            obs()
-        if traj_file is not None:
-            obs.save(traj_file)
-        if isinstance(atoms, ExpCellFilter):
-            atoms = cast(Atoms, atoms.atoms)
-
-        # return {
-        #     "final_structure": self.ase_adaptor.get_structure(atoms),
-        #     "trajectory": obs,
-        # }
-
-        final_structure = self.ase_adaptor.get_structure(atoms)
-        trajectory = obs
-
-        return RelaxationOutput(final_structure, trajectory)
-
-
 class TrajectoryObserver:
     """
     Trajectory observer is a hook in the relaxation process that saves the
@@ -279,3 +188,97 @@ class TrajectoryObserver:
                 },
                 f,
             )
+
+
+@dataclass
+class RelaxationOutput:
+    final_structure: Structure
+    trajectory: TrajectoryObserver
+
+
+class Relaxer:
+    """
+    Relaxer is a class for structural relaxation
+    """
+
+    def __init__(
+        self,
+        potential: Potential,
+        graph_converter: GraphConverter,
+        optimizer_cls: type[Optimizer],
+        relax_cell: bool = False,
+        stress_weight: float = 0.01,
+        compute_stress: bool = False,
+    ):
+        """
+
+        Args:
+            potential (Optional[Union[Potential, str]]): a potential,
+                a str path to a saved model or a short name for saved model
+                that comes with M3GNet distribution
+            optimizer_cls (str or ase Optimizer): the optimization algorithm.
+                Defaults to "FIRE"
+            relax_cell (bool): whether to relax the lattice cell
+            stress_weight (float): the stress weight for relaxation
+            compute_stress (bool): whether to compute the stress
+        """
+
+        self.optimizer_cls = optimizer_cls
+        self.calculator = Calculator(
+            potential=potential,
+            graph_converter=graph_converter,
+            stress_weight=stress_weight,
+            compute_stress=compute_stress,
+        )
+        self.relax_cell = relax_cell
+        self.potential = potential
+        self.ase_adaptor = AseAtomsAdaptor()
+
+    def relax(
+        self,
+        atoms: Atoms,
+        fmax: float = 0.1,
+        steps: int = 500,
+        traj_file: str | None = None,
+        interval=1,
+        verbose=False,
+        **kwargs,
+    ):
+        """
+
+        Args:
+            atoms (Atoms): the atoms for relaxation
+            fmax (float): total force tolerance for relaxation convergence.
+                Here fmax is a sum of force and stress forces
+            steps (int): max number of steps for relaxation
+            traj_file (str): the trajectory file for saving
+            interval (int): the step interval for saving the trajectories
+            **kwargs:
+        Returns:
+        """
+        if isinstance(atoms, (Structure, Molecule)):
+            atoms = self.ase_adaptor.get_atoms(atoms)
+        atoms.set_calculator(self.calculator)
+        stream = sys.stdout if verbose else io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            obs = TrajectoryObserver(atoms)
+            if self.relax_cell:
+                atoms = cast(Atoms, ExpCellFilter(atoms))
+            optimizer = self.optimizer_cls(atoms, **kwargs)
+            optimizer.attach(obs, interval=interval)
+            optimizer.run(fmax=fmax, steps=steps)
+            obs()
+        if traj_file is not None:
+            obs.save(traj_file)
+        if isinstance(atoms, ExpCellFilter):
+            atoms = cast(Atoms, atoms.atoms)
+
+        # return {
+        #     "final_structure": self.ase_adaptor.get_structure(atoms),
+        #     "trajectory": obs,
+        # }
+
+        final_structure = self.ase_adaptor.get_structure(atoms)
+        trajectory = obs
+
+        return RelaxationOutput(final_structure, trajectory)

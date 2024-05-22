@@ -7,8 +7,7 @@ import ll
 import torch
 import torch.nn as nn
 from ll.nn import TypedModuleDict
-from sklearn.neighbors import VALID_METRICS
-from torch_geometric.data.batch import Batch
+from torch_geometric.data import Batch
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
 
@@ -225,6 +224,17 @@ class EnergyForcesModelBase(
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
 
+    def relaxation_y_relaxed(self, batch: BaseData):
+        if (y_relaxed := getattr(batch, "y_relaxed", None)) is None:
+            raise AttributeError(
+                "Batch does not have `y_relaxed` attribute. Please either set it or override `relaxation_y_relaxed`."
+            )
+
+        return y_relaxed
+
+    def _relaxer_forward(self, batch: Batch):
+        out = self(batch)
+
     @override
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
@@ -233,7 +243,66 @@ class EnergyForcesModelBase(
         if self.config.relaxation.validation is not None:
             self.val_relaxer = Relaxer(
                 self.config.relaxation.validation,
+                self._relaxer_forward,
+                self.collate_fn,
+                self.device,
+            )
+
+    @override
+    def validation_step(self, batch: BaseData, batch_idx: int):
+        if self.config.relaxation.validation is None:
+            return super().validation_step(batch, batch_idx)
+
+        assert self.val_relaxer is not None, "Relaxer must be initialized"
+        with self.log_context(prefix=f"val/{self.metric_prefix()}/"):
+            self.val_relaxer.step(
+                batch,
+                self.relaxation_y_relaxed(batch),
+            )
+
+    @override
+    def on_validation_epoch_end(self):
+        super().on_validation_epoch_end()
+
+        if self.config.relaxation.validation is not None:
+            assert self.val_relaxer is not None, "Relaxer must be initialized"
+
+            # Compute the relaxation metrics and report them.
+            with self.log_context(prefix=f"val/relax/{self.metric_prefix()}/"):
+                self.log_dict(self.val_relaxer.compute_metrics(self), on_epoch=True)
+
+    @override
+    def on_test_epoch_start(self):
+        super().on_test_epoch_start()
+
+        self.test_relaxer = None
+        if self.config.relaxation.test is not None:
+            self.test_relaxer = Relaxer(
+                self.config.relaxation.test,
                 self,
                 self.collate_fn,
                 self.device,
             )
+
+    @override
+    def test_step(self, batch: BaseData, batch_idx: int):
+        if self.config.relaxation.test is None:
+            return super().test_step(batch, batch_idx)
+
+        assert self.test_relaxer is not None, "Relaxer must be initialized"
+        with self.log_context(prefix=f"test/{self.metric_prefix()}/"):
+            self.test_relaxer.step(
+                batch,
+                self.relaxation_y_relaxed(batch),
+            )
+
+    @override
+    def on_test_epoch_end(self):
+        super().on_test_epoch_end()
+
+        if self.config.relaxation.test is not None:
+            assert self.test_relaxer is not None, "Relaxer must be initialized"
+
+            # Compute the relaxation metrics and report them.
+            with self.log_context(prefix=f"test/relax/{self.metric_prefix()}/"):
+                self.log_dict(self.test_relaxer.compute_metrics(self), on_epoch=True)

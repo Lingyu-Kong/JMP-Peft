@@ -1,11 +1,12 @@
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import ll
 import torch
 from ase import Atoms
+from lightning.pytorch import LightningModule
 from matbench_discovery.metrics import STABILITY_THRESHOLD, stable_metrics
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
@@ -41,6 +42,9 @@ class RelaxerConfig(ll.TypedConfig):
 
     relax_cell: bool = False
     """Whether to relax the cell."""
+
+    compute_stress: bool = False
+    """Whether to compute the stress."""
 
     stress_weight: float = 0.01
     """Weight for the stress loss."""
@@ -123,6 +127,15 @@ class RelaxationEpochState:
 
 
 class Relaxer:
+    def initialize_state(self):
+        """
+        Initializes the state for relaxation epoch.
+
+        Returns:
+            RelaxationEpochState: The initialized relaxation epoch state.
+        """
+        return RelaxationEpochState()
+
     def __init__(
         self,
         config: RelaxerConfig,
@@ -144,6 +157,7 @@ class Relaxer:
             graph_converter=self._atoms_to_graph,
             optimizer_cls=self.config.optimizer_cls,
             relax_cell=self.config.relax_cell,
+            compute_stress=self.config.compute_stress,
             stress_weight=self.config.stress_weight,
         )
 
@@ -279,32 +293,16 @@ class Relaxer:
             **self.config.optimizer_kwargs,
         )
 
-    def initialize_state(self):
-        """
-        Initializes the state for relaxation epoch.
-
-        Returns:
-            RelaxationEpochState: The initialized relaxation epoch state.
-        """
-        return RelaxationEpochState()
-
-    def step(
-        self,
-        input: Batch,
-        y_true: torch.Tensor,
-        state: RelaxationEpochState,
-    ) -> RelaxationEpochState:
+    def step(self, input: Batch, y_true: torch.Tensor):
         """
         Perform a relaxation step on the input structure.
 
         Args:
             input (Batch): The input batch of structures.
             y_true (torch.Tensor): The true target values.
-            state (RelaxationEpochState): The current relaxation epoch state.
-
-        Returns:
-            RelaxationEpochState: The updated relaxation epoch state.
         """
+        state = self.state
+
         # Relax the structure
         relax_out = self._relax(input)
 
@@ -314,25 +312,33 @@ class Relaxer:
         )
         state.y_true.append(float(y_true.float().item()))
 
-        return state
+        self.state = state
 
-    def epoch_end(self, state: RelaxationEpochState):
+    def compute_metrics(self, module: LightningModule):
         """
         Calculates the metrics at the end of a relaxation epoch.
-
-        Args:
-            state (RelaxationEpochState): The state object containing the predicted and true values.
 
         Returns:
             metrics (dict): A dictionary containing the calculated metrics.
         """
-        assert (
-            len(state.y_pred) == len(state.y_true)
-        ), f"Shapes of y_pred and y_true must match, got {len(state.y_pred)=} and {len(state.y_true)=}."
 
+        y_pred = self.state.y_pred
+        y_true = self.state.y_true
+        assert (
+            len(y_pred) == len(y_true)
+        ), f"Shapes of y_pred and y_true must match, got {len(y_pred)=} and {len(y_true)=}."
+
+        # Gather all the metrics from all nodes
+        y_pred = cast(list[float], module.all_gather(y_pred))
+        y_true = cast(list[float], module.all_gather(y_true))
+        assert (
+            len(y_pred) == len(y_true)
+        ), f"Shapes of y_pred and y_true must match, got {len(y_pred)=} and {len(y_true)=}."
+
+        # Compute the metrics
         metrics = stable_metrics(
-            state.y_true,
-            state.y_pred,
+            y_true,
+            y_pred,
             stability_threshold=self.config.stability_threshold,
         )
         return metrics
