@@ -31,6 +31,9 @@ def update_for_relaxation_(config: ef.EnergyForcesConfigBase):
     config.relaxation = ef.RelaxationConfig(
         validation=None,
         test=ef.RelaxerConfig(fmax=0.02),
+        relaxed_energy_linref_path=Path(
+            "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
+        ),
     )
 
     config.normalization["y_relaxed"] = config.normalization["y"].model_copy()

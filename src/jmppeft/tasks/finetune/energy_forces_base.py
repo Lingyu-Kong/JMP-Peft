@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
-from functools import partial
+from functools import cache, partial
 from logging import getLogger
+from pathlib import Path
 from typing import Generic, Literal, cast
 
 import ll
+import numpy as np
 import torch
 import torch.nn as nn
 from ll.nn import TypedModuleDict
@@ -54,6 +56,12 @@ class RelaxationConfig(ll.TypedConfig):
     add_dummy_y_and_force: bool = True
     """Whether to add dummy `y` and `force` keys to the batch if they are not present.
     This is to prevent errors when the model does not output `y` and `force` during validation and testing.
+    """
+
+    relaxed_energy_linref_path: Path | None = None
+    """Path to the linear reference energies for the relaxed energies.
+    If set, we assume that the dataset's `y_relaxed` is the linear reference energy
+    and will undo the linear reference transformation to get the total energy (for metrics).
     """
 
     def __bool__(self):
@@ -270,9 +278,25 @@ class EnergyForcesModelBase(
 
         return energy, force, stress
 
+    @cache
+    def _relaxer_energy_linref(self):
+        if self.config.relaxation.relaxed_energy_linref_path is None:
+            return None
+
+        return torch.tensor(
+            np.load(self.config.relaxation.relaxed_energy_linref_path),
+            dtype=torch.float,
+            device=self.device,
+        )
+
     def _process_energy(self, energy: torch.Tensor, batch: BaseData):
+        # Undo the linear reference transformation
+        if (linref := self._relaxer_energy_linref()) is not None:
+            energy = energy + linref[batch.atomic_numbers].sum()
+
+        # Per atom energies
         if self.config.relaxation.relaxed_energy_per_atom:
-            return energy / int(batch.atomic_numbers.numel())
+            energy = energy / int(batch.atomic_numbers.numel())
         return energy
 
     def _relaxer_y_relaxed(self, batch: BaseData):
