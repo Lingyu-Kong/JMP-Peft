@@ -2,7 +2,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import ll
 import numpy as np
@@ -14,6 +14,7 @@ from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
 from typing_extensions import assert_never
 
+from ._relaxer import RelaxationOutput
 from ._relaxer import Relaxer as _Relaxer
 
 
@@ -119,6 +120,15 @@ class RelaxationEpochState:
     y_true: list[float] = field(default_factory=lambda: [])
 
 
+@runtime_checkable
+class RelaxationOutputToEnergy(Protocol):
+    def __call__(self, output: RelaxationOutput) -> torch.Tensor: ...
+
+
+def _default_relaxation_output_to_energy(output: RelaxationOutput) -> torch.Tensor:
+    return torch.tensor(output.trajectory.energies[-1], dtype=torch.float)
+
+
 class Relaxer:
     def initialize_state(self):
         """
@@ -137,6 +147,7 @@ class Relaxer:
         ],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
+        relaxation_output_to_energy: RelaxationOutputToEnergy | None = None,
         state: RelaxationEpochState | None = None,
     ):
         super().__init__()
@@ -145,6 +156,11 @@ class Relaxer:
         self.model = model
         self.collate_fn = collate_fn
         self.device = device
+        self.relaxation_output_to_energy = (
+            _default_relaxation_output_to_energy
+            if relaxation_output_to_energy is None
+            else relaxation_output_to_energy
+        )
         self.state = self.initialize_state() if state is None else state
 
     def _atoms_to_graph(self, atoms: Atoms) -> Batch:
@@ -296,7 +312,7 @@ class Relaxer:
         relax_out = self._relax(input)
 
         # Add to state
-        state.y_pred.append(float(relax_out.trajectory.energies[-1]))
+        state.y_pred.append(float(self.relaxation_output_to_energy(relax_out).item()))
         state.y_true.append(float(y_true.float().item()))
 
         self.state = state

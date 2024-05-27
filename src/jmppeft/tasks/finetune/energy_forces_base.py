@@ -15,7 +15,7 @@ from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
-from ...modules.relaxer import Relaxer, RelaxerConfig
+from ...modules.relaxer import RelaxationOutput, Relaxer, RelaxerConfig
 from ...modules.transforms.normalize import denormalize_batch
 from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
@@ -63,6 +63,9 @@ class RelaxationConfig(ll.TypedConfig):
     If set, we assume that the dataset's `y_relaxed` is the linear reference energy
     and will undo the linear reference transformation to get the total energy (for metrics).
     """
+
+    use_chgnet_for_relaxed_energy: bool = False
+    """Whether to use the `chgnet` model to compute the relaxed energy."""
 
     def __bool__(self):
         return self.validation is not None or self.test is not None
@@ -312,6 +315,45 @@ class EnergyForcesModelBase(
 
         return y_relaxed
 
+    @cache
+    def _relaxer_chgnet(self):
+        from chgnet.graph.converter import CrystalGraphConverter
+        from chgnet.model import CHGNet
+
+        model = CHGNet.load().to(self.device)
+        model.eval()
+
+        converter = CrystalGraphConverter(
+            atom_graph_cutoff=12.0,
+            bond_graph_cutoff=3.0,
+        ).to(self.device)
+        converter.eval()
+        return model, converter
+
+    def _relaxer_chgnet_relaxation_output_to_energy(self, output: RelaxationOutput):
+        # Get the model
+        model, converter = self._relaxer_chgnet()
+
+        # Convert the final structure to a CrystalGraph
+        from chgnet.graph import CrystalGraph
+        from pymatgen.core import Structure
+
+        final_structure = cast(Structure, output.final_structure)
+        graph = cast(CrystalGraph, converter(final_structure))
+
+        # Compute the energy
+        with torch.no_grad(), torch.inference_mode():
+            out = model([graph.to(self.device)], task="e")
+            energy = out["e"].view(-1)
+
+        return energy
+
+    @property
+    def _relaxer_relaxation_output_to_energy(self):
+        if self.config.relaxation.use_chgnet_for_relaxed_energy:
+            return self._relaxer_chgnet_relaxation_output_to_energy
+        return None
+
     @override
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
@@ -323,6 +365,7 @@ class EnergyForcesModelBase(
                 partial(self._relaxer_forward, config=config),
                 self.collate_fn,
                 self.device,
+                relaxation_output_to_energy=self._relaxer_relaxation_output_to_energy,
             )
 
     @override
@@ -359,6 +402,7 @@ class EnergyForcesModelBase(
                 partial(self._relaxer_forward, config=config),
                 self.collate_fn,
                 self.device,
+                relaxation_output_to_energy=self._relaxer_relaxation_output_to_energy,
             )
 
     @override

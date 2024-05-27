@@ -1,8 +1,10 @@
 from functools import cache
 from logging import getLogger
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import torch
 from matbench_discovery import Key
@@ -32,7 +34,7 @@ class MatBenchDiscoveryIS2REDataset(Dataset[Data]):
         return len(self.df)
 
     @override
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: Any):
         row = self.df.iloc[idx]
         structure = Structure.from_dict(row[Key.init_struct])
         entry = ComputedStructureEntry.from_dict(row[Key.cse])

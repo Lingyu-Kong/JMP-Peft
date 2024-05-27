@@ -3,6 +3,7 @@ from pathlib import Path
 
 import ll
 import torch
+from jmppeft.modules.dataset.common import DatasetSampleNConfig
 from jmppeft.tasks.finetune import base
 from jmppeft.tasks.finetune import energy_forces_base as ef
 from jmppeft.tasks.finetune import matbench_discovery as mpd
@@ -19,9 +20,10 @@ def config_from_ckpt(config_cls: type[TConfig], ckpt_path: Path) -> TConfig:
 
 def update_for_relaxation_(config: ef.EnergyForcesConfigBase):
     config.test_dataset = base.FinetuneMatBenchDiscoveryIS2REDatasetConfig(
-        energy_linref_path=Path(
-            "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
-        ),
+        # energy_linref_path=Path(
+        #     "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
+        # ),
+        sample_n=DatasetSampleNConfig(sample_n=1024, seed=42),
     )
     config.train_dataset = None
     config.val_dataset = None
@@ -31,12 +33,13 @@ def update_for_relaxation_(config: ef.EnergyForcesConfigBase):
     config.relaxation = ef.RelaxationConfig(
         validation=None,
         test=ef.RelaxerConfig(fmax=0.02),
-        relaxed_energy_linref_path=Path(
-            "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
-        ),
+        # relaxed_energy_linref_path=Path(
+        #     "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
+        # ),
+        use_chgnet_for_relaxed_energy=True,
     )
 
-    config.normalization["y_relaxed"] = config.normalization["y"].model_copy()
+    # config.normalization["y_relaxed"] = config.normalization["y"].model_copy()
 
 
 configs: list[tuple[base.FinetuneConfigBase, type[base.FinetuneModelBase]]] = []
