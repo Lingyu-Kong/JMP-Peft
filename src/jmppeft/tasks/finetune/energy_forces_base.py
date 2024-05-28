@@ -1,15 +1,18 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from contextlib import ExitStack
 from functools import cache, partial
 from logging import getLogger
 from pathlib import Path
-from typing import Generic, Literal, cast
+from typing import Any, Generic, Literal, cast
 
 import ll
 import numpy as np
 import torch
 import torch.nn as nn
-from ll.nn import TypedModuleDict
+from lightning import LightningModule, Trainer
+from lightning.pytorch.callbacks.prediction_writer import BasePredictionWriter
+from matbench_discovery.energy import get_e_form_per_atom
 from torch_geometric.data import Batch
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
@@ -38,6 +41,9 @@ class RelaxationConfig(ll.TypedConfig):
     test: RelaxerConfig | None = None
     """Relaxer configuration for testing. If None, relaxer is disabled for testing."""
 
+    predict: RelaxerConfig | None = None
+    """Relaxer configuration for predicting. If None, relaxer is disabled for predicting."""
+
     energy_key: str = "y"
     """Key for the energy in the model's output."""
 
@@ -47,7 +53,7 @@ class RelaxationConfig(ll.TypedConfig):
     stress_key: str | None = None
     """Key for the stress in the model's output. If None, stress is not computed."""
 
-    relaxed_energy_key: str = "y_relaxed"
+    relaxed_energy_key: str = "y_above_hull"
     """Key for the relaxed energy in the PyG `Batch` object."""
 
     relaxed_energy_per_atom: bool = True
@@ -67,8 +73,15 @@ class RelaxationConfig(ll.TypedConfig):
     use_chgnet_for_relaxed_energy: bool = False
     """Whether to use the `chgnet` model to compute the relaxed energy."""
 
+    output_dir: Path | None = None
+    """Directory to save the predictions of the relaxation model during validation and testing."""
+
     def __bool__(self):
-        return self.validation is not None or self.test is not None
+        return (
+            self.validation is not None
+            or self.test is not None
+            or self.predict is not None
+        )
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
@@ -177,6 +190,31 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
 TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
 
 
+class _Writer(BasePredictionWriter):
+    def __init__(self):
+        super().__init__(write_interval="batch")
+
+    @override
+    def write_on_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+        prediction: Any,
+        batch_indices: Sequence[int] | None,
+        batch: Any,
+        batch_idx: int,
+        dataloader_idx: int,
+    ) -> None:
+        base_path = cast(
+            ll.LightningModuleBase[ll.BaseConfig], pl_module
+        ).config.subdirectory("predictions")
+        base_path.mkdir(exist_ok=True, parents=True)
+        out_pred = (
+            base_path / f"prediction_rank{trainer.global_rank}_batch{batch_idx}.pt"
+        )
+        torch.save(prediction, out_pred)
+
+
 class EnergyForcesModelBase(
     FinetuneModelBase[TConfig],
     nn.Module,
@@ -184,8 +222,15 @@ class EnergyForcesModelBase(
     Generic[TConfig],
 ):
     @override
+    def __init__(self, config: TConfig):
+        super().__init__(config)
+
+        if self.config.relaxation:
+            self.register_callback(lambda: _Writer())
+
+    @override
     def construct_output_heads(self):
-        self.graph_outputs = TypedModuleDict(
+        self.graph_outputs = ll.nn.TypedModuleDict(
             {
                 target.name: target.construct_output_head(
                     self.config.output,
@@ -197,7 +242,7 @@ class EnergyForcesModelBase(
             },
             key_prefix="ft_mlp_",
         )
-        self.node_outputs = TypedModuleDict(
+        self.node_outputs = ll.nn.TypedModuleDict(
             {
                 target.name: target.construct_output_head(
                     self.config.output,
@@ -346,7 +391,55 @@ class EnergyForcesModelBase(
             out = model([graph.to(self.device)], task="e")
             energy = out["e"].view(-1)
 
+        # get_e_form_per_atom
+        if True:
+            energy = torch.tensor(
+                get_e_form_per_atom(
+                    {
+                        "energy": energy.item(),
+                        "composition": final_structure.composition,
+                    }
+                ),
+                dtype=torch.float,
+                device=self.device,
+            )
+
         return energy
+
+    @override
+    def predict_step(self, batch, batch_idx):
+        if self.config.relaxation.predict is None:
+            return super().predict_step(batch, batch_idx)
+
+        assert self.predict_relaxer is not None, "Relaxer must be initialized"
+        relax_out = self.predict_relaxer._relax(batch)
+        # relaxed_energy = self.predict_relaxer.relaxation_output_to_energy(relax_out)
+
+        batch_dict: dict[str, Any] = {}
+        for key, value in batch.to_dict().items():
+            if torch.is_tensor(value):
+                value = value.detach().cpu().numpy()
+            batch_dict[key] = value
+
+        return {
+            "relax_out": relax_out.as_dict(),
+            "batch": batch_dict,
+            # "relaxed_energy": relaxed_energy.detach().cpu().numpy(),
+        }
+
+    @override
+    def on_predict_epoch_start(self):
+        super().on_predict_epoch_start()
+
+        self.predict_relaxer = None
+        if (config := self.config.relaxation.predict) is not None:
+            self.predict_relaxer = Relaxer(
+                config,
+                partial(self._relaxer_forward, config=config),
+                self.collate_fn,
+                self.device,
+                relaxation_output_to_energy=self._relaxer_relaxation_output_to_energy,
+            )
 
     @property
     def _relaxer_relaxation_output_to_energy(self):

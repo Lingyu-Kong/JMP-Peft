@@ -168,6 +168,16 @@ class TrajectoryObserver:
         energy = self.atoms.get_potential_energy()
         return energy
 
+    def as_dict(self):
+        return {
+            "energy": self.energies,
+            "forces": self.forces,
+            "stresses": self.stresses,
+            "atom_positions": self.atom_positions,
+            "cell": self.cells,
+            "atomic_number": self.atoms.get_atomic_numbers(),
+        }
+
     def save(self, filename: str):
         """
         Save the trajectory to file
@@ -193,6 +203,12 @@ class TrajectoryObserver:
 class RelaxationOutput:
     final_structure: Structure
     trajectory: TrajectoryObserver
+
+    def as_dict(self):
+        return {
+            "final_structure": self.final_structure.as_dict(),
+            "trajectory": self.trajectory.as_dict(),
+        }
 
 
 class Relaxer:

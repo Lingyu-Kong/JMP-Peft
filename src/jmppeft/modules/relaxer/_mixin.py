@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from ase import Atoms
 from lightning.pytorch import LightningModule
+from matbench_discovery.energy import get_e_form_per_atom
 from matbench_discovery.metrics import STABILITY_THRESHOLD, stable_metrics
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData

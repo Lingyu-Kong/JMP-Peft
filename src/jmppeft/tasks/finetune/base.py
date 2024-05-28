@@ -337,10 +337,8 @@ class FinetuneMatbenchDiscoveryMegNet133kDatasetConfig(CommonDatasetConfig):
 class FinetuneMatBenchDiscoveryIS2REDatasetConfig(CommonDatasetConfig):
     name: Literal["matbench_discovery_is2re"] = "matbench_discovery_is2re"
 
-    energy_linref_path: Path | None = None
-
     def create_dataset(self):
-        return MatBenchDiscoveryIS2REDataset(energy_linref_path=self.energy_linref_path)
+        return MatBenchDiscoveryIS2REDataset()
 
 
 FinetuneDatasetConfig: TypeAlias = Annotated[
@@ -377,6 +375,8 @@ class FinetuneConfigBase(BaseConfig):
     """Configuration for the val dataset"""
     test_dataset: FinetuneDatasetConfig | None = None
     """Configuration for the test dataset"""
+    predict_dataset: FinetuneDatasetConfig | None = None
+    """Configuration for the predict dataset"""
 
     optimizer: OptimizerConfig
     """Optimizer to use."""
@@ -1353,6 +1353,11 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
             self.log_dict(self.test_metrics(batch, preds))
 
+    @override
+    def predict_step(self, batch: BaseData, batch_idx: int):
+        preds = self(batch)
+        return preds
+
     def outhead_parameters(self):
         head_params = (
             list(self.graph_outputs.parameters())
@@ -1699,7 +1704,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         return data
 
     def create_dataset(
-        self, split: Literal["train", "val", "test"]
+        self, split: Literal["train", "val", "test", "predict"]
     ) -> DatasetType | None:
         match split:
             case "train":
@@ -1710,6 +1715,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     return None
             case "test":
                 if (config := self.config.test_dataset) is None:
+                    return None
+            case "predict":
+                if (config := self.config.predict_dataset) is None:
                     return None
             case _:
                 assert_never(split)
@@ -1780,6 +1788,13 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     def test_dataset(self):
         if (dataset := self.create_dataset("test")) is None:
+            return None
+        self.validate_dataset(dataset)
+        dataset = self._apply_dataset_transforms(dataset)
+        return dataset
+
+    def predict_dataset(self):
+        if (dataset := self.create_dataset("predict")) is None:
             return None
         self.validate_dataset(dataset)
         dataset = self._apply_dataset_transforms(dataset)
@@ -1867,6 +1882,35 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             raise ValueError("No test  dataset")
 
         sampler = self.distributed_sampler(dataset, shuffle=self.config.shuffle_test)
+        batch_size = self.config.eval_batch_size or self.config.batch_size
+        if not self.config.use_balanced_batch_sampler:
+            data_loader = DataLoader(
+                dataset,
+                sampler=sampler,
+                batch_size=batch_size,
+                collate_fn=self.collate_fn,
+                num_workers=self.config.num_workers,
+            )
+        else:
+            batch_sampler = BalancedBatchSampler(
+                sampler,
+                batch_size=batch_size,
+                device=self.device,
+            )
+            data_loader = DataLoader(
+                dataset,
+                batch_sampler=batch_sampler,
+                collate_fn=self.collate_fn,
+                num_workers=self.config.num_workers,
+            )
+        return data_loader
+
+    @override
+    def predict_dataloader(self):
+        if (dataset := self.predict_dataset()) is None:
+            raise ValueError("No predict  dataset")
+
+        sampler = self.distributed_sampler(dataset, shuffle=False)
         batch_size = self.config.eval_batch_size or self.config.batch_size
         if not self.config.use_balanced_batch_sampler:
             data_loader = DataLoader(

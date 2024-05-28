@@ -19,7 +19,7 @@ def config_from_ckpt(config_cls: type[TConfig], ckpt_path: Path) -> TConfig:
 
 
 def update_for_relaxation_(config: ef.EnergyForcesConfigBase):
-    config.test_dataset = base.FinetuneMatBenchDiscoveryIS2REDatasetConfig(
+    config.predict_dataset = base.FinetuneMatBenchDiscoveryIS2REDatasetConfig(
         # energy_linref_path=Path(
         #     "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
         # ),
@@ -32,7 +32,7 @@ def update_for_relaxation_(config: ef.EnergyForcesConfigBase):
     config.eval_batch_size = 1
     config.relaxation = ef.RelaxationConfig(
         validation=None,
-        test=ef.RelaxerConfig(fmax=0.02),
+        predict=ef.RelaxerConfig(fmax=0.05),
         # relaxed_energy_linref_path=Path(
         #     "/mnt/datasets/matbench-discovery-traj/megnet-133k-npz/linrefs.npy"
         # ),
@@ -58,12 +58,12 @@ def run(config: base.FinetuneConfigBase, model_cls: type[base.FinetuneModelBase]
     model.load_state_dict(torch.load(config.meta["ckpt_path"])["state_dict"])
 
     trainer = ll.Trainer(config)
-    trainer.test(model)
+    trainer.predict(model, return_predictions=False)
 
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs, n_batches=128)
+runner.fast_dev_run(configs, n_batches=32)
 
 # %%
 runner = ll.Runner(run)
