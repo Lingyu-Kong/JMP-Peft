@@ -4,7 +4,7 @@ import math
 import time
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from functools import partial
+from functools import cache, partial
 from logging import getLogger
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeAlias, cast
@@ -19,6 +19,8 @@ import rich.tree
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from lightning.fabric.utilities.apply_func import move_data_to_device
+from lightning.fabric.utilities.throughput import measure_flops
 from lightning.pytorch.core.optimizer import LightningOptimizer
 from lightning.pytorch.utilities.types import (
     OptimizerLRScheduler,
@@ -1965,3 +1967,25 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 next(dl_iter)
 
         return [cast(BaseData, next(dl_iter)) for dl_iter in dataloader_iters]
+
+    def throughput_monitor_compute_batch_size(self, batch: Batch):
+        return batch.batch_size
+
+    def throughput_monitor_compute_length(self, batch: Batch):
+        return batch.atomic_numbers.shape[0]
+
+    @property
+    @cache
+    def flops_per_batch(self):
+        with (
+            self.log_context(disabled=True),
+            torch.set_grad_enabled(True),
+            torch.inference_mode(False),
+        ):
+            batch = next(iter(self.train_dataloader()))
+            # batch = move_data_to_device(batch, device=self.device)
+            return measure_flops(
+                self,
+                forward_fn=lambda: self(batch),
+                loss_fn=partial(self.compute_losses, batch),
+            )
