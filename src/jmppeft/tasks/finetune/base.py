@@ -1968,12 +1968,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         return [cast(BaseData, next(dl_iter)) for dl_iter in dataloader_iters]
 
-    def throughput_monitor_compute_batch_size(self, batch: Batch):
-        return batch.batch_size
-
-    def throughput_monitor_compute_length(self, batch: Batch):
-        return batch.atomic_numbers.shape[0]
-
     @property
     @cache
     def flops_per_batch(self):

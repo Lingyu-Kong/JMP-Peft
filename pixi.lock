@@ -2017,13 +2017,14 @@ packages:
   name: jmp-peft
   version: 0.0.1
   path: .
-  sha256: ff5efa5e4ef74fa5f0c7bfd9dfb1169ec2e329cd2a978c9a6cb0ab1f8d202e4c
+  sha256: 2991c91172bb32dacfb817747254af47084fb6fb2521d1809a3b65a66c9536df
   requires_dist:
   - ll @ https://github.com/nimashoghi/ll/archive/main.zip
   - rich
   - lmdb
   - beartype
   - jaxtyping
+  - ruff
   editable: true
 - kind: conda
   name: joblib

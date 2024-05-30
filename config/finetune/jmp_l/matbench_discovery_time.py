@@ -115,10 +115,11 @@ def ln_(config: FinetuneConfigBase):
 
 
 def time_(config: FinetuneConfigBase):
+    average_length_per_sample = 30
     config.trainer.callbacks.append(
         ll.callbacks.ThroughputMonitorConfig(
-            # batch_size_fn=lambda data: data.y.numel(),
-            # length_fn=lambda data: data.atomic_numbers.numel(),
+            batch_size=config.batch_size,
+            length=average_length_per_sample * config.batch_size,
         )
     )
 
@@ -137,6 +138,35 @@ time_(config)
 
 
 configs.append((config, model_cls))
+
+
+# %%
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+
+
+def get_average_stats(
+    config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]
+) -> None:
+    model = model_cls(config)
+
+    dl = DataLoader(
+        model.train_dataset(),
+        collate_fn=lambda data_list: sum(d.atomic_numbers.numel() for d in data_list),
+        batch_size=1,
+        num_workers=8,
+    )
+    total_num_atoms = 0
+    total_num_batches = 0
+    for num_atoms in tqdm(dl, desc="Batches", total=len(dl)):
+        total_num_atoms += int(num_atoms)
+        total_num_batches += 1
+
+    print(f"Average number of atoms: {total_num_atoms / total_num_batches}")
+
+
+# get_average_stats(*configs[0])
+
 
 # %%
 from jmppeft.utils.finetune_state_dict import (
@@ -186,3 +216,7 @@ runner.local_session_per_gpu(
     # prologue=["module load conda/Mambaforge-23.1.0-1"],
     env={"LL_DISABLE_TYPECHECKING": "1"},
 )
+
+# %%
+runner = ll.Runner(run)
+runner.submit(configs, scheduler="slurm", command_template="bashfdsfs {script}")

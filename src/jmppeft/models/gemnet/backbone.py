@@ -847,6 +847,14 @@ class GemNetOCBackbone(nn.Module):
             trip_idx_e2a,
             quad_idx,
         ) = self.get_graphs_and_indices(data)
+        ll.ActSave(
+            {
+                "pos": pos,
+                "batch": data.batch,
+                "natoms": data.natoms,
+                "edge_index": main_graph["edge_index"],
+            }
+        )
         idx_s, idx_t = main_graph["edge_index"]
 
         bases: BasesOutput = self.bases(
@@ -877,6 +885,7 @@ class GemNetOCBackbone(nn.Module):
         # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
         xs_E: list[torch.Tensor] = [x_E]
         xs_F: list[torch.Tensor | None] = [x_F]
+        ll.ActSave({"x_E_0": x_E, "x_F_0": x_F})
 
         if self.config.unique_basis_per_layer:
             raise NotImplementedError
@@ -903,6 +912,8 @@ class GemNetOCBackbone(nn.Module):
             xs_E.append(x_E)
             xs_F.append(x_F)
 
+            ll.ActSave({f"h_{i}": h, f"m_{i}": m, f"x_E_{i+1}": x_E, f"x_F_{i+1}": x_F})
+
         # Global output block for final predictions
         x_F = None
         if self.regress_forces:
@@ -915,6 +926,8 @@ class GemNetOCBackbone(nn.Module):
         x_E = None
         if self.regress_energy:
             x_E = self.out_mlp_E(torch.cat(xs_E, dim=-1))
+
+        ll.ActSave({"x_E_final": x_E, "x_F_final": x_F})
 
         out: GOCBackboneOutput = {
             "energy": x_E,
