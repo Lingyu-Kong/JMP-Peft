@@ -5,11 +5,11 @@ from typing import ParamSpec, TypedDict, cast
 
 import numpy as np
 import torch
+from jmppeft.modules.torch_scatter_polyfill import segment_coo
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from torch_geometric.nn import radius_graph
 from torch_geometric.utils import sort_edge_index
-from torch_scatter import segment_coo
 from typing_extensions import NotRequired
 
 from ..models.gemnet.utils import (
@@ -314,11 +314,14 @@ def generate_graph(
         graph = tag_mask(data, graph, tags=filter_tags)
 
     if sort_edges:
-        graph["edge_index"], [
-            graph["distance"],
-            graph["vector"],
-            graph["cell_offset"],
-        ] = sort_edge_index(
+        (
+            graph["edge_index"],
+            [
+                graph["distance"],
+                graph["vector"],
+                graph["cell_offset"],
+            ],
+        ) = sort_edge_index(
             graph["edge_index"],
             [
                 graph["distance"],

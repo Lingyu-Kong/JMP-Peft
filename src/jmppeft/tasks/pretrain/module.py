@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import pack, rearrange, reduce
+from jmppeft.modules.torch_scatter_polyfill import scatter
 from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
     OptimizerLRSchedulerConfig,
@@ -20,7 +21,6 @@ from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from torch_geometric.utils import dropout_edge
-from torch_scatter import scatter
 from torchmetrics import SumMetric
 from typing_extensions import assert_never, override
 

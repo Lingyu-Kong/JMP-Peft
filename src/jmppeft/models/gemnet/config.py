@@ -110,7 +110,7 @@ class BackboneConfig(TypedConfig):
             absolute_rbf_cutoff=12.0,
             dropout=None,
             edge_dropout=None,
-            ln=False,
+            # ln=False,
         )
 
     @classmethod
@@ -168,7 +168,7 @@ class BackboneConfig(TypedConfig):
             absolute_rbf_cutoff=12.0,
             dropout=None,
             edge_dropout=None,
-            ln=False,
+            # ln=False,
         )
 
 

@@ -222,8 +222,8 @@ class EnergyForcesModelBase(
     Generic[TConfig],
 ):
     @override
-    def __init__(self, config: TConfig):
-        super().__init__(config)
+    def __init__(self, hparams: TConfig):
+        super().__init__(hparams)
 
         if self.config.relaxation:
             self.register_callback(lambda: _Writer())

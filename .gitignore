@@ -222,3 +222,5 @@ core
 .pixi
 *.egg-info
 
+# Singularity containers
+*.sif

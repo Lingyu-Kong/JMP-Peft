@@ -7,7 +7,7 @@ LICENSE file in the root directory of this source tree.
 import math
 
 import torch
-from torch_scatter import scatter
+from jmppeft.modules.torch_scatter_polyfill import scatter
 
 from ....modules.lora import LoraConfig
 from ....modules.scaling import ScaleFactor

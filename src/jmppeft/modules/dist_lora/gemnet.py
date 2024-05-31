@@ -1,7 +1,7 @@
 import ll.nn
 import torch
+from jmppeft.modules.torch_scatter_polyfill import scatter
 from ll.typecheck import Float, Int, tassert
-from torch_scatter import scatter
 from typing_extensions import override
 
 from ...models.gemnet.layers.atom_update_block import OutputBlock
