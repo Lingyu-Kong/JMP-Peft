@@ -828,100 +828,103 @@ class GemNetOCBackbone(nn.Module):
         *,
         h: torch.Tensor,
     ):
-        pos = data.pos
-        # batch = data.batch
-        # atomic_numbers = data.atomic_numbers.long()
-        num_atoms = data.atomic_numbers.shape[0]
+        import ll
 
-        if self.regress_forces and not self.direct_forces:
-            pos.requires_grad_(True)
+        with ll.snoop():
+            pos = data.pos
+            # batch = data.batch
+            # atomic_numbers = data.atomic_numbers.long()
+            num_atoms = data.atomic_numbers.shape[0]
 
-        (
-            main_graph,
-            a2a_graph,
-            a2ee2a_graph,
-            qint_graph,
-            id_swap,
-            trip_idx_e2e,
-            trip_idx_a2e,
-            trip_idx_e2a,
-            quad_idx,
-        ) = self.get_graphs_and_indices(data)
-        idx_s, idx_t = main_graph["edge_index"]
+            if self.regress_forces and not self.direct_forces:
+                pos.requires_grad_(True)
 
-        bases: BasesOutput = self.bases(
-            data,
-            h=h,
-            main_graph=main_graph,
-            a2a_graph=a2a_graph,
-            a2ee2a_graph=a2ee2a_graph,
-            qint_graph=qint_graph,
-            trip_idx_e2e=trip_idx_e2e,
-            trip_idx_a2e=trip_idx_a2e,
-            trip_idx_e2a=trip_idx_e2a,
-            quad_idx=quad_idx,
-            num_atoms=num_atoms,
-        )
-        m = bases.m
-
-        # Embedding block
-        # h = self.atom_emb(atomic_numbers)
-        # (nAtoms, emb_size_atom)
-        # m = self.edge_emb(h, bases.rbf_main, main_graph["edge_index"])
-        # (nEdges_main, emb_size_edge)
-
-        x_E, x_F = checkpoint(self.out_blocks[0], self.gradient_checkpointing)(
-            h, m, bases.output, idx_t
-        )
-        x_E, x_F = self._process_outblock_outputs(x_E, x_F)
-        # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
-        xs_E: list[torch.Tensor] = [x_E]
-        xs_F: list[torch.Tensor | None] = [x_F]
-
-        if self.config.unique_basis_per_layer:
-            raise NotImplementedError
-
-        for i in range(self.num_blocks):
-            fn = partial(self.block, i)
-            if self.gradient_checkpointing:
-                fn = checkpoint(fn, self.gradient_checkpointing)
-            h, m, x_E, x_F = fn(
-                data,
-                idx_t,
-                h,
-                m,
-                bases,
+            (
                 main_graph,
                 a2a_graph,
                 a2ee2a_graph,
+                qint_graph,
                 id_swap,
                 trip_idx_e2e,
                 trip_idx_a2e,
                 trip_idx_e2a,
                 quad_idx,
+            ) = self.get_graphs_and_indices(data)
+            idx_s, idx_t = main_graph["edge_index"]
+
+            bases: BasesOutput = self.bases(
+                data,
+                h=h,
+                main_graph=main_graph,
+                a2a_graph=a2a_graph,
+                a2ee2a_graph=a2ee2a_graph,
+                qint_graph=qint_graph,
+                trip_idx_e2e=trip_idx_e2e,
+                trip_idx_a2e=trip_idx_a2e,
+                trip_idx_e2a=trip_idx_e2a,
+                quad_idx=quad_idx,
+                num_atoms=num_atoms,
             )
-            xs_E.append(x_E)
-            xs_F.append(x_F)
+            m = bases.m
 
-        # Global output block for final predictions
-        x_F = None
-        if self.regress_forces:
-            assert self.direct_forces, "Only direct forces are supported for now."
-            assert all(
-                x_F is not None for x_F in xs_F
-            ), "Forces are not available for all blocks."
-            x_F = self.out_mlp_F(torch.cat(cast(list[torch.Tensor], xs_F), dim=-1))
+            # Embedding block
+            # h = self.atom_emb(atomic_numbers)
+            # (nAtoms, emb_size_atom)
+            # m = self.edge_emb(h, bases.rbf_main, main_graph["edge_index"])
+            # (nEdges_main, emb_size_edge)
 
-        x_E = None
-        if self.regress_energy:
-            x_E = self.out_mlp_E(torch.cat(xs_E, dim=-1))
+            x_E, x_F = checkpoint(self.out_blocks[0], self.gradient_checkpointing)(
+                h, m, bases.output, idx_t
+            )
+            x_E, x_F = self._process_outblock_outputs(x_E, x_F)
+            # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
+            xs_E: list[torch.Tensor] = [x_E]
+            xs_F: list[torch.Tensor | None] = [x_F]
 
-        out: GOCBackboneOutput = {
-            "energy": x_E,
-            "forces": x_F,
-            "V_st": main_graph["vector"],
-            "D_st": main_graph["distance"],
-            "idx_s": idx_s,
-            "idx_t": idx_t,
-        }
-        return out
+            if self.config.unique_basis_per_layer:
+                raise NotImplementedError
+
+            for i in range(self.num_blocks):
+                fn = partial(self.block, i)
+                if self.gradient_checkpointing:
+                    fn = checkpoint(fn, self.gradient_checkpointing)
+                h, m, x_E, x_F = fn(
+                    data,
+                    idx_t,
+                    h,
+                    m,
+                    bases,
+                    main_graph,
+                    a2a_graph,
+                    a2ee2a_graph,
+                    id_swap,
+                    trip_idx_e2e,
+                    trip_idx_a2e,
+                    trip_idx_e2a,
+                    quad_idx,
+                )
+                xs_E.append(x_E)
+                xs_F.append(x_F)
+
+            # Global output block for final predictions
+            x_F = None
+            if self.regress_forces:
+                assert self.direct_forces, "Only direct forces are supported for now."
+                assert all(
+                    x_F is not None for x_F in xs_F
+                ), "Forces are not available for all blocks."
+                x_F = self.out_mlp_F(torch.cat(cast(list[torch.Tensor], xs_F), dim=-1))
+
+            x_E = None
+            if self.regress_energy:
+                x_E = self.out_mlp_E(torch.cat(xs_E, dim=-1))
+
+            out: GOCBackboneOutput = {
+                "energy": x_E,
+                "forces": x_F,
+                "V_st": main_graph["vector"],
+                "D_st": main_graph["distance"],
+                "idx_s": idx_s,
+                "idx_t": idx_t,
+            }
+            return out

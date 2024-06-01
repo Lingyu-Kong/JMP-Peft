@@ -1,4 +1,38 @@
 # %%
+def monkey_patch_torch_scatter():
+    import torch
+    import torch_scatter
+
+    def segment_coo(
+        src: torch.Tensor,
+        index: torch.Tensor,
+        out: torch.Tensor | None = None,
+        dim_size: int | None = None,
+        reduce: str = "sum",
+    ):
+        # Dim should be the first (and only) non-broadcastable dimension in index.
+        dims_to_squeeze: list[int] = []
+        dim: int = -1
+        for dim_idx in range(index.dim()):
+            if index.size(dim_idx) == 1:
+                dims_to_squeeze.append(dim)
+                continue
+
+            if dim != -1:
+                raise ValueError(
+                    "Found multiple non-broadcastable dimensions in index."
+                )
+            dim = dim_idx
+
+        index = index.squeeze(dims_to_squeeze)
+        return torch_scatter.scatter(src, index, dim, out, dim_size, reduce)
+
+    torch_scatter.segment_coo = segment_coo
+
+    print("Monkey-patched torch_scatter.segment_coo")
+
+
+# %%
 from pathlib import Path
 
 import ll
@@ -80,45 +114,36 @@ def create_config():
     if (wandb_config := config.trainer.logging.wandb) is not None:
         wandb_config.disable_()
 
+    config.batch_size = 1
+    config.eval_batch_size = 1
+    config.trainer.fast_dev_run = 32
+    config.num_workers = 0
+
     return config.finalize(), MatbenchDiscoveryModel
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 config, model_cls = create_config()
 configs.append((config, model_cls))
+# %%
+import rich
 
+ll.pretty()
+
+config, model_cls = configs[0]
+model = model_cls(config)
+dataset = model.train_dataset()
+batch = model.collate_fn([dataset[0], dataset[1]])
+print(batch)
 
 # %%
-def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
-    try:
-        if (ft_ckpt_path := config.meta.get("ft_ckpt_path")) is not None:
-            model = model_cls.load_from_checkpoint(
-                ft_ckpt_path, strict=False, hparams=config
-            )
-        else:
-            model = model_cls(config)
+import copy
 
-        trainer = ll.Trainer(config)
-        trainer.fit(model)
-    finally:
-        # Wait for explicit exit with ctrl+c
-        import time
-
-        while True:
-            print()
-            print("Please exit the program with ctrl+c.")
-            time.sleep(60)
-
+rich.print(model(copy.deepcopy(batch)))
 
 # %%
-runner = ll.Runner(run)
-runner.fast_dev_run(configs)
+model = model.cuda()
+batch = batch.to(model.device)
+batch
 
-# %%
-# runner = ll.Runner(run)
-# runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
-
-
-# # %%
-# runner = ll.Runner(run)
-# runner.local_sessions(configs, sessions=1, env={"CUDA_VISIBLE_DEVICES": "0"})
+rich.print(model(batch))

@@ -258,7 +258,9 @@ class EnergyForcesModelBase(
     @override
     def forward(self, data: BaseData):
         preds: dict[str, torch.Tensor] = {}
-        with ExitStack() as stack:
+        import ll
+
+        with ll.snoop(), ExitStack() as stack:
             # Enter all the necessary contexts for output heads.
             # Right now, this is only for gradient forces, which
             #   requires torch.inference_mode(False), torch.enable_grad,

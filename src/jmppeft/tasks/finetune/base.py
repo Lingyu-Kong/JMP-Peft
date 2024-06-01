@@ -1671,39 +1671,42 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         max_neighbors: MaxNeighbors,
         pbc: bool,
     ):
-        aint_graph = generate_graph(
-            data, cutoff=cutoffs.aint, max_neighbors=max_neighbors.aint, pbc=pbc
-        )
-        aint_graph = self.process_aint_graph(aint_graph)
-        subselect = partial(
-            subselect_graph,
-            data,
-            aint_graph,
-            cutoff_orig=cutoffs.aint,
-            max_neighbors_orig=max_neighbors.aint,
-        )
-        main_graph = subselect(cutoffs.main, max_neighbors.main)
-        aeaint_graph = subselect(cutoffs.aeaint, max_neighbors.aeaint)
-        qint_graph = subselect(cutoffs.qint, max_neighbors.qint)
+        import ll
 
-        # We can't do this at the data level: This is because the batch collate_fn doesn't know
-        # that it needs to increment the "id_swap" indices as it collates the data.
-        # So we do this at the graph level (which is done in the GemNetOC `get_graphs_and_indices` method).
-        # main_graph = symmetrize_edges(main_graph, num_atoms=data.pos.shape[0])
-        qint_graph = tag_mask(data, qint_graph, tags=self.config.backbone.qint_tags)
+        with ll.snoop():
+            aint_graph = generate_graph(
+                data, cutoff=cutoffs.aint, max_neighbors=max_neighbors.aint, pbc=pbc
+            )
+            aint_graph = self.process_aint_graph(aint_graph)
+            subselect = partial(
+                subselect_graph,
+                data,
+                aint_graph,
+                cutoff_orig=cutoffs.aint,
+                max_neighbors_orig=max_neighbors.aint,
+            )
+            main_graph = subselect(cutoffs.main, max_neighbors.main)
+            aeaint_graph = subselect(cutoffs.aeaint, max_neighbors.aeaint)
+            qint_graph = subselect(cutoffs.qint, max_neighbors.qint)
 
-        graphs = {
-            "main": main_graph,
-            "a2a": aint_graph,
-            "a2ee2a": aeaint_graph,
-            "qint": qint_graph,
-        }
+            # We can't do this at the data level: This is because the batch collate_fn doesn't know
+            # that it needs to increment the "id_swap" indices as it collates the data.
+            # So we do this at the graph level (which is done in the GemNetOC `get_graphs_and_indices` method).
+            # main_graph = symmetrize_edges(main_graph, num_atoms=data.pos.shape[0])
+            qint_graph = tag_mask(data, qint_graph, tags=self.config.backbone.qint_tags)
 
-        for graph_type, graph in graphs.items():
-            for key, value in graph.items():
-                setattr(data, f"{graph_type}_{key}", value)
+            graphs = {
+                "main": main_graph,
+                "a2a": aint_graph,
+                "a2ee2a": aeaint_graph,
+                "qint": qint_graph,
+            }
 
-        return data
+            for graph_type, graph in graphs.items():
+                for key, value in graph.items():
+                    setattr(data, f"{graph_type}_{key}", value)
+
+            return data
 
     def create_dataset(
         self, split: Literal["train", "val", "test", "predict"]
