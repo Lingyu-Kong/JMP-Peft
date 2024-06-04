@@ -2,16 +2,22 @@
 # Licensed under the MIT License.
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING, TypedDict
 
+import ll
 import ll.typecheck as tc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import pack
 from torch import Tensor
 from typing_extensions import override
 
 from .config import Graphormer3DConfig
-from .types import DenseData
+from .types import Data, DenseData
+
+if TYPE_CHECKING:
+    from ...tasks.pretrain.module import OutputConfig, TaskConfig
 
 torch._C._jit_set_profiling_mode(False)
 torch._C._jit_set_profiling_executor(False)
@@ -19,9 +25,15 @@ torch._C._jit_override_can_fuse_on_cpu(True)
 torch._C._jit_override_can_fuse_on_gpu(True)
 
 
-@torch.jit.script
+# @torch.jit.script
 def softmax_dropout(input, dropout_prob: float, is_training: bool):
-    return F.dropout(F.softmax(input, -1), dropout_prob, is_training)
+    return torch.dropout(torch.softmax(input, -1), dropout_prob, is_training)
+
+
+class GraphormerBackboneOutput(TypedDict):
+    output: tc.Float[Tensor, "b n d"]
+    graph_attn_bias: tc.Float[Tensor, "b_nheads n n"]
+    delta_pos: tc.Float[Tensor, "b n n 3"]
 
 
 class SelfMultiheadAttention(nn.Module):
@@ -133,7 +145,7 @@ class Graphormer3DEncoderLayer(nn.Module):
         return x
 
 
-@torch.jit.script
+# @torch.jit.script
 def gaussian(x, mean, std):
     pi = 3.14159
     a = (2 * pi) ** 0.5
@@ -185,6 +197,112 @@ class RBF(nn.Module):
         mean = self.means.float()
         temp = self.temps.float().abs()
         return ((x - mean).square() * (-temp)).exp().type_as(self.means)
+
+
+class Graphormer3D(nn.Module):
+    def __init__(self, args: Graphormer3DConfig):
+        super().__init__()
+
+        self.config = self.args = args
+        self.atom_types = self.args.num_elements
+        self.edge_types = self.args.num_elements * self.args.num_elements
+        self.atom_encoder = nn.Embedding(
+            self.atom_types, self.args.embed_dim, padding_idx=0
+        )
+        self.input_dropout = self.args.input_dropout
+        self.layers = nn.ModuleList(
+            [
+                Graphormer3DEncoderLayer(
+                    self.args.embed_dim,
+                    self.args.ffn_embed_dim,
+                    num_attention_heads=self.args.attention_heads,
+                    dropout=self.args.dropout,
+                    attention_dropout=self.args.attention_dropout,
+                    activation_dropout=self.args.activation_dropout,
+                )
+                for _ in range(self.args.layers)
+            ]
+        )
+
+        self.final_ln: Callable[[Tensor], Tensor] = nn.LayerNorm(self.args.embed_dim)
+
+        K = self.args.num_kernel
+
+        self.gbf: Callable[[Tensor, Tensor], Tensor] = GaussianLayer(K, self.edge_types)
+        self.bias_proj: Callable[[Tensor], Tensor] = NonLinear(
+            K, self.args.attention_heads
+        )
+        self.edge_proj: Callable[[Tensor], Tensor] = nn.Linear(K, self.args.embed_dim)
+
+        # self.energy: Callable[[Tensor], Tensor] = NonLinear(self.args.embed_dim, 1)
+        # self.energy_agg_factor: Callable[[Tensor], Tensor] = nn.Embedding(3, 1)
+        # nn.init.normal_(self.energy_agg_factor.weight, 0, 0.01)
+        # self.node_proc: Callable[[Tensor, Tensor, Tensor], Tensor] = NodeTaskHead(
+        #     self.args.embed_dim, self.args.attention_heads
+        # )
+
+    @override
+    def forward(self, data: Data):
+        dense_data: DenseData = data.jmp_dense_data
+
+        atoms = dense_data["atoms"]
+        pos = dense_data["pos"]
+
+        padding_mask = atoms.eq(0)
+
+        n_graph, n_node = atoms.size()
+        delta_pos = pos.unsqueeze(1) - pos.unsqueeze(2)
+        dist: Tensor = delta_pos.norm(dim=-1)
+        delta_pos /= dist.unsqueeze(-1) + 1e-5
+
+        edge_type = atoms.view(n_graph, n_node, 1) * self.atom_types + atoms.view(
+            n_graph, 1, n_node
+        )
+
+        gbf_feature = self.gbf(dist, edge_type)
+        edge_features = gbf_feature.masked_fill(
+            padding_mask.unsqueeze(1).unsqueeze(-1), 0.0
+        )
+
+        graph_node_feature = self.atom_encoder(atoms) + self.edge_proj(
+            edge_features.sum(dim=-2)
+        )
+
+        # ===== MAIN MODEL =====
+        output = F.dropout(
+            graph_node_feature, p=self.input_dropout, training=self.training
+        )
+        output = output.transpose(0, 1).contiguous()
+
+        graph_attn_bias = self.bias_proj(gbf_feature).permute(0, 3, 1, 2).contiguous()
+        graph_attn_bias.masked_fill_(
+            padding_mask.unsqueeze(1).unsqueeze(2), float("-inf")
+        )
+
+        graph_attn_bias = graph_attn_bias.view(-1, n_node, n_node)
+        for _ in range(self.args.blocks):
+            for enc_layer in self.layers:
+                output = enc_layer(output, attn_bias=graph_attn_bias)
+
+        output = self.final_ln(output)
+        output = output.transpose(0, 1)
+
+        return GraphormerBackboneOutput(
+            output=output,
+            graph_attn_bias=graph_attn_bias,
+            delta_pos=delta_pos,
+        )
+
+        # eng_output = F.dropout(output, p=0.1, training=self.training)
+        # eng_output = self.energy(eng_output).flatten(-2)
+
+        # eng_output *= real_mask
+        # eng_output = eng_output.sum(dim=-1)
+
+        # node_output = self.node_proc(output, graph_attn_bias, delta_pos)
+
+        # node_target_mask = real_mask.unsqueeze(-1)
+        # return eng_output, node_output, node_target_mask
 
 
 class NonLinear(nn.Module):
@@ -250,101 +368,119 @@ class NodeTaskHead(nn.Module):
         return cur_force
 
 
-class Graphormer3D(nn.Module):
-    def __init__(self, args: Graphormer3DConfig):
+class Output(nn.Module):
+    @override
+    def __init__(
+        self,
+        config: "OutputConfig",
+        task_configs: "list[TaskConfig]",
+        graphormer_config: Graphormer3DConfig,
+    ):
         super().__init__()
 
-        self.config = self.args = args
-        self.atom_types = self.args.num_elements
-        self.edge_types = self.args.num_elements * self.args.num_elements
-        self.atom_encoder = nn.Embedding(
-            self.atom_types, self.args.embed_dim, padding_idx=0
+        # Make sure all node task energy reductions are sum
+        for task in task_configs:
+            assert (
+                task.node_energy_reduction == "sum"
+            ), "Only sum reduction is supported"
+
+        self.config = config
+        self.task_configs = task_configs
+        self.graphormer_config = graphormer_config
+
+        self.out_energy = ll.nn.TypedModuleList(
+            [NonLinear(graphormer_config.embed_dim, 1) for _ in task_configs]
         )
-        self.input_dropout = self.args.input_dropout
-        self.layers = nn.ModuleList(
+        self.out_forces = ll.nn.TypedModuleList(
             [
-                Graphormer3DEncoderLayer(
-                    self.args.embed_dim,
-                    self.args.ffn_embed_dim,
-                    num_attention_heads=self.args.attention_heads,
-                    dropout=self.args.dropout,
-                    attention_dropout=self.args.attention_dropout,
-                    activation_dropout=self.args.activation_dropout,
+                NodeTaskHead(
+                    graphormer_config.embed_dim, graphormer_config.attention_heads
                 )
-                for _ in range(self.args.layers)
+                for _ in task_configs
             ]
         )
 
-        self.final_ln: Callable[[Tensor], Tensor] = nn.LayerNorm(self.args.embed_dim)
+        # eng_output = F.dropout(output, p=0.1, training=self.training)
+        # eng_output = self.energy(eng_output).flatten(-2)
 
-        self.energy: Callable[[Tensor], Tensor] = NonLinear(self.args.embed_dim, 1)
-        self.energy_agg_factor: Callable[[Tensor], Tensor] = nn.Embedding(3, 1)
-        nn.init.normal_(self.energy_agg_factor.weight, 0, 0.01)
+        # eng_output *= real_mask
+        # eng_output = eng_output.sum(dim=-1)
 
-        K = self.args.num_kernel
+        # node_output = self.node_proc(output, graph_attn_bias, delta_pos)
 
-        self.gbf: Callable[[Tensor, Tensor], Tensor] = GaussianLayer(K, self.edge_types)
-        self.bias_proj: Callable[[Tensor], Tensor] = NonLinear(
-            K, self.args.attention_heads
+        # node_target_mask = real_mask.unsqueeze(-1)
+        # return eng_output, node_output, node_target_mask
+
+    def _compute_energy(
+        self,
+        energy: NonLinear,
+        backbone_out: GraphormerBackboneOutput,
+        output_mask: tc.Bool[Tensor, "b n"],
+    ) -> tc.Float[Tensor, "b"]:
+        output = backbone_out["output"]
+
+        eng_output = F.dropout(
+            output,
+            p=self.graphormer_config.energy_output_dropout,
+            training=self.training,
         )
-        self.edge_proj: Callable[[Tensor], Tensor] = nn.Linear(K, self.args.embed_dim)
-        self.node_proc: Callable[[Tensor, Tensor, Tensor], Tensor] = NodeTaskHead(
-            self.args.embed_dim, self.args.attention_heads
-        )
+        eng_output = energy(eng_output).flatten(-2)
+        tc.tassert(tc.Float[Tensor, "b n"], eng_output)
+
+        eng_output = torch.where(output_mask, eng_output, 0.0)
+        eng_output = eng_output.sum(dim=-1)
+        tc.tassert(tc.Float[Tensor, "b"], eng_output)
+
+        return eng_output
+
+    def _compute_forces(
+        self,
+        node_proc: NodeTaskHead,
+        backbone_out: GraphormerBackboneOutput,
+        output_mask: tc.Bool[Tensor, "b n"],
+    ) -> tc.Float[Tensor, "n_sparse 3"]:
+        output = backbone_out["output"]
+        graph_attn_bias = backbone_out["graph_attn_bias"]
+        delta_pos = backbone_out["delta_pos"]
+
+        node_output = node_proc(output, graph_attn_bias, delta_pos)
+        tc.tassert(tc.Float[Tensor, "b n 3"], node_output)
+
+        # Now, reduce back down to a sparse tensor
+        node_output = node_output[output_mask]
+        tc.tassert(tc.Float[Tensor, "n_sparse 3"], node_output)
+
+        return node_output
 
     @override
-    def forward(self, batch: DenseData):
-        # atoms: Tensor, pos: Tensor, real_mask: Tensor
-        atoms = batch["atoms"]
-        pos = batch["pos"]
-        real_mask = batch["real_mask"]
+    def forward(self, data: Data, backbone_out: GraphormerBackboneOutput):
+        dense_data: DenseData = data.jmp_dense_data
 
-        padding_mask = atoms.eq(0)
+        padding_mask = dense_data["atoms"].eq(0)
+        output_mask = dense_data["real_mask"] & ~padding_mask
 
-        n_graph, n_node = atoms.size()
-        delta_pos = pos.unsqueeze(1) - pos.unsqueeze(2)
-        dist: Tensor = delta_pos.norm(dim=-1)
-        delta_pos /= dist.unsqueeze(-1) + 1e-5
+        energy_list: list[tc.Float[Tensor, "b"]] = []
+        forces_list: list[tc.Float[Tensor, "n_sparse 3"]] = []
 
-        edge_type = atoms.view(n_graph, n_node, 1) * self.atom_types + atoms.view(
-            n_graph, 1, n_node
-        )
+        for out_energy, out_forces, task in zip(
+            self.out_energy, self.out_forces, self.task_configs
+        ):
+            energy = self._compute_energy(out_energy, backbone_out, output_mask)
+            # Energy should be the same shape as data.y (except for the task dim)
+            assert (
+                energy.shape == data.y.shape[:-1]
+            ), f"{energy.shape=} != {data.y.shape[:-1]=}"
 
-        gbf_feature = self.gbf(dist, edge_type)
-        edge_features = gbf_feature.masked_fill(
-            padding_mask.unsqueeze(1).unsqueeze(-1), 0.0
-        )
+            forces = self._compute_forces(out_forces, backbone_out, output_mask)
+            # Forces should be the same shape as data.pos
+            assert (
+                forces.shape == data.pos.shape
+            ), f"{forces.shape=} != {data.pos.shape=}"
 
-        graph_node_feature = self.atom_encoder(atoms) + self.edge_proj(
-            edge_features.sum(dim=-2)
-        )
+            energy_list.append(energy)
+            forces_list.append(forces)
 
-        # ===== MAIN MODEL =====
-        output = F.dropout(
-            graph_node_feature, p=self.input_dropout, training=self.training
-        )
-        output = output.transpose(0, 1).contiguous()
+        E, _ = pack(energy_list, "bsz *")
+        F, _ = pack(forces_list, "n_atoms p *")
 
-        graph_attn_bias = self.bias_proj(gbf_feature).permute(0, 3, 1, 2).contiguous()
-        graph_attn_bias.masked_fill_(
-            padding_mask.unsqueeze(1).unsqueeze(2), float("-inf")
-        )
-
-        graph_attn_bias = graph_attn_bias.view(-1, n_node, n_node)
-        for _ in range(self.args.blocks):
-            for enc_layer in self.layers:
-                output = enc_layer(output, attn_bias=graph_attn_bias)
-
-        output = self.final_ln(output)
-        output = output.transpose(0, 1)
-
-        eng_output = F.dropout(output, p=0.1, training=self.training)
-        eng_output = self.energy(eng_output).flatten(-2)
-
-        eng_output *= real_mask
-        eng_output = eng_output.sum(dim=-1)
-
-        node_output = self.node_proc(output, graph_attn_bias, delta_pos)
-
-        node_target_mask = real_mask.unsqueeze(-1)
-        return eng_output, node_output, node_target_mask
+        return E, F

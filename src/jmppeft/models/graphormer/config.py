@@ -14,7 +14,7 @@ class Graphormer3DConfig(BackboneConfigBase):
 
     @override
     def handles_atom_embedding(self) -> bool:
-        return False
+        return True
 
     @override
     def atom_embedding_table_info(self) -> AtomEmbeddingTableInfo:
@@ -60,6 +60,9 @@ class Graphormer3DConfig(BackboneConfigBase):
 
     input_dropout: float = 0.0
     """Input dropout probability."""
+
+    energy_output_dropout: float = 0.1
+    """Dropout probability for energy output."""
 
     eng_loss_weight: float = 1.0
     """Loss weight for energy prediction."""

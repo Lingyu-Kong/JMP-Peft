@@ -77,7 +77,7 @@ def _pad(
     padding_value: float = 0,
 ):
     return pad_sequence(
-        [getattr(d, attr) for d in data_list],
+        [d[attr] for d in data_list],
         batch_first=batch_first,
         padding_value=padding_value,
     )

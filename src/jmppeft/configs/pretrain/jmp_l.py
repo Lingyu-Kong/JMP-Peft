@@ -9,12 +9,9 @@ from ...tasks.pretrain.module import (
 )
 
 
-def jmp_l_pt_config_(
-    config: PretrainConfig,
-    use_bf16: bool = False,
-):
+def jmp_l_pt_config_(config: PretrainConfig):
     # Set the model trainer settings for maximum performance
-    config.trainer.precision = "bf16-mixed" if use_bf16 else "16-mixed"
+    config.trainer.precision = "16-mixed-auto"
     config.trainer.set_float32_matmul_precision = "medium"
     config.trainer.supports_parameter_hooks = False
     config.trainer.supports_skip_batch_exception = False

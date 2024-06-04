@@ -329,8 +329,30 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         return PretrainConfig
 
     def _construct_backbone(self):
-        backbone = GemNetOCBackbone(self.config.backbone, **dict(self.config.backbone))
-        return backbone
+        match self.config.backbone:
+            case Graphormer3DConfig():
+                from ...models.graphormer import Graphormer3D
+
+                return Graphormer3D(self.config.backbone)
+            case GOCBackboneConfig():
+                return GemNetOCBackbone(
+                    self.config.backbone, **dict(self.config.backbone)
+                )
+            case _:
+                assert_never(self.config.backbone)
+
+    def _construct_output(self):
+        match self.config.backbone:
+            case Graphormer3DConfig():
+                from ...models.graphormer.model import Output as GraphormerOutput
+
+                return GraphormerOutput(
+                    self.config.output,
+                    self.config.tasks,
+                    self.config.backbone,
+                )
+            case _:
+                return Output(self.config)
 
     @override
     def __init__(self, hparams: PretrainConfig):
@@ -344,7 +366,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         if not self.config.backbone.handles_atom_embedding():
             self.embedding = Embedding(self.config)
         self.backbone = self._construct_backbone()
-        self.output = Output(self.config)
+        self.output = self._construct_output()
 
         # Set up the metrics
         self.train_metrics = FMMetrics(
@@ -408,7 +430,8 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             epoch = step / self._train_dataset_sizes[idx]
             self.log(f"train/{task.name}/epoch", epoch)
 
-    def forward_gnn(self, batch: Data):
+    @override
+    def forward(self, batch: Data):
         if not self.config.backbone.handles_atom_embedding():
             h = self.embedding(batch)
             out = self.backbone(batch, h=h)
@@ -416,18 +439,6 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             out = self.backbone(batch)
 
         return self.output(batch, out)  # (n h), (n p h)
-
-    def forward_graphormer(self, batch: Data):
-        out = self.backbone(batch)
-        return self.output(batch, out)  # (n h), (n p h)
-
-    @override
-    def forward(self, batch: Data):
-        match self.config.backbone:
-            case Graphormer3DConfig():
-                return self.forward_graphormer(batch)
-            case _:
-                return self.forward_gnn(batch)
 
     def _task_idx_onehot(self, task_idx: int):
         return F.one_hot(
