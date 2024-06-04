@@ -1,8 +1,29 @@
-from ll import TypedConfig
+from typing import Literal
+
+import ll
 from typing_extensions import override
 
+from .._config import AtomEmbeddingTableInfo, BackboneConfigBase
 
-class BackboneConfig(TypedConfig):
+
+class BackboneConfig(BackboneConfigBase):
+    @override
+    def d_atom(self) -> int:
+        return self.emb_size_atom
+
+    @override
+    def handles_atom_embedding(self) -> bool:
+        return False
+
+    @override
+    def atom_embedding_table_info(self) -> AtomEmbeddingTableInfo:
+        return {
+            "num_embeddings": self.num_elements,
+            "embedding_dim": self.emb_size_atom,
+        }
+
+    name: Literal["gemnet"] = "gemnet"
+
     num_targets: int = 1
     num_spherical: int
     num_radial: int
@@ -172,7 +193,7 @@ class BackboneConfig(TypedConfig):
         )
 
 
-class BasesConfig(TypedConfig):
+class BasesConfig(ll.TypedConfig):
     emb_size_rbf: int
     emb_size_cbf: int
     emb_size_sbf: int

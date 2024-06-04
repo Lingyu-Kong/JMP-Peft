@@ -27,8 +27,9 @@ from typing_extensions import assert_never, override
 from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetConfigBase
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
-from ...models.gemnet.config import BackboneConfig
+from ...models.gemnet.config import BackboneConfig as GOCBackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
+from ...models.graphormer.config import Graphormer3DConfig
 from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
@@ -106,6 +107,12 @@ class TaskConfig(TypedConfig):
     """
 
 
+BackboneConfig: TypeAlias = Annotated[
+    GOCBackboneConfig | Graphormer3DConfig,
+    Field(discriminator="name"),
+]
+
+
 class PretrainConfig(BaseConfig):
     optimizer: OptimizerConfig
     """Optimizer to use."""
@@ -146,6 +153,8 @@ class PretrainConfig(BaseConfig):
                 return ScaledSiLU
             case "silu" | "swish":
                 return nn.SiLU
+            case "gelu":
+                return nn.GELU
             case None:
                 return nn.Identity
             case _:
@@ -205,13 +214,21 @@ class PretrainConfig(BaseConfig):
             not self.trainer.use_distributed_sampler
         ), "config.trainer.use_distributed_sampler must be False"
 
-        self.backbone.dropout = self.dropout
-        self.backbone.edge_dropout = self.edge_dropout
+        match self.backbone:
+            case Graphormer3DConfig() as config:
+                config.activation_dropout = config.dropout = self.dropout or 0.0
+                config.attention_dropout = self.edge_dropout or 0.0
+            case GOCBackboneConfig() as config:
+                config.dropout = self.dropout
+                config.edge_dropout = self.edge_dropout
+            case _:
+                assert_never(self.backbone)
 
         if self.embedding is self.MISSING:
+            info = self.backbone.atom_embedding_table_info()
             self.embedding = EmbeddingConfig(
-                num_elements=self.backbone.num_elements,
-                embedding_size=self.backbone.emb_size_atom,
+                num_elements=info["num_embeddings"],
+                embedding_size=info["embedding_dim"],
             )
 
 
@@ -321,7 +338,8 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             self.register_callback(lambda: ema.construct_callback())
 
         # Set up the model
-        self.embedding = Embedding(self.config)
+        if not self.config.backbone.handles_atom_embedding():
+            self.embedding = Embedding(self.config)
         self.backbone = self._construct_backbone()
         self.output = Output(self.config)
 
@@ -347,8 +365,8 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         # We need to make sure that these parameters' gradients are
         # downscaled by the number of layers so that the gradients
         # are not too large.
-        if self.backbone.shared_parameters:
-            self.register_shared_parameters(self.backbone.shared_parameters)
+        if shared_parameters := getattr(self.backbone, "shared_parameters", None):
+            self.register_shared_parameters(shared_parameters)
 
         self._train_dataset_sizes: list[int] | None = None
         if self.config.log_task_steps_and_epochs:
@@ -360,10 +378,13 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             self.task_steps = TypedModuleDict(task_steps)
 
     def backbone_state_dict(self):
-        return {
+        state_dict = {
             "backbone": self.backbone.state_dict(),
-            "embedding": self.embedding.atom_embedding.state_dict(),
         }
+        if not self.config.backbone.handles_atom_embedding():
+            state_dict["embedding"] = self.embedding.atom_embedding.state_dict()
+
+        return state_dict
 
     @override
     def on_train_batch_start(self, batch: BaseData, batch_idx: int):
@@ -386,8 +407,12 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
     @override
     def forward(self, batch: BaseData):
-        h = self.embedding(batch)
-        out: GOCBackboneOutput = self.backbone(batch, h=h)
+        if not self.config.backbone.handles_atom_embedding():
+            h = self.embedding(batch)
+            out = self.backbone(batch, h=h)
+        else:
+            out = self.backbone(batch)
+
         return self.output(batch, out)  # (n h), (n p h)
 
     def _task_idx_onehot(self, task_idx: int):
