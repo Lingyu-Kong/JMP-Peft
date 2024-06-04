@@ -1,10 +1,10 @@
-from collections.abc import Sequence
-from typing import NamedTuple
+from collections.abc import Callable, Sequence
+from typing import TypeAlias, TypedDict, cast
 
-import ll
 import ll.typecheck as tc
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from torch_geometric.data import Batch as TorchGeoBatch
 from torch_geometric.data import Data as TorchGeoData
 
 cell_offsets = torch.tensor(
@@ -20,7 +20,16 @@ cell_offsets = torch.tensor(
     ],
 ).float()
 n_cells = cell_offsets.size(0)
-cutoff = 8.0
+
+
+class DenseData(TypedDict):
+    atoms: tc.Int[torch.Tensor, "n"] | tc.Int[torch.Tensor, "b n"]
+    pos: tc.Float[torch.Tensor, "n 3"] | tc.Float[torch.Tensor, "b n 3"]
+    real_mask: tc.Bool[torch.Tensor, "n"] | tc.Bool[torch.Tensor, "b n"]
+
+
+Data: TypeAlias = tuple[TorchGeoData, DenseData]
+Batch: TypeAlias = tuple[TorchGeoBatch, DenseData]
 
 
 def pbc_graph_transformer(
@@ -49,89 +58,20 @@ def pbc_graph_transformer(
     used_expand_pos = expand_pos[used_mask]
     used_expand_atoms = atoms.repeat(n_cells)[used_mask]
 
-    pos = torch.cat([pos, used_expand_pos], dim=0)
-    atoms = torch.cat([atoms, used_expand_atoms])
     real_mask = torch.cat(
         [
-            torch.ones_like(tags, dtype=torch.bool),
+            torch.ones_like(atoms, dtype=torch.bool),
             torch.zeros_like(used_expand_atoms, dtype=torch.bool),
         ]
     )
+    pos = torch.cat([pos, used_expand_pos], dim=0)
+    atoms = torch.cat([atoms, used_expand_atoms])
 
-
-class Data(NamedTuple):
-    pos: torch.Tensor
-    atoms: torch.Tensor
-    tags: torch.Tensor
-    real_mask: torch.Tensor
-    deltapos: torch.Tensor
-    y_relaxed: torch.Tensor
-    fixed: torch.Tensor
-    natoms: torch.Tensor
-    sid: torch.Tensor
-    cell: torch.Tensor
-
-    def to(self, device):
-        return Data(
-            pos=self.pos.to(device),
-            atoms=self.atoms.to(device),
-            tags=self.tags.to(device),
-            real_mask=self.real_mask.to(device),
-            deltapos=self.deltapos.to(device),
-            y_relaxed=self.y_relaxed.to(device),
-            fixed=self.fixed.to(device),
-            natoms=self.natoms.to(device),
-            sid=self.sid.to(device),
-            cell=self.cell.to(device),
-        )
-
-    @classmethod
-    def from_torch_geometric_data(
-        cls,
-        # data: TorchGeoData,
-        pos: tc.Float[torch.Tensor, "n 3"],
-        cell: tc.Float[torch.Tensor, "3 3"],
-        atoms: tc.Int[torch.Tensor, "n"],
-        tags: tc.Int[torch.Tensor, "n"],
-        *,
-        cutoff: float,
-        filter_src_pos_by_tag: int | None = None,  # should be 2 for oc20
-        no_copy_tag: int | None = None,  # should be 2 for oc20 (no copy ads)
-    ):
-        global cell_offsets, n_cells
-        offsets = torch.matmul(cell_offsets, cell).view(n_cells, 1, 3)
-        expand_pos = (pos.unsqueeze(0).expand(n_cells, -1, -1) + offsets).view(-1, 3)
-
-        src_pos = pos
-        if filter_src_pos_by_tag is not None:
-            src_pos = src_pos[tags == filter_src_pos_by_tag]
-
-        dist: torch.Tensor = (src_pos.unsqueeze(1) - expand_pos.unsqueeze(0)).norm(
-            dim=-1
-        )
-        used_mask = (dist < cutoff).any(dim=0)
-        if no_copy_tag is not None:
-            used_mask = used_mask & (tags.ne(no_copy_tag).repeat(n_cells))
-
-        used_expand_pos = expand_pos[used_mask]
-        used_expand_atoms = atoms.repeat(n_cells)[used_mask]
-
-        return cls(
-            pos=torch.cat([pos, used_expand_pos], dim=0),
-            atoms=torch.cat([atoms, used_expand_atoms]),
-            tags=torch.cat([tags, used_expand_tags]),
-            real_mask=torch.cat(
-                [
-                    torch.ones_like(tags, dtype=torch.bool),
-                    torch.zeros_like(used_expand_atoms, dtype=torch.bool),
-                ]
-            ),
-            cell=cell.squeeze(dim=0),
-        )
+    return pos, atoms, real_mask
 
 
 def _pad(
-    data_list: Sequence[Data],
+    data_list: Sequence[DenseData],
     attr: str,
     batch_first: bool = True,
     padding_value: float = 0,
@@ -143,44 +83,40 @@ def _pad(
     )
 
 
-class Batch(NamedTuple):
-    pos: torch.Tensor
-    atoms: torch.Tensor
-    tags: torch.Tensor
-    real_mask: torch.Tensor
-    deltapos: torch.Tensor
-    y_relaxed: torch.Tensor
-    fixed: torch.Tensor
-    natoms: torch.Tensor
-    sid: torch.Tensor
-    cell: torch.Tensor
+def collate_fn(
+    data_list: list[Data],
+    torch_geo_collate_fn: Callable[[list[TorchGeoData]], TorchGeoBatch],
+) -> Batch:
+    torch_geo_data_list, dense_data_list = zip(*data_list)
+    torch_geo_batch = torch_geo_collate_fn(torch_geo_data_list)
+    dense_batch = cast(
+        DenseData, {k: _pad(dense_data_list, k) for k in dense_data_list[0].keys()}
+    )
+    return torch_geo_batch, dense_batch
 
-    def to(self, device):
-        return Batch(
-            pos=self.pos.to(device),
-            atoms=self.atoms.to(device),
-            tags=self.tags.to(device),
-            real_mask=self.real_mask.to(device),
-            deltapos=self.deltapos.to(device),
-            y_relaxed=self.y_relaxed.to(device),
-            fixed=self.fixed.to(device),
-            natoms=self.natoms.to(device),
-            sid=self.sid.to(device),
-            cell=self.cell.to(device),
-        )
 
-    @classmethod
-    def from_data_list(cls, data_list: Sequence[Data]):
-        batch = cls(
-            pos=_pad(data_list, "pos"),
-            atoms=_pad(data_list, "atoms"),
-            tags=_pad(data_list, "tags"),
-            real_mask=_pad(data_list, "real_mask"),
-            deltapos=_pad(data_list, "deltapos"),
-            y_relaxed=_pad(data_list, "y_relaxed"),
-            fixed=_pad(data_list, "fixed"),
-            natoms=_pad(data_list, "natoms"),
-            sid=_pad(data_list, "sid"),
-            cell=_pad(data_list, "cell"),
-        )
-        return [batch]
+def data_transform(
+    data: TorchGeoData,
+    *,
+    cutoff: float,
+    filter_src_pos_by_tag: int | None = None,  # should be 2 for oc20
+    no_copy_tag: int | None = None,  # should be 2 for oc20 (no copy ads)
+) -> Data:
+    atoms = data.atomic_numbers.long()
+    pos = data.pos
+    cell = data.cell.view(3, 3)
+    tags = data.tags.long()
+
+    pos, atoms, real_mask = pbc_graph_transformer(
+        pos,
+        cell,
+        atoms,
+        tags,
+        cutoff=cutoff,
+        filter_src_pos_by_tag=filter_src_pos_by_tag,
+        no_copy_tag=no_copy_tag,
+    )
+
+    dense_data: DenseData = {"atoms": atoms, "pos": pos, "real_mask": real_mask}
+
+    return data, dense_data

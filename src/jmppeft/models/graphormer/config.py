@@ -19,7 +19,7 @@ class Graphormer3DConfig(BackboneConfigBase):
     @override
     def atom_embedding_table_info(self) -> AtomEmbeddingTableInfo:
         return {
-            "num_embeddings": self.atom_types,
+            "num_embeddings": self.num_elements,
             "embedding_dim": self.embed_dim,
         }
 
@@ -30,9 +30,6 @@ class Graphormer3DConfig(BackboneConfigBase):
 
     blocks: int
     """Number of blocks."""
-
-    atom_types: int
-    """Number of elements."""
 
     embed_dim: int
     """Encoder embedding dimension."""
@@ -67,8 +64,8 @@ class Graphormer3DConfig(BackboneConfigBase):
     eng_loss_weight: float = 1.0
     """Loss weight for energy prediction."""
 
-    tag_encoder: bool = False
-    """Whether to use tag encoder."""
+    num_elements: int = 120
+    """Number of elements."""
 
     @property
     def activation(self):

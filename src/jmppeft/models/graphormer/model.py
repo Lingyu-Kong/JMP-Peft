@@ -3,6 +3,7 @@
 
 from collections.abc import Callable
 
+import ll.typecheck as tc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +11,7 @@ from torch import Tensor
 from typing_extensions import override
 
 from .config import Graphormer3DConfig
+from .types import DenseData
 
 torch._C._jit_set_profiling_mode(False)
 torch._C._jit_set_profiling_executor(False)
@@ -253,13 +255,11 @@ class Graphormer3D(nn.Module):
         super().__init__()
 
         self.config = self.args = args
-        self.atom_types = self.args.atom_types
-        self.edge_types = self.args.atom_types * self.args.atom_types
+        self.atom_types = self.args.num_elements
+        self.edge_types = self.args.num_elements * self.args.num_elements
         self.atom_encoder = nn.Embedding(
             self.atom_types, self.args.embed_dim, padding_idx=0
         )
-        if self.config.tag_encoder:
-            self.tag_encoder = nn.Embedding(3, self.args.embed_dim)
         self.input_dropout = self.args.input_dropout
         self.layers = nn.ModuleList(
             [
@@ -293,13 +293,12 @@ class Graphormer3D(nn.Module):
         )
 
     @override
-    def forward(
-        self,
-        atoms: Tensor,
-        tags: Tensor,
-        pos: Tensor,
-        real_mask: Tensor,
-    ):
+    def forward(self, batch: DenseData):
+        # atoms: Tensor, pos: Tensor, real_mask: Tensor
+        atoms = batch["atoms"]
+        pos = batch["pos"]
+        real_mask = batch["real_mask"]
+
         padding_mask = atoms.eq(0)
 
         n_graph, n_node = atoms.size()
@@ -316,10 +315,8 @@ class Graphormer3D(nn.Module):
             padding_mask.unsqueeze(1).unsqueeze(-1), 0.0
         )
 
-        graph_node_feature = (
-            self.tag_encoder(tags)
-            + self.atom_encoder(atoms)
-            + self.edge_proj(edge_features.sum(dim=-2))
+        graph_node_feature = self.atom_encoder(atoms) + self.edge_proj(
+            edge_features.sum(dim=-2)
         )
 
         # ===== MAIN MODEL =====
@@ -342,17 +339,12 @@ class Graphormer3D(nn.Module):
         output = output.transpose(0, 1)
 
         eng_output = F.dropout(output, p=0.1, training=self.training)
-        eng_output = (self.energy(eng_output) * self.energy_agg_factor(tags)).flatten(
-            -2
-        )
-        output_mask = (
-            (tags > 0) & real_mask
-        )  # no need to consider padding, since padding has tag 0, real_mask False
+        eng_output = self.energy(eng_output).flatten(-2)
 
-        eng_output *= output_mask
+        eng_output *= real_mask
         eng_output = eng_output.sum(dim=-1)
 
         node_output = self.node_proc(output, graph_attn_bias, delta_pos)
 
-        node_target_mask = output_mask.unsqueeze(-1)
+        node_target_mask = real_mask.unsqueeze(-1)
         return eng_output, node_output, node_target_mask

@@ -687,8 +687,19 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         dataset = DT.transform(dataset, self.val_data_transform)
         return dataset
 
-    def collate_fn(self, data_list: list[BaseData]):
+    def collate_fn_gnn(self, data_list: list[BaseData]):
         return Batch.from_data_list(data_list, exclude_keys=self.config.exclude_keys)
+
+    def collate_fn(self, data_list: list[BaseData]):
+        match self.config.backbone:
+            case GOCBackboneConfig():
+                return self.collate_fn_gnn(data_list)
+            case Graphormer3DConfig():
+                from ...models.graphormer.types import collate_fn
+
+                return collate_fn(data_list, torch_geo_collate_fn=self.collate_fn_gnn)
+            case _:
+                assert_never(self.config.backbone)
 
     def distributed_sampler(self, dataset: Dataset, shuffle: bool):
         return DistributedSampler(
@@ -794,7 +805,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         return graph
 
-    def _generate_graphs(
+    def _generate_graphs_goc(
         self,
         data: BaseData,
         cutoffs: Cutoffs,
@@ -838,6 +849,53 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         return data
 
+    def _generate_graphs_graphormer(
+        self,
+        data,
+        cutoff: float,
+        filter_src_pos_by_tag: int | None,  # should be 2 for oc20
+        no_copy_tag: int | None,  # should be 2 for oc20 (no copy ads)
+    ):
+        from ...models.graphormer.types import data_transform
+
+        data = data_transform(
+            data,
+            cutoff=cutoff,
+            filter_src_pos_by_tag=filter_src_pos_by_tag,
+            no_copy_tag=no_copy_tag,
+        )
+        return data
+
+    def _generate_graphs(
+        self,
+        data: BaseData,
+        cutoffs: Cutoffs,
+        max_neighbors: MaxNeighbors,
+        pbc: bool,
+        filter_src_pos_by_tag: int | None,  # should be 2 for oc20
+        no_copy_tag: int | None,  # should be 2 for oc20 (no copy ads)
+        *,
+        training: bool,
+    ):
+        match self.config.backbone:
+            case GOCBackboneConfig():
+                return self._generate_graphs_goc(
+                    data,
+                    cutoffs=cutoffs,
+                    max_neighbors=max_neighbors,
+                    pbc=pbc,
+                    training=training,
+                )
+            case Graphormer3DConfig():
+                return self._generate_graphs_graphormer(
+                    data,
+                    cutoff=cutoffs.main,
+                    filter_src_pos_by_tag=filter_src_pos_by_tag,
+                    no_copy_tag=no_copy_tag,
+                )
+            case _:
+                assert_never(self.config.backbone)
+
     def _initial_data_transform(self, data: BaseData):
         if not torch.is_tensor(data.y):
             data.y = torch.tensor(data.y)
@@ -858,18 +916,18 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data.atomic_numbers = data.atomic_numbers.long()
         data.tags = data.tags.long()
 
-        data = self._generate_graphs(
+        data.y_scale = config.energy_loss_scale
+        data.force_scale = config.force_loss_scale
+
+        return self._generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(12.0),
             max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
             pbc=True,
             training=training,
+            filter_src_pos_by_tag=2,
+            no_copy_tag=2,
         )
-
-        data.y_scale = config.energy_loss_scale
-        data.force_scale = config.force_loss_scale
-
-        return data
 
     def oc22_transform(self, data: BaseData, *, training: bool):
         data = self._initial_data_transform(data)
@@ -889,18 +947,18 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             data.y = torch.tensor(float(data.y_relaxed)).view(-1)
         data.name = "oc22"
 
-        data = self._generate_graphs(
+        data.y_scale = config.energy_loss_scale
+        data.force_scale = config.force_loss_scale
+
+        return self._generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(12.0),
             max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
             pbc=True,
             training=training,
+            filter_src_pos_by_tag=2,
+            no_copy_tag=2,
         )
-
-        data.y_scale = config.energy_loss_scale
-        data.force_scale = config.force_loss_scale
-
-        return data
 
     @staticmethod
     def _set_inf_cell(data: BaseData, max_length: float = 1000.0):
@@ -928,18 +986,19 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data.name = "ani1x"
 
         data = self._set_inf_cell(data)
-        data = self._generate_graphs(
+
+        data.y_scale = config.energy_loss_scale
+        data.force_scale = config.force_loss_scale
+
+        return self._generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(8.0),
             max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
             pbc=False,
             training=training,
+            filter_src_pos_by_tag=None,
+            no_copy_tag=None,
         )
-
-        data.y_scale = config.energy_loss_scale
-        data.force_scale = config.force_loss_scale
-
-        return data
 
     def transition1x_transform(self, data: BaseData, *, training: bool):
         data = self._initial_data_transform(data)
@@ -962,15 +1021,16 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data.name = "transition1x"
 
         data = self._set_inf_cell(data)
-        data = self._generate_graphs(
+
+        data.y_scale = config.energy_loss_scale
+        data.force_scale = config.force_loss_scale
+
+        return self._generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(8.0),
             max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
             pbc=False,
             training=training,
+            filter_src_pos_by_tag=None,
+            no_copy_tag=None,
         )
-
-        data.y_scale = config.energy_loss_scale
-        data.force_scale = config.force_loss_scale
-
-        return data
