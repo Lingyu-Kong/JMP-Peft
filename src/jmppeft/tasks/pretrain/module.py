@@ -770,7 +770,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data = self.data_transform(data)
         return data
 
-    def data_transform(self, data: Data):
+    def data_transform(self, data: BaseData):
         data.y = (
             data.y.float()
             if torch.is_tensor(data.y)
@@ -781,9 +781,11 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data.atomic_numbers = data.atomic_numbers.long()
         data.natoms = self._to_int(data.natoms)
         data.sid = self._to_int(data.sid)
-        for graph_type in ["main", "a2a", "a2ee2a", "qint"]:
-            key = f"{graph_type}_num_neighbors"
-            setattr(data, key, self._to_int(data[key]))
+
+        if isinstance(self.config.backbone, GOCBackboneConfig):
+            for graph_type in ["main", "a2a", "a2ee2a", "qint"]:
+                key = f"{graph_type}_num_neighbors"
+                setattr(data, key, self._to_int(data[key]))
 
         for attr in ("y", "force"):
             key = f"{attr}_scale"

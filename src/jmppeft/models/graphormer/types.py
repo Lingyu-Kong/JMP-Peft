@@ -28,8 +28,8 @@ class DenseData(TypedDict):
     real_mask: tc.Bool[torch.Tensor, "n"] | tc.Bool[torch.Tensor, "b n"]
 
 
-Data: TypeAlias = tuple[TorchGeoData, DenseData]
-Batch: TypeAlias = tuple[TorchGeoBatch, DenseData]
+Data: TypeAlias = TorchGeoData
+Batch: TypeAlias = TorchGeoBatch
 
 
 def pbc_graph_transformer(
@@ -87,12 +87,25 @@ def collate_fn(
     data_list: list[Data],
     torch_geo_collate_fn: Callable[[list[TorchGeoData]], TorchGeoBatch],
 ) -> Batch:
-    torch_geo_data_list, dense_data_list = zip(*data_list)
-    torch_geo_batch = torch_geo_collate_fn(torch_geo_data_list)
+    dense_data_list: list[DenseData] = []
+
+    # Remove `jmp_dense_data` from data_list and collect it
+    for d in data_list:
+        # Make sure `jmp_dense_data` is present and pop it
+        assert hasattr(d, "jmp_dense_data")
+        dense_data_list.append(d.jmp_dense_data)
+        del d.jmp_dense_data
+
+    # Collate the rest normally
+    torch_geo_batch = torch_geo_collate_fn(data_list)
+
+    # Collate dense data separately and add it back as `jmp_dense_data`
     dense_batch = cast(
         DenseData, {k: _pad(dense_data_list, k) for k in dense_data_list[0].keys()}
     )
-    return torch_geo_batch, dense_batch
+    torch_geo_batch.jmp_dense_data = dense_batch
+
+    return torch_geo_batch
 
 
 def data_transform(
@@ -119,4 +132,8 @@ def data_transform(
 
     dense_data: DenseData = {"atoms": atoms, "pos": pos, "real_mask": real_mask}
 
-    return data, dense_data
+    # Add a "jmp_dense_data" attribute to the data object
+    assert not hasattr(data, "jmp_dense_data")
+    data.jmp_dense_data = dense_data
+
+    return data
