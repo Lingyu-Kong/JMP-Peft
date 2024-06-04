@@ -23,10 +23,10 @@ def plot_values_buckets(
     for i, (name, m) in enumerate(data.items()):
         ax: plt.Axes = axes[i]
         for j in range(bucket_idx.max() + 1):
-            # Set title to "{min} - {max} atoms"
+            # Set title to "{min} - {max}"
             q_left = quantiles_list[j]
             q_right = quantiles_list[j + 1]
-            label = f"{q_left:.0f} - {q_right:.0f} atoms"
+            label = f"{q_left:.0f} - {q_right:.0f}"
             sns.histplot(
                 m[bucket_idx == j],
                 kde=True,
