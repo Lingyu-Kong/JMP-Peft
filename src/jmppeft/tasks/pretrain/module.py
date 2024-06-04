@@ -405,8 +405,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             epoch = step / self._train_dataset_sizes[idx]
             self.log(f"train/{task.name}/epoch", epoch)
 
-    @override
-    def forward(self, batch: BaseData):
+    def forward_gnn(self, batch: BaseData):
         if not self.config.backbone.handles_atom_embedding():
             h = self.embedding(batch)
             out = self.backbone(batch, h=h)
@@ -414,6 +413,18 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             out = self.backbone(batch)
 
         return self.output(batch, out)  # (n h), (n p h)
+
+    def forward_graphormer(self, batch: BaseData):
+        out = self.backbone(batch)
+        return self.output(batch, out)  # (n h), (n p h)
+
+    @override
+    def forward(self, batch: BaseData):
+        match self.config.backbone:
+            case Graphormer3DConfig():
+                return self.forward_graphormer(batch)
+            case _:
+                return self.forward_gnn(batch)
 
     def _task_idx_onehot(self, task_idx: int):
         return F.one_hot(
