@@ -2,7 +2,7 @@ import math
 from collections.abc import Callable
 from functools import cache, partial
 from logging import getLogger
-from typing import Annotated, Literal, TypeAlias, cast
+from typing import Annotated, Any, Literal, TypeAlias, cast
 
 import torch
 import torch.nn as nn
@@ -232,6 +232,9 @@ class PretrainConfig(BaseConfig):
             )
 
 
+Data: TypeAlias = Any
+
+
 class Embedding(Base[PretrainConfig], nn.Module):
     @override
     def __init__(self, hparams: PretrainConfig):
@@ -243,7 +246,7 @@ class Embedding(Base[PretrainConfig], nn.Module):
         )
 
     @override
-    def forward(self, data: BaseData):
+    def forward(self, data: Data):
         atomic_numbers = data.atomic_numbers - 1
         x = self.atom_embedding(atomic_numbers)
         return x
@@ -282,7 +285,7 @@ class Output(Base[PretrainConfig], nn.Module):
         )
 
     @override
-    def forward(self, data: BaseData, backbone_out: GOCBackboneOutput):
+    def forward(self, data: Data, backbone_out: GOCBackboneOutput):
         energy = backbone_out["energy"]
         forces = backbone_out["forces"]
         V_st = backbone_out["V_st"]
@@ -387,7 +390,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         return state_dict
 
     @override
-    def on_train_batch_start(self, batch: BaseData, batch_idx: int):
+    def on_train_batch_start(self, batch: Data, batch_idx: int):
         if not self.config.log_task_steps_and_epochs:
             return
 
@@ -405,7 +408,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             epoch = step / self._train_dataset_sizes[idx]
             self.log(f"train/{task.name}/epoch", epoch)
 
-    def forward_gnn(self, batch: BaseData):
+    def forward_gnn(self, batch: Data):
         if not self.config.backbone.handles_atom_embedding():
             h = self.embedding(batch)
             out = self.backbone(batch, h=h)
@@ -414,12 +417,12 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         return self.output(batch, out)  # (n h), (n p h)
 
-    def forward_graphormer(self, batch: BaseData):
+    def forward_graphormer(self, batch: Data):
         out = self.backbone(batch)
         return self.output(batch, out)  # (n h), (n p h)
 
     @override
-    def forward(self, batch: BaseData):
+    def forward(self, batch: Data):
         match self.config.backbone:
             case Graphormer3DConfig():
                 return self.forward_graphormer(batch)
@@ -433,7 +436,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         ).bool()
 
     def _force_loss(
-        self, batch: BaseData, forces: torch.Tensor
+        self, batch: Data, forces: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if self.debug:
             assert forces.shape == batch.force.shape
@@ -481,7 +484,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         return force_loss, mask
 
     def _energy_loss(
-        self, batch: BaseData, energy: torch.Tensor
+        self, batch: Data, energy: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         mask = batch.task_mask  # (b, h)
 
@@ -533,9 +536,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         return loss
 
-    def compute_losses(
-        self, batch: BaseData, energy: torch.Tensor, forces: torch.Tensor
-    ):
+    def compute_losses(self, batch: Data, energy: torch.Tensor, forces: torch.Tensor):
         # Compute the energy loss
         energy_loss, energy_loss_mask = self._energy_loss(
             batch, energy
@@ -567,7 +568,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         return loss
 
     @override
-    def training_step(self, batch: BaseData, batch_idx: int):
+    def training_step(self, batch: Data, batch_idx: int):
         with self.log_context(prefix="train/"):
             energy, forces = self(batch)
 
@@ -577,7 +578,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             return loss
 
     @override
-    def validation_step(self, batch: BaseData, batch_idx: int):
+    def validation_step(self, batch: Data, batch_idx: int):
         with self.log_context(prefix="val/"):
             energy, forces = self(batch)
 
@@ -645,9 +646,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         # Apply data transform to the dataset
         if (transform := getattr(self, f"{task.name}_transform")) is None:
             raise ValueError(f"Transform not defined for {task.name}")
-        transform = cast(
-            Callable[[BaseData], BaseData], partial(transform, training=training)
-        )
+        transform = cast(Callable[[Data], Data], partial(transform, training=training))
 
         # Apply normalization to the dataset
         if task.normalization:
@@ -698,10 +697,10 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         dataset = DT.transform(dataset, self.val_data_transform)
         return dataset
 
-    def collate_fn_gnn(self, data_list: list[BaseData]):
+    def collate_fn_gnn(self, data_list: list[Data]):
         return Batch.from_data_list(data_list, exclude_keys=self.config.exclude_keys)
 
-    def collate_fn(self, data_list: list[BaseData]):
+    def collate_fn(self, data_list: list[Data]):
         match self.config.backbone:
             case GOCBackboneConfig():
                 return self.collate_fn_gnn(data_list)
@@ -763,15 +762,15 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
     def _to_int(value):
         return int(value.item() if torch.is_tensor(value) else value)
 
-    def train_data_transform(self, data: BaseData):
+    def train_data_transform(self, data: Data):
         data = self.data_transform(data)
         return data
 
-    def val_data_transform(self, data: BaseData):
+    def val_data_transform(self, data: Data):
         data = self.data_transform(data)
         return data
 
-    def data_transform(self, data: BaseData):
+    def data_transform(self, data: Data):
         data.y = (
             data.y.float()
             if torch.is_tensor(data.y)
@@ -862,20 +861,19 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
     def _generate_graphs_graphormer(
         self,
-        data,
+        data: BaseData,
         cutoff: float,
         filter_src_pos_by_tag: int | None,  # should be 2 for oc20
         no_copy_tag: int | None,  # should be 2 for oc20 (no copy ads)
     ):
         from ...models.graphormer.types import data_transform
 
-        data = data_transform(
+        return data_transform(
             data,
             cutoff=cutoff,
             filter_src_pos_by_tag=filter_src_pos_by_tag,
             no_copy_tag=no_copy_tag,
         )
-        return data
 
     def _generate_graphs(
         self,

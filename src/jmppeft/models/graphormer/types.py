@@ -4,8 +4,8 @@ from typing import TypeAlias, TypedDict, cast
 import ll.typecheck as tc
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch_geometric.data import Batch as TorchGeoBatch
-from torch_geometric.data import Data as TorchGeoData
+from torch_geometric.data.batch import Batch as TorchGeoBatch
+from torch_geometric.data.data import BaseData as TorchGeoData
 
 cell_offsets = torch.tensor(
     [
