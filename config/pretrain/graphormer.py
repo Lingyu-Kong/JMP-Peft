@@ -1,6 +1,4 @@
 # %%
-from pathlib import Path
-
 import ll
 from jmppeft.configs.pretrain.tasks import tasks_config_frontier_
 from jmppeft.tasks.config import AdamWConfig
@@ -63,7 +61,7 @@ config = M.PretrainConfig.draft()
 base_config_(config)
 tasks_config_frontier_(config)
 backbone_config_(config)
-fsdp_config_(config)
+# fsdp_config_(config)
 config = config.finalize()
 configs.append((config, M.PretrainModel))
 
@@ -81,5 +79,5 @@ runner = ll.Runner(run)
 runner.fast_dev_run(configs, n_batches=128)
 
 # %%
-runner = ll.Runner(run)
-runner.session(configs, snapshot=True, env={"CUDA_VISIBLE_DEVICES": "1"})
+# runner = ll.Runner(run)
+# runner.session(configs, snapshot=True, env={"CUDA_VISIBLE_DEVICES": "1"})

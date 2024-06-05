@@ -70,7 +70,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/ani1x/lmdbs/val/"
                 ),
                 metadata_path=Path(
-                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/ani1x/lmdbs/train/ani1x_val_metadata.npz"
+                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/ani1x/lmdbs/val/ani1x_val_metadata.npz"
                 ),
             ),
             energy_loss_scale=1.0,

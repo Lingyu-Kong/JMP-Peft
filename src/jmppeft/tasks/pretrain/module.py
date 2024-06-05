@@ -1026,6 +1026,11 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         return data
 
     def oc20_transform(self, data: BaseData, *, training: bool):
+        if hasattr(data, "energy"):  # upgrade old dataset
+            data.y = data.pop("energy")
+        if hasattr(data, "forces"):
+            data.force = data.pop("forces")
+
         data = self._initial_data_transform(data)
 
         assert (
