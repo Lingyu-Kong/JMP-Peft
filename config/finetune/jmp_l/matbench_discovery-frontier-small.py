@@ -146,25 +146,26 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 
 # %%
-# runner = ll.Runner(run)
-# runner.fast_dev_run(configs)
+runner = ll.Runner(run)
+runner.session(
+    configs,
+    snapshot=True,
+    env={"CUDA_VISIBLE_DEVICES": "0"},
+    setup_commands=["source /ccs/home/nimashoghi/repositories/jmp-peft/rocm53.sh"],
+)
 
 # %%
+from datetime import timedelta
+
 runner = ll.Runner(run)
-runner.local(configs)
-# runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
-
-
-# # %%
-# runner = ll.Runner(run)
-# runner.local_session_per_gpu(
-#     configs,
-#     snapshot=True,
-#     gpus=[(0, 1, 2, 3)],
-#     env={
-#         "LL_DISABLE_TYPECHECKING": "1",
-#         # "NCCL_DEBUG": "TRACE",
-#         # "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
-#         # "TORCH_CPP_LOG_LEVEL": "INFO",
-#     },
-# )
+runner.submit_slurm(
+    configs,
+    snapshot=True,
+    account="mat265",
+    partition="batch",
+    # qos="debug",
+    nodes=2,
+    tasks_per_node=8,  # frontier has 8 GPUs per node
+    walltime=timedelta(hours=1),
+    setup_commands=["source /ccs/home/nimashoghi/repositories/jmp-peft/rocm53.sh"],
+)

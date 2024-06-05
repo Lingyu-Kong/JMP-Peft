@@ -5,7 +5,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
-from matbench_discovery.data import DATA_FILES
 from pymatgen.core import Structure
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
@@ -71,6 +70,8 @@ class Key:
 class MatBenchDiscoveryIS2REDataset(Dataset[Data]):
     def __init__(self):
         super().__init__()
+
+        from matbench_discovery.data import DATA_FILES
 
         self.df = pd.read_json(DATA_FILES.wbm_initial_structures).set_index(Key.mat_id)
         self.df_summary = pd.read_csv(DATA_FILES.wbm_summary).set_index(Key.mat_id)

@@ -9,8 +9,6 @@ import numpy as np
 import torch
 from ase import Atoms
 from lightning.pytorch import LightningModule
-from matbench_discovery.energy import get_e_form_per_atom
-from matbench_discovery.metrics import STABILITY_THRESHOLD, stable_metrics
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
 from typing_extensions import assert_never
@@ -71,7 +69,7 @@ class RelaxerConfig(ll.TypedConfig):
     Whether to print the relaxation progress.
     """
 
-    stability_threshold: float = STABILITY_THRESHOLD
+    stability_threshold: float = 0.0
     """
     Threshold for stable metrics, used to compute the relaxation metrics.
     """
@@ -357,6 +355,8 @@ class Relaxer:
         y_pred = np.array(y_pred)
 
         # Compute the metrics
+        from matbench_discovery.metrics import stable_metrics
+
         metrics = stable_metrics(
             y_true,
             y_pred,

@@ -12,7 +12,6 @@ import torch
 import torch.nn as nn
 from lightning import LightningModule, Trainer
 from lightning.pytorch.callbacks.prediction_writer import BasePredictionWriter
-from matbench_discovery.energy import get_e_form_per_atom
 from torch_geometric.data import Batch
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override
@@ -394,6 +393,8 @@ class EnergyForcesModelBase(
 
         # get_e_form_per_atom
         if True:
+            from matbench_discovery.energy import get_e_form_per_atom
+
             energy = torch.tensor(
                 get_e_form_per_atom(
                     {
