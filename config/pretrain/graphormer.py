@@ -53,20 +53,26 @@ def backbone_config_(config: M.PretrainConfig):
     config.backbone = M.Graphormer3DConfig.base_architecture()
 
 
-configs: ll.ConfigList = []
+def fsdp_config_(config: M.PretrainConfig):
+    config.fsdp = True
+
+
+configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 
 config = M.PretrainConfig.draft()
 base_config_(config)
 tasks_config_frontier_(config)
 backbone_config_(config)
+fsdp_config_(config)
 config = config.finalize()
 configs.append((config, M.PretrainModel))
 
 
 # %%
-def run(config: ll.BaseConfig, model_cls: type[ll.LightningModuleBase]):
+def run(config: M.PretrainConfig, model_cls: type[M.PretrainModel]):
     model = model_cls(config)
-    trainer = ll.Trainer(config)
+
+    trainer = ll.Trainer(config, **model.fsdp_trainer_kwargs())
     trainer.fit(model)
 
 
