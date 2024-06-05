@@ -15,6 +15,7 @@ from lightning.pytorch.utilities.types import (
 )
 from ll import AllowMissing, Base, BaseConfig, Field, LightningModuleBase, TypedConfig
 from ll.data.balanced_batch_sampler import BalancedBatchSampler
+from ll.model.config import LightningTrainerKwargs
 from ll.nn import MLP
 from ll.util.typed import TypedModuleDict, TypedModuleList
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
@@ -207,6 +208,9 @@ class PretrainConfig(BaseConfig):
     ema: EMAConfig | None = None
     """Configuration for the exponential moving average."""
 
+    fsdp: bool = False
+    """Whether to use FSDP for this task."""
+
     @override
     def __post_init__(self):
         super().__post_init__()
@@ -333,6 +337,63 @@ class Output(Base[PretrainConfig], nn.Module):
 
 
 class PretrainModel(LightningModuleBase[PretrainConfig]):
+    def _fsdp_strategy(self):
+        from lightning.pytorch.strategies.fsdp import FSDPStrategy
+        from torch.distributed.fsdp.fully_sharded_data_parallel import CPUOffload
+
+        layers = None
+        match self.config.backbone:
+            case Graphormer3DConfig():
+                from ...models.graphormer.model import Graphormer3DEncoderLayer, Output
+
+                layers = {nn.Embedding, Graphormer3DEncoderLayer, Output}
+            case GOCBackboneConfig():
+                from ...models.gemnet.backbone import InteractionBlock, OutputBlock
+                from ...models.gemnet.bases import Bases
+                from ...models.gemnet.layers.interaction_block import (
+                    PairInteraction,
+                    QuadrupletInteraction,
+                    TripletInteraction,
+                )
+
+                layers = {
+                    nn.Embedding,
+                    Bases,
+                    InteractionBlock,
+                    PairInteraction,
+                    QuadrupletInteraction,
+                    TripletInteraction,
+                    OutputBlock,
+                }
+            case TorchMDNetBackboneConfig():
+                from ...models.torchmdnet.backbone import (
+                    EquivariantMultiHeadAttention,
+                    NeighborEmbedding,
+                )
+                from ...models.torchmdnet.output import Output
+
+                layers = {
+                    nn.Embedding,
+                    NeighborEmbedding,
+                    EquivariantMultiHeadAttention,
+                    Output,
+                }
+            case _:
+                assert_never(self.config.backbone)
+
+        return FSDPStrategy(
+            cpu_offload=CPUOffload(offload_params=True),
+            state_dict_type="sharded",
+            auto_wrap_policy=layers,
+            activation_checkpointing_policy=layers,
+        )
+
+    def fsdp_trainer_kwargs(self) -> LightningTrainerKwargs:
+        if not self.config.fsdp:
+            return {}
+
+        return {"strategy": self._fsdp_strategy()}
+
     @classmethod
     @override
     def config_cls(cls):
