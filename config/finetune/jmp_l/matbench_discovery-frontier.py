@@ -2,7 +2,7 @@
 from pathlib import Path
 
 import ll
-from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
+from jmppeft.configs.finetune.jmp_ import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune.base import FinetuneConfigBase, FinetuneModelBase
@@ -50,7 +50,7 @@ def create_config():
 
     # Set data config
     config.batch_size = 10
-    config.num_workers = 2
+    config.num_workers = 8
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
     config.trainer.use_distributed_sampler = False
@@ -59,7 +59,7 @@ def create_config():
     config.backbone.direct_forces = True
     config.backbone.regress_energy = True
 
-    # config.meta["ft_ckpt_path"] = ckpt_path
+    config.meta["ft_ckpt_path"] = ckpt_path
 
     config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
         config,
@@ -90,33 +90,24 @@ configs.append((config, model_cls))
 
 # %%
 def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
-    try:
-        if (ft_ckpt_path := config.meta.get("ft_ckpt_path")) is not None:
-            model = model_cls.load_from_checkpoint(
-                ft_ckpt_path, strict=False, hparams=config
-            )
-        else:
-            model = model_cls(config)
+    if (ft_ckpt_path := config.meta.get("ft_ckpt_path")) is not None:
+        model = model_cls.load_from_checkpoint(
+            ft_ckpt_path, strict=False, hparams=config
+        )
+    else:
+        model = model_cls(config)
 
-        trainer = ll.Trainer(config)
-        trainer.fit(model)
-    finally:
-        # Wait for explicit exit with ctrl+c
-        import time
+    trainer = ll.Trainer(config)
+    trainer.fit(model)
 
-        while True:
-            print()
-            print("Please exit the program with ctrl+c.")
-            time.sleep(60)
-
-
-# %%
-runner = ll.Runner(run)
-runner.fast_dev_run(configs)
 
 # %%
 # runner = ll.Runner(run)
-# runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
+# runner.fast_dev_run(configs)
+
+# %%
+runner = ll.Runner(run)
+runner.local(configs)
 
 
 # # %%
