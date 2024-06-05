@@ -222,8 +222,8 @@ class EnergyForcesModelBase(
     Generic[TConfig],
 ):
     @override
-    def __init__(self, config: TConfig):
-        super().__init__(config)
+    def __init__(self, hparams: TConfig):
+        super().__init__(hparams)
 
         if self.config.relaxation:
             self.register_callback(lambda: _Writer())
@@ -258,6 +258,7 @@ class EnergyForcesModelBase(
     @override
     def forward(self, data: BaseData):
         preds: dict[str, torch.Tensor] = {}
+
         with ExitStack() as stack:
             # Enter all the necessary contexts for output heads.
             # Right now, this is only for gradient forces, which

@@ -6,10 +6,10 @@ from typing import Annotated, Literal, TypeAlias
 import torch
 import torch.nn as nn
 from einops import rearrange
+from jmppeft.modules.torch_scatter_polyfill import scatter
 from ll import Field, TypedConfig
 from ll.nn import MLP
 from torch_geometric.data.data import BaseData
-from torch_scatter import scatter
 from typing_extensions import TypedDict, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput

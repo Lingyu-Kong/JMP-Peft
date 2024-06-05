@@ -11,6 +11,45 @@ from torch_sparse import SparseTensor
 from .utils import get_inner_idx, masked_select_sparsetensor_flat
 
 
+def _sparse_tensor_select(
+    row: torch.Tensor,
+    col: torch.Tensor,
+    value: torch.Tensor,
+    idx: torch.Tensor,
+    sparse_sizes: tuple[int, int],
+):
+    from torch_sparse import SparseTensor
+
+    adj = SparseTensor(
+        row=row,
+        col=col,
+        value=value,
+        sparse_sizes=sparse_sizes,
+    )
+    adj_edges = adj[idx]
+    idx_in = adj_edges.storage.value()
+    idx_out = adj_edges.storage.row()
+    return idx_in, idx_out
+
+
+def _torch_sparse_tensor_select(
+    row: torch.Tensor,
+    col: torch.Tensor,
+    value: torch.Tensor,
+    idx: torch.Tensor,
+    sparse_sizes: tuple[int, int],
+):
+    adj = torch.sparse_coo_tensor(torch.stack((row, col)), value, sparse_sizes)
+    adj_edges = adj.index_select(0, idx)
+    idx_in = adj_edges._values()
+    idx_out = adj_edges._indices()[0]
+    return idx_in, idx_out
+
+
+USE_TORCH = True
+_select_triplet = _torch_sparse_tensor_select if USE_TORCH else _sparse_tensor_select
+
+
 def get_triplets(graph, num_atoms):
     """
     Get all input edges b->a for each output edge c->a.
@@ -40,18 +79,27 @@ def get_triplets(graph, num_atoms):
 
     value = torch.arange(num_edges, device=idx_s.device, dtype=idx_s.dtype)
     # Possibly contains multiple copies of the same edge (for periodic interactions)
-    adj = SparseTensor(
-        row=idx_t,
-        col=idx_s,
-        value=value,
-        sparse_sizes=(num_atoms, num_atoms),
-    )
-    adj_edges = adj[idx_t]
+    # adj = SparseTensor(
+    #     row=idx_t,
+    #     col=idx_s,
+    #     value=value,
+    #     sparse_sizes=(num_atoms, num_atoms),
+    # )
+    # adj_edges = adj[idx_t]
 
-    # Edge indices (b->a, c->a) for triplets.
+    # # Edge indices (b->a, c->a) for triplets.
+    # idx = {}
+    # idx["in"] = adj_edges.storage.value()
+    # idx["out"] = adj_edges.storage.row()
+
     idx = {}
-    idx["in"] = adj_edges.storage.value()
-    idx["out"] = adj_edges.storage.row()
+    idx["in"], idx["out"] = _select_triplet(
+        idx_t,
+        idx_s,
+        value,
+        idx_t,
+        (num_atoms, num_atoms),
+    )
 
     # Remove self-loop triplets
     # Compare edge indices, not atom indices to correctly handle periodic interactions
@@ -122,21 +170,29 @@ def get_mixed_triplets(
     value_in = torch.arange(
         idx_in_s.size(0), device=idx_in_s.device, dtype=idx_in_s.dtype
     )
-    # This exploits that SparseTensor can have multiple copies of the same edge!
-    adj_in = SparseTensor(
-        row=idx_in_t,
-        col=idx_in_s,
-        value=value_in,
-        sparse_sizes=(num_atoms, num_atoms),
-    )
-    if to_outedge:
-        adj_edges = adj_in[idx_out_s]
-    else:
-        adj_edges = adj_in[idx_out_t]
+    # # This exploits that SparseTensor can have multiple copies of the same edge!
+    # adj_in = SparseTensor(
+    #     row=idx_in_t,
+    #     col=idx_in_s,
+    #     value=value_in,
+    #     sparse_sizes=(num_atoms, num_atoms),
+    # )
+    # if to_outedge:
+    #     adj_edges = adj_in[idx_out_s]
+    # else:
+    #     adj_edges = adj_in[idx_out_t]
 
-    # Edge indices (b->a, c->a) for triplets.
-    idx_in = adj_edges.storage.value()
-    idx_out = adj_edges.storage.row()
+    # # Edge indices (b->a, c->a) for triplets.
+    # idx_in = adj_edges.storage.value()
+    # idx_out = adj_edges.storage.row()
+
+    idx_in, idx_out = _select_triplet(
+        idx_in_t,
+        idx_in_s,
+        value_in,
+        idx_out_s if to_outedge else idx_out_t,
+        (num_atoms, num_atoms),
+    )
 
     # Remove self-loop triplets c->a<-c or c<-a<-c
     # Check atom as well as cell offset

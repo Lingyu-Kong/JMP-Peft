@@ -3,8 +3,8 @@ from typing import ClassVar, Literal, TypeAlias, final
 import torch
 from ase.data import atomic_masses
 from einops import rearrange
+from jmppeft.modules.torch_scatter_polyfill import scatter
 from torch_geometric.data.data import BaseData
-from torch_scatter import scatter
 from typing_extensions import override
 
 from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors

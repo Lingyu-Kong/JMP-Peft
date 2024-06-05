@@ -11,9 +11,9 @@ import ll
 import ll.typecheck as tc
 import torch
 import torch.nn as nn
+from jmppeft.modules.torch_scatter_polyfill import segment_coo
 from ll.typecheck import Float, tassert
 from torch_geometric.data.data import BaseData
-from torch_scatter import segment_coo
 from typing_extensions import override
 
 from ...modules.dist_lora import AdapterOutput, DLoraConfig
@@ -912,7 +912,7 @@ class GemNetOCBackbone(nn.Module):
             xs_E.append(x_E)
             xs_F.append(x_F)
 
-            ll.ActSave({f"h_{i}": h, f"m_{i}": m, f"x_E_{i+1}": x_E, f"x_F_{i+1}": x_F})
+        ll.ActSave({f"h_{i}": h, f"m_{i}": m, f"x_E_{i+1}": x_E, f"x_F_{i+1}": x_F})
 
         # Global output block for final predictions
         x_F = None

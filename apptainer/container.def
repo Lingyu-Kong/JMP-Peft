@@ -1,0 +1,46 @@
+Bootstrap: docker
+From: rocm/dev-ubuntu-22.04:5.7.1-complete
+
+%post
+    # Install dependencies
+    apt-get update && apt-get install -y wget ca-certificates curl unzip
+
+    # Install Miniforge3
+    export MINIFORGE_URL=https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+    wget $MINIFORGE_URL -O Miniforge3.sh
+    /bin/bash Miniforge3.sh -b -p /opt/conda
+    rm Miniforge3.sh
+
+    # Add Miniforge3 to PATH
+    /opt/conda/condabin/conda init bash
+    eval "$(/opt/conda/condabin/conda shell.bash hook)"
+
+    # Create conda env and install dependencies
+    mamba install -y python=3.11
+    pip install "torch==2.2.2" torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.7
+
+    # Install packages
+    pip install frozendict wandb lovely-tensors matplotlib ipykernel numba pytorch-lightning cloudpickle einops pytest wrapt numpy nbformat nbval torchmetrics typing-extensions varname pandas pyyaml plotly tqdm requests ipywidgets scikit-learn seaborn lovely-numpy networkx sympy lightning pymatgen ase jarvis-tools pydantic
+
+    # Installed pip dependencies
+    pip install rich lmdb beartype jaxtyping ruff
+
+    # Install PyG
+    mkdir -p /tmp/jmp-pyg-build/
+    cd /tmp/jmp-pyg-build/
+    wget https://github.com/Looong01/pyg-rocm-build/releases/download/5/torch-2.2-rocm-5.7-py311-linux_x86_64.zip
+    unzip torch-2.2-rocm-5.7-py311-linux_x86_64.zip
+    pip install torch-2.2-rocm-5.7-py311-linux_x86_64/*
+    cd /
+    rm -rf /tmp/jmp-pyg-build/
+
+    # Install ll from https://github.com/nimashoghi/ll.git using the release link https://github.com/nimashoghi/ll/archive/main.zip
+    pip install https://github.com/nimashoghi/ll/archive/main.zip
+
+%environment
+    export PATH=/opt/conda/bin:$PATH
+
+%runscript
+    # Start the container with the conda environment activated
+    eval "$(/opt/conda/condabin/conda shell.bash hook)"
+    exec "$@"

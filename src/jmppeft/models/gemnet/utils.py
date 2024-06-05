@@ -6,7 +6,7 @@ LICENSE file in the root directory of this source tree.
 
 import numpy as np
 import torch
-from torch_scatter import segment_coo, segment_csr
+from jmppeft.modules.torch_scatter_polyfill import segment_coo, segment_csr
 from torch_sparse import SparseTensor
 
 
