@@ -30,6 +30,7 @@ from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig as GOCBackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
 from ...models.graphormer.config import Graphormer3DConfig
+from ...models.torchmdnet.config import TorchMDNetBackboneConfig
 from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
@@ -108,7 +109,7 @@ class TaskConfig(TypedConfig):
 
 
 BackboneConfig: TypeAlias = Annotated[
-    GOCBackboneConfig | Graphormer3DConfig,
+    GOCBackboneConfig | Graphormer3DConfig | TorchMDNetBackboneConfig,
     Field(discriminator="name"),
 ]
 
@@ -221,6 +222,15 @@ class PretrainConfig(BaseConfig):
             case GOCBackboneConfig() as config:
                 config.dropout = self.dropout
                 config.edge_dropout = self.edge_dropout
+            case TorchMDNetBackboneConfig() as config:
+                if self.dropout or self.edge_dropout:
+                    raise NotImplementedError(
+                        "Dropout/edge_dropout not implemented for TorchMDNetBackboneConfig"
+                    )
+
+                assert (
+                    "edge_index" not in self.exclude_keys
+                ), "edge_index must be not in exclude_keys for TorchMDNetBackboneConfig"
             case _:
                 assert_never(self.backbone)
 
@@ -338,6 +348,8 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 return GemNetOCBackbone(
                     self.config.backbone, **dict(self.config.backbone)
                 )
+            case TorchMDNetBackboneConfig():
+                return self.config.backbone.create_backbone()
             case _:
                 assert_never(self.config.backbone)
 
@@ -351,6 +363,8 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                     self.config.tasks,
                     self.config.backbone,
                 )
+            case TorchMDNetBackboneConfig() as config:
+                return config.create_output_head(self.config.tasks)
             case _:
                 return Output(self.config)
 
@@ -713,14 +727,12 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
     def collate_fn(self, data_list: list[Data]):
         match self.config.backbone:
-            case GOCBackboneConfig():
-                return self.collate_fn_gnn(data_list)
             case Graphormer3DConfig():
                 from ...models.graphormer.types import collate_fn
 
                 return collate_fn(data_list, torch_geo_collate_fn=self.collate_fn_gnn)
             case _:
-                assert_never(self.config.backbone)
+                return self.collate_fn_gnn(data_list)
 
     def distributed_sampler(self, dataset: Dataset, shuffle: bool):
         return DistributedSampler(
@@ -888,6 +900,25 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             no_copy_tag=no_copy_tag,
         )
 
+    def _generate_graphs_torchmd(
+        self,
+        data: BaseData,
+        cutoffs: Cutoffs,
+        max_neighbors: MaxNeighbors,
+        pbc: bool,
+        *,
+        training: bool,
+    ):
+        graph = generate_graph(
+            data, cutoff=cutoffs.main, max_neighbors=max_neighbors.main, pbc=pbc
+        )
+
+        data.edge_index = graph["edge_index"]
+        data.edge_distances = graph["distance"]
+        data.edge_displacement_vectors = graph["vector"]
+
+        return data
+
     def _generate_graphs(
         self,
         data: BaseData,
@@ -914,6 +945,14 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                     cutoff=cutoffs.main,
                     filter_src_pos_by_tag=filter_src_pos_by_tag,
                     no_copy_tag=no_copy_tag,
+                )
+            case TorchMDNetBackboneConfig():
+                return self._generate_graphs_torchmd(
+                    data,
+                    cutoffs=cutoffs,
+                    max_neighbors=max_neighbors,
+                    pbc=pbc,
+                    training=training,
                 )
             case _:
                 assert_never(self.config.backbone)
