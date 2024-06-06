@@ -1,4 +1,6 @@
 # %%
+import math
+
 import ll
 from jmppeft.configs.pretrain.tasks import tasks_config_frontier_
 from jmppeft.tasks.config import AdamWConfig
@@ -61,6 +63,63 @@ def fsdp_config_(config: M.PretrainConfig):
     config.fsdp = True
 
 
+def profiling_config_(config: M.PretrainConfig):
+    config.trainer.python_logging.pretty_()
+
+    config.global_train_sample_ratio = M.DatasetSampleRatioConfig(
+        sample_ratio=0.00045,
+        seed=0,
+    )
+    config.global_val_sample_ratio = M.DatasetSampleRatioConfig(
+        sample_ratio=0.02,
+        seed=0,
+    )
+
+    config.trainer.max_epochs = 1
+
+    config.trainer.callbacks.append(ll.callbacks.EpochTimerConfig())
+
+
+def _print_dataset_sizes(config: M.PretrainConfig):
+    print()
+    total_size = 0
+    print("Train")
+    print()
+    sizes = [2_000_000, 8_000_000, 2_000_000, 10_000_000]
+    for task, size in zip(config.tasks, sizes):
+        ratio = 1.0
+        if task.train_dataset.sample_ratio is not None:
+            ratio = task.train_dataset.sample_ratio.sample_ratio
+        final_size = math.ceil(size * ratio)
+        total_size += final_size
+        print(f"{task.name}: {final_size:_}")
+
+    print()
+    print(f"Total: {total_size:_}")
+    print()
+    print()
+
+    total_size = 0
+    print("Val")
+    print()
+    sizes = [20_000, 10_000, 5_000, 10_000]
+    for task, size in zip(config.tasks, sizes):
+        ratio = 1.0
+        if task.val_dataset.sample_ratio is not None:
+            ratio = task.val_dataset.sample_ratio.sample_ratio
+        final_size = math.ceil(size * ratio)
+        total_size += final_size
+        print(f"{task.name}: {final_size:_}")
+
+    print()
+    print(f"Total: {total_size:_}")
+
+
+def frontier_config_(config: M.PretrainConfig):
+    if wandb := config.trainer.logging.wandb:
+        wandb.disable_()
+
+
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 
 config = M.PretrainConfig.draft()
@@ -68,7 +127,10 @@ base_config_(config)
 tasks_config_frontier_(config)
 backbone_config_(config)
 # fsdp_config_(config)
+profiling_config_(config)
+frontier_config_(config)
 config = config.finalize()
+_print_dataset_sizes(config)
 configs.append((config, M.PretrainModel))
 
 
@@ -82,8 +144,4 @@ def run(config: M.PretrainConfig, model_cls: type[M.PretrainModel]):
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs)
-
-# %%
-# runner = ll.Runner(run)
-# runner.session(configs, snapshot=True, env={"CUDA_VISIBLE_DEVICES": "1"})
+runner.session(configs, snapshot=False, env={"CUDA_VISIBLE_DEVICES": "0,1"})

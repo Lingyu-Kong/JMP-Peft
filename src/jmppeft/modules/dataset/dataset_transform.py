@@ -166,7 +166,7 @@ def first_n_transform(dataset: TDataset, *, n: int) -> TDataset:
 
     class _FirstNDataset(wrapt.ObjectProxy):
         @override
-        def __getitem__(self, idx: int):
+        def __getitem__(self, idx: int | np.int32 | np.int64):
             nonlocal n
 
             if idx < 0 or idx >= n:
@@ -228,7 +228,7 @@ def sample_n_transform(dataset: TDataset, *, n: int, seed: int) -> TDataset:
 
     class _SampleNDataset(wrapt.ObjectProxy):
         @override
-        def __getitem__(self, idx: int):
+        def __getitem__(self, idx: int | np.int32 | np.int64):
             nonlocal n, sampled_indices
 
             if idx < 0 or idx >= n:
@@ -292,7 +292,7 @@ def sample_n_and_get_remaining_transform(
 
     class _SampleNDataset(wrapt.ObjectProxy):
         @override
-        def __getitem__(self, idx: int):
+        def __getitem__(self, idx: int | np.int32 | np.int64):
             nonlocal n, sampled_indices
 
             if idx < 0 or idx >= n:
@@ -335,7 +335,7 @@ def sample_n_and_get_remaining_transform(
 
     class _RemainingDataset(wrapt.ObjectProxy):
         @override
-        def __getitem__(self, idx: int):
+        def __getitem__(self, idx: int | np.int32 | np.int64):
             nonlocal remaining_n, remaining_indices
 
             if idx < 0 or idx >= remaining_n:
@@ -425,7 +425,7 @@ def with_split(
             return len(loaded_split)
 
         @override
-        def __getitem__(self, idx: int):
+        def __getitem__(self, idx: int | np.int32 | np.int64):
             nonlocal loaded_split
             if idx < 0 or idx >= len(loaded_split):
                 raise IndexError(

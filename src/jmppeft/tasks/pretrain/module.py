@@ -4,6 +4,7 @@ from functools import cache, partial
 from logging import getLogger
 from typing import Annotated, Any, Literal, TypeAlias, cast
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -34,7 +35,12 @@ from ...models.graphormer.config import Graphormer3DConfig
 from ...models.torchmdnet.config import TorchMDNetBackboneConfig
 from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
-from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
+from ...modules.dataset.common import (
+    CommonDatasetConfig,
+    DatasetSampleNConfig,
+    DatasetSampleRatioConfig,
+    wrap_common_dataset,
+)
 from ...modules.dataset.concat_dataset import MTDatasetConfig, MTSampledDataset
 from ...modules.ema import EMAConfig
 from ...modules.metrics import FMMetrics
@@ -211,6 +217,9 @@ class PretrainConfig(BaseConfig):
     fsdp: bool = False
     """Whether to use FSDP for this task."""
 
+    global_train_sample_ratio: DatasetSampleRatioConfig | None = None
+    global_val_sample_ratio: DatasetSampleRatioConfig | None = None
+
     @override
     def __post_init__(self):
         super().__post_init__()
@@ -244,6 +253,61 @@ class PretrainConfig(BaseConfig):
                 num_elements=info["num_embeddings"],
                 embedding_size=info["embedding_dim"],
             )
+
+        # If a size ratio is given, apply it here.
+        if (ratio := self.global_train_sample_ratio) is not None:
+            for task_config in self.tasks:
+                dataset_config = task_config.train_dataset
+
+                sample_ratio = ratio.sample_ratio
+                seed = ratio.seed
+
+                # If the task itself also has a ratio, multiply them
+                if (task_sample_ratio := dataset_config.sample_ratio) is not None:
+                    sample_ratio = sample_ratio * task_sample_ratio.sample_ratio
+
+                    # Somehow combine the two seed values if they're not the same
+                    if seed != task_sample_ratio.seed:
+                        seed = hash((seed, task_sample_ratio.seed))
+
+                    log.critical(
+                        f"Both global (={ratio.sample_ratio}) and task (={task_sample_ratio.sample_ratio}) "
+                        f"sample ratios are set for {task_config.name}_train. "
+                        f"Multiplying the two together for a final sample ratio of {sample_ratio}. "
+                        f"Seeds ({ratio.seed}, {task_sample_ratio.seed}) are combined to {seed}."
+                    )
+
+                dataset_config.sample_ratio = DatasetSampleRatioConfig(
+                    sample_ratio=sample_ratio, seed=seed
+                )
+            self.global_train_sample_ratio = None
+
+        if (ratio := self.global_val_sample_ratio) is not None:
+            for task_config in self.tasks:
+                dataset_config = task_config.val_dataset
+
+                sample_ratio = ratio.sample_ratio
+                seed = ratio.seed
+
+                # If the task itself also has a ratio, multiply them
+                if (task_sample_ratio := dataset_config.sample_ratio) is not None:
+                    sample_ratio = sample_ratio * task_sample_ratio.sample_ratio
+
+                    # Somehow combine the two seed values if they're not the same
+                    if seed != task_sample_ratio.seed:
+                        seed = hash((seed, task_sample_ratio.seed))
+
+                    log.critical(
+                        f"Both global (={ratio.sample_ratio}) and task (={task_sample_ratio.sample_ratio}) "
+                        f"sample ratios are set for {task_config.name}_val. "
+                        f"Multiplying the two together for a final sample ratio of {sample_ratio}. "
+                        f"Seeds ({ratio.seed}, {task_sample_ratio.seed}) are combined to {seed}."
+                    )
+
+                dataset_config.sample_ratio = DatasetSampleRatioConfig(
+                    sample_ratio=sample_ratio, seed=seed
+                )
+            self.global_val_sample_ratio = None
 
 
 Data: TypeAlias = Any

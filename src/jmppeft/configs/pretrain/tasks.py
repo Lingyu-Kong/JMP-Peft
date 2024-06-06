@@ -2,9 +2,18 @@ from pathlib import Path
 
 from jmppeft.tasks.pretrain import module as M
 
+from ...modules.dataset.common import DatasetFirstNConfig, DatasetSampleRatioConfig
 
-def tasks_config_frontier_(config: M.PretrainConfig):
+
+def tasks_config_frontier_(
+    config: M.PretrainConfig,
+    sample_seed: int = 0,
+):
+    oc20_ratio: float = 2_000_000 / 100_000_000
+    sample_ratio = DatasetSampleRatioConfig(sample_ratio=oc20_ratio, seed=sample_seed)
+
     config.tasks = [
+        # OC20 doesn't get a sample ratio because it's already pre-sampled (we only downloaded 2M / 100M samples)
         M.TaskConfig(
             name="oc20",
             train_dataset=M.PretrainDatasetConfig(
@@ -22,6 +31,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/s2ef/all/val_id/metadata.npz"
                 ),
+                first_n=DatasetFirstNConfig(first_n=20_000),
             ),
             energy_loss_scale=1.0,
             force_loss_scale=73.0,
@@ -39,6 +49,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc22/s2ef_total_train_val_test_lmdbs/data/oc22/s2ef-total/train/metadata.npz"
                 ),
+                sample_ratio=sample_ratio,
             ),
             val_dataset=M.PretrainDatasetConfig(
                 src=Path(
@@ -47,6 +58,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc22/s2ef_total_train_val_test_lmdbs/data/oc22/s2ef-total/val_id/metadata.npz"
                 ),
+                first_n=DatasetFirstNConfig(first_n=10_000),
             ),
             energy_loss_scale=1.0,
             force_loss_scale=80.0,
@@ -64,6 +76,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/ani1x/lmdbs/train/ani1x_metadata.npz"
                 ),
+                sample_ratio=sample_ratio,
             ),
             val_dataset=M.PretrainDatasetConfig(
                 src=Path(
@@ -72,6 +85,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/ani1x/lmdbs/val/ani1x_val_metadata.npz"
                 ),
+                first_n=DatasetFirstNConfig(first_n=5_000),
             ),
             energy_loss_scale=1.0,
             force_loss_scale=15.0,
@@ -89,6 +103,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/transition1x/lmdbs/train/metadata.npz"
                 ),
+                sample_ratio=sample_ratio,
             ),
             val_dataset=M.PretrainDatasetConfig(
                 src=Path(
@@ -97,6 +112,7 @@ def tasks_config_frontier_(config: M.PretrainConfig):
                 metadata_path=Path(
                     "/lustre/orion/mat265/world-shared/nimashoghi/datasets/transition1x/lmdbs/train/metadata.npz"
                 ),
+                first_n=DatasetFirstNConfig(first_n=10_000),
             ),
             energy_loss_scale=1.0,
             force_loss_scale=14.0,
