@@ -78,6 +78,7 @@ def profiling_config_(config: M.PretrainConfig):
     config.trainer.max_epochs = 1
 
     config.trainer.callbacks.append(ll.callbacks.EpochTimerConfig())
+    config.trainer.callbacks.append(ll.callbacks.FiniteChecksConfig())
 
 
 def _print_dataset_sizes(config: M.PretrainConfig):
@@ -144,4 +145,4 @@ def run(config: M.PretrainConfig, model_cls: type[M.PretrainModel]):
 
 # %%
 runner = ll.Runner(run)
-runner.session(configs, snapshot=False, env={"CUDA_VISIBLE_DEVICES": "0,1"})
+runner.session(configs, snapshot=False, env={"CUDA_VISIBLE_DEVICES": "0"})
