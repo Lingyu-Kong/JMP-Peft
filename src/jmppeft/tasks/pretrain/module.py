@@ -121,6 +121,14 @@ BackboneConfig: TypeAlias = Annotated[
 ]
 
 
+class FSDPConfig(TypedConfig):
+    gradient_checkpointing: bool
+    """Whether to use gradient checkpointing."""
+
+    cpu_offload: bool
+    """Whether to offload the optimizer state to the CPU."""
+
+
 class PretrainConfig(BaseConfig):
     optimizer: OptimizerConfig
     """Optimizer to use."""
@@ -214,8 +222,10 @@ class PretrainConfig(BaseConfig):
     ema: EMAConfig | None = None
     """Configuration for the exponential moving average."""
 
-    fsdp: bool = False
-    """Whether to use FSDP for this task."""
+    fsdp: FSDPConfig | None = None
+    """Configuration for the Fully Sharded Data Parallel (FSDP) strategy."""
+
+    gradient_checkpointing: bool = False
 
     global_train_sample_ratio: DatasetSampleRatioConfig | None = None
     global_val_sample_ratio: DatasetSampleRatioConfig | None = None
@@ -309,6 +319,12 @@ class PretrainConfig(BaseConfig):
                 )
             self.global_val_sample_ratio = None
 
+        if self.gradient_checkpointing:
+            assert not self.fsdp, (
+                "Gradient checkpointing and FSDP are not compatible.\n"
+                "If you want to use gradient checkpointing with FSDP, set `fsdp.gradient_checkpointing=True`."
+            )
+
 
 Data: TypeAlias = Any
 
@@ -400,19 +416,36 @@ class Output(Base[PretrainConfig], nn.Module):
         return E, F
 
 
-class PretrainModel(LightningModuleBase[PretrainConfig]):
-    def _fsdp_strategy(self):
-        from lightning.pytorch.strategies.fsdp import FSDPStrategy
-        from torch.distributed.fsdp.fully_sharded_data_parallel import CPUOffload
+GOCOutput = Output
 
-        layers = None
+
+class PretrainModel(LightningModuleBase[PretrainConfig]):
+    def _ckpt_layers(self) -> set[type[nn.Module]]:
+        layers = set[type[nn.Module]]()
         match self.config.backbone:
             case Graphormer3DConfig():
-                from ...models.graphormer.model import Graphormer3DEncoderLayer, Output
+                from ...models.graphormer.model import (
+                    Graphormer3D,
+                    Graphormer3DEncoderLayer,
+                )
+                from ...models.graphormer.model import (
+                    Output as GraphormerOutput,
+                )
 
-                layers = {nn.Embedding, Graphormer3DEncoderLayer, Output}
+                layers.update(
+                    {
+                        # nn.Embedding,
+                        Graphormer3DEncoderLayer,
+                        # Graphormer3D,
+                        # GraphormerOutput,
+                    }
+                )
             case GOCBackboneConfig():
-                from ...models.gemnet.backbone import InteractionBlock, OutputBlock
+                from ...models.gemnet.backbone import (
+                    GemNetOCBackbone,
+                    InteractionBlock,
+                    OutputBlock,
+                )
                 from ...models.gemnet.bases import Bases
                 from ...models.gemnet.layers.interaction_block import (
                     PairInteraction,
@@ -420,43 +453,79 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                     TripletInteraction,
                 )
 
-                layers = {
-                    nn.Embedding,
-                    Bases,
-                    InteractionBlock,
-                    PairInteraction,
-                    QuadrupletInteraction,
-                    TripletInteraction,
-                    OutputBlock,
-                }
+                layers.update(
+                    {
+                        nn.Embedding,
+                        Bases,
+                        InteractionBlock,
+                        PairInteraction,
+                        QuadrupletInteraction,
+                        TripletInteraction,
+                        OutputBlock,
+                        GemNetOCBackbone,
+                        GOCOutput,
+                    }
+                )
             case TorchMDNetBackboneConfig():
                 from ...models.torchmdnet.backbone import (
                     EquivariantMultiHeadAttention,
                     NeighborEmbedding,
+                    TorchMD_ET,
                 )
-                from ...models.torchmdnet.output import Output
+                from ...models.torchmdnet.output import Output as TorchMDOutput
 
-                layers = {
-                    nn.Embedding,
-                    NeighborEmbedding,
-                    EquivariantMultiHeadAttention,
-                    Output,
-                }
+                layers.update(
+                    {
+                        nn.Embedding,
+                        NeighborEmbedding,
+                        EquivariantMultiHeadAttention,
+                        TorchMD_ET,
+                        TorchMDOutput,
+                    }
+                )
             case _:
                 assert_never(self.config.backbone)
 
-        return FSDPStrategy(
-            cpu_offload=CPUOffload(offload_params=True),
-            state_dict_type="sharded",
-            auto_wrap_policy=layers,
-            activation_checkpointing_policy=layers,
-        )
+        return layers
+
+    @override
+    def setup(self, stage: str):
+        super().setup(stage)
+
+        if self.config.gradient_checkpointing:
+            from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+                CheckpointImpl,
+                apply_activation_checkpointing,
+                checkpoint_wrapper,
+            )
+
+            layer_cls_tuple = tuple(self._ckpt_layers())
+            apply_activation_checkpointing(
+                self,
+                checkpoint_wrapper_fn=partial(
+                    checkpoint_wrapper, checkpoint_impl=CheckpointImpl.NO_REENTRANT
+                ),
+                check_fn=lambda layer: isinstance(layer, layer_cls_tuple),
+            )
 
     def fsdp_trainer_kwargs(self) -> LightningTrainerKwargs:
-        if not self.config.fsdp:
+        if not (config := self.config.fsdp):
             return {}
 
-        return {"strategy": self._fsdp_strategy()}
+        from lightning.pytorch.strategies.fsdp import FSDPStrategy
+        from torch.distributed.fsdp.fully_sharded_data_parallel import CPUOffload
+
+        layers = self._ckpt_layers()
+        strategy = FSDPStrategy(
+            cpu_offload=CPUOffload(offload_params=True) if config.cpu_offload else None,
+            state_dict_type="sharded",
+            auto_wrap_policy=layers,
+            activation_checkpointing_policy=layers
+            if config.gradient_checkpointing
+            else None,
+        )
+
+        return {"strategy": strategy}
 
     @classmethod
     @override

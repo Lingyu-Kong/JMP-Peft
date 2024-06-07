@@ -1,6 +1,7 @@
 # %%
 import ll
 from jmppeft.configs.pretrain.tasks import tasks_config_frontier_
+from jmppeft.models.gemnet.config import BackboneConfig
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.pretrain import module as M
 
@@ -48,20 +49,13 @@ def base_config_(config: M.PretrainConfig):
 
 
 def backbone_config_(config: M.PretrainConfig):
-    backbone = M.Graphormer3DConfig.draft()
-    backbone.graphormer_large_()
-    config.backbone = backbone.finalize()
+    # Set backbone config
+    config.backbone = BackboneConfig.large()
+    config.backbone.scale_basis = False
 
 
 def fsdp_config_(config: M.PretrainConfig):
-    config.fsdp = M.FSDPConfig(
-        gradient_checkpointing=True,
-        cpu_offload=True,
-    )
-
-
-def gradient_checkpointing_config_(config: M.PretrainConfig):
-    config.gradient_checkpointing = True
+    config.fsdp = True
 
 
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
@@ -70,8 +64,7 @@ config = M.PretrainConfig.draft()
 base_config_(config)
 tasks_config_frontier_(config)
 backbone_config_(config)
-# fsdp_config_(config)
-gradient_checkpointing_config_(config)
+fsdp_config_(config)
 
 config.batch_size = 8
 config = config.finalize()

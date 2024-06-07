@@ -74,24 +74,28 @@ class Graphormer3DConfig(BackboneConfigBase):
     def activation(self):
         return "gelu"
 
-    @classmethod
-    def base_architecture(cls):
+    def graphormer_base_(self):
         """Default base architecture configuration."""
-        return cls(
-            layers=12,
-            blocks=4,
-            embed_dim=768,
-            ffn_embed_dim=3072,
-            attention_heads=8,
-            dropout=0.1,
-            attention_dropout=0.1,
-            activation_dropout=0.1,
-            node_loss_weight=15.0,
-            min_node_loss_weight=1.0,
-            num_kernel=128,
-            input_dropout=0.0,
-            eng_loss_weight=1.0,
-        )
+        self.layers = 12
+        self.blocks = 4
+        self.embed_dim = 768
+        self.ffn_embed_dim = 3072
+        self.attention_heads = 32
+        self.dropout = 0.1
+        self.attention_dropout = 0.1
+        self.activation_dropout = 0.1
+        self.node_loss_weight = 15.0
+        self.min_node_loss_weight = 1.0
+        self.num_kernel = 128
+        self.input_dropout = 0.0
+        self.eng_loss_weight = 1.0
+
+    def graphormer_large_(self):
+        self.graphormer_base_()
+
+        self.layers = 24
+        self.embed_dim = 1024
+        self.attention_heads = 32
 
     def create_model(self):
         from .model import Graphormer3D

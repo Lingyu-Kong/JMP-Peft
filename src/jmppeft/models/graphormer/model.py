@@ -228,7 +228,8 @@ class Graphormer3D(nn.Module):
 
         K = self.args.num_kernel
 
-        self.gbf: Callable[[Tensor, Tensor], Tensor] = GaussianLayer(K, self.edge_types)
+        # self.gbf: Callable[[Tensor, Tensor], Tensor] = GaussianLayer(K, self.edge_types)
+        self.gbf = RBF(K, self.edge_types)
         self.bias_proj: Callable[[Tensor], Tensor] = NonLinear(
             K, self.args.attention_heads
         )
