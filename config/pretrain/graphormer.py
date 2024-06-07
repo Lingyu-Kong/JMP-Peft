@@ -67,6 +67,9 @@ def gradient_checkpointing_config_(config: M.PretrainConfig):
 def multi_head_loss_trick_config_(config: M.PretrainConfig):
     config.multi_head_loss_trick = True
 
+    config.trainer.optimizer.gradient_clipping = None
+    config.trainer.strategy = "ddp_find_unused_parameters_true"
+
 
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 

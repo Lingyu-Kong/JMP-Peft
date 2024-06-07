@@ -1,5 +1,5 @@
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from functools import cache, partial
 from logging import getLogger
 from typing import Annotated, Any, Literal, TypeAlias, cast
@@ -25,7 +25,7 @@ from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
 from torch_geometric.utils import dropout_edge
 from torchmetrics import SumMetric
-from typing_extensions import assert_never, override
+from typing_extensions import TypeVar, assert_never, override
 
 from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetConfigBase
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset
@@ -419,6 +419,28 @@ class Output(Base[PretrainConfig], nn.Module):
         return E, F
 
 
+TItem = TypeVar("TItem", infer_variance=True)
+
+
+def aslist(x: TItem | Iterable[TItem] | None) -> list[TItem]:
+    if x is None:
+        return []
+
+    if not isinstance(x, Iterable):
+        return [x]
+    return list(x)
+
+
+TReturn = TypeVar("TReturn", infer_variance=True)
+
+
+def foreach(
+    f: Callable[[TItem], TReturn], xs: TItem | Iterable[TItem] | None
+) -> list[TReturn]:
+    xs_list = aslist(xs)
+    return [f(x) for x in xs_list]
+
+
 GOCOutput = Output
 
 
@@ -614,7 +636,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 task_steps[task.name] = metric
             self.task_steps = TypedModuleDict(task_steps)
 
-        if self.multi_head_loss_trick:
+        if self.config.multi_head_loss_trick:
             self.automatic_optimization = False
 
     def backbone_state_dict(self):
@@ -750,12 +772,12 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
     ):
         match reduction:
             case "sum":
-                loss = reduce(loss, "b t -> ", "sum")
+                loss = reduce(loss, "... -> ", "sum")
             case "mean":
-                # loss = reduce(loss, "b t -> ", "sum") / reduce(mask, "b t -> ", "sum")
+                # loss = reduce(loss, "... -> ", "sum") / reduce(mask, "... -> ", "sum")
                 loss = self._safe_divide(
-                    reduce(loss, "b t -> ", "sum"),
-                    reduce(mask, "b t -> ", "sum"),
+                    reduce(loss, "... -> ", "sum"),
+                    reduce(mask, "... -> ", "sum"),
                 )
             case _:
                 raise ValueError(f"Unknown redution: {reduction}")
@@ -794,6 +816,14 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         return loss
 
     def _training_step_multi_head_trick(self, data: Data, batch_idx: int):
+        # Ref: https://arxiv.org/pdf/2404.19737
+        assert self.config.multi_head_loss_trick
+        assert self.config.structurewise_loss_reduction
+        assert not self.automatic_optimization
+        assert not self.config.train_on_free_atoms_only
+
+        foreach(lambda opt: opt.zero_grad(), self.optimizers())
+
         match self.config.backbone:
             case GOCBackboneConfig():
                 raise NotImplementedError
@@ -809,47 +839,162 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 assert isinstance(output := self.output, GraphormerOutput)
 
                 backbone_out = cast(GraphormerBackboneOutput, self.backbone(data))
+                z = backbone_out["output"]
+                d_energy = z.detach()
+                d_energy.requires_grad = True
+                backbone_out["output"] = d_energy
+
                 dense_data: DenseData = data.jmp_dense_data
 
-                padding_mask = dense_data["atoms"].eq(0)
-                output_mask = dense_data["real_mask"] & ~padding_mask
+                dense_padding_mask = dense_data["atoms"].eq(0)
+                dense_output_mask = dense_data["real_mask"] & ~dense_padding_mask
 
                 energy_list: list[tc.Float[torch.Tensor, "b"]] = []
-
-                for out_energy, task in zip(output.out_energy, output.task_configs):
-                    energy = output._compute_energy(
-                        out_energy, backbone_out, output_mask
+                for task_idx, (out_energy, task) in enumerate(
+                    zip(output.out_energy, output.task_configs)
+                ):
+                    energy_loss = self._multi_head_trick_energy_loss(
+                        data,
+                        output,
+                        backbone_out,
+                        dense_output_mask,
+                        energy_list,
+                        task_idx,
+                        out_energy,
+                        task,
                     )
-                    # Energy should be the same shape as data.y (except for the task dim)
-                    assert (
-                        energy.shape == data.y.shape[:-1]
-                    ), f"{energy.shape=} != {data.y.shape[:-1]=}"
 
-                    energy_list.append(energy)
+                    self.manual_backward(energy_loss)
 
-                E, _ = pack(energy_list, "bsz *")
+                energies, _ = pack(energy_list, "bsz *")
                 del energy_list
 
-                forces_list: list[tc.Float[torch.Tensor, "n_sparse 3"]] = []
-                for out_forces, task in zip(output.out_forces, output.task_configs):
-                    forces = output._compute_forces(
-                        out_forces, backbone_out, output_mask
+                d_force = z.detach()
+                d_force.requires_grad = True
+                backbone_out["output"] = d_force
+
+                forces_list: list[tc.Float[torch.Tensor, "n 3"]] = []
+                for task_idx, (out_forces, task) in enumerate(
+                    zip(output.out_forces, output.task_configs)
+                ):
+                    force_loss = self._multi_head_trick_force_loss(
+                        data,
+                        output,
+                        backbone_out,
+                        dense_output_mask,
+                        task_idx,
+                        task,
+                        forces_list,
+                        out_forces,
                     )
-                    # Forces should be the same shape as data.pos
-                    assert (
-                        forces.shape == data.pos.shape
-                    ), f"{forces.shape=} != {data.pos.shape=}"
 
-                    forces_list.append(forces)
+                    self.manual_backward(force_loss)
 
-                F, _ = pack(forces_list, "n_atoms p *")
+                forces, _ = pack(forces_list, "n_atoms p *")
                 del forces_list
 
-                return E, F
+                self.manual_backward(z, gradient=d.grad)
+
             case TorchMDNetBackboneConfig():
                 raise NotImplementedError
             case _:
                 assert_never(self.config.backbone)
+
+        foreach(lambda opt: opt.step(), self.optimizers())
+        foreach(lambda lr_scheduler: lr_scheduler.step(), self.lr_schedulers())
+
+        with torch.no_grad():
+            self.log_dict(self.train_metrics(data, energy=energies, forces=forces))
+
+    def _multi_head_trick_force_loss(
+        self,
+        data,
+        output,
+        backbone_out,
+        dense_output_mask,
+        task_idx,
+        task,
+        forces_list,
+        out_forces,
+    ):
+        forces = output._compute_forces(
+            out_forces,
+            backbone_out,
+            dense_output_mask,
+        )
+        tc.tassert(tc.Float[torch.Tensor, "n 3"], forces)
+        forces_list.append(forces.detach())  # keep for metrics
+
+        # Compute the force loss for this task
+        task_mask = data.task_mask[:, task_idx]
+        tc.tassert(tc.Bool[torch.Tensor, "b"], task_mask)
+        task_mask = task_mask[data.batch]
+        tc.tassert(tc.Bool[torch.Tensor, "n"], task_mask)
+
+        force_target = data.force[:, :, task_idx]
+        tc.tassert(tc.Float[torch.Tensor, "n 3"], force_target)
+
+        force_loss = F.pairwise_distance(forces, force_target, p=2.0)
+        force_loss = force_loss.masked_fill(~task_mask, 0.0)
+        tc.tassert(tc.Float[torch.Tensor, "n"], force_loss)
+
+        if self.config.structurewise_loss_reduction:
+            # Compute the per-structure force loss
+            force_loss = scatter(force_loss, data.batch, dim=0, reduce="sum")
+            tc.tassert(tc.Float[torch.Tensor, "b"], force_loss)
+            task_mask_natoms = scatter(
+                task_mask.float(), data.batch, dim=0, reduce="sum"
+            )
+            tc.tassert(tc.Float[torch.Tensor, "b"], task_mask_natoms)
+            force_loss = self._safe_divide(force_loss, task_mask_natoms)
+            tc.tassert(tc.Float[torch.Tensor, "b"], force_loss)
+
+            task_mask = task_mask_natoms > 0.0  # (b, t)
+            tc.tassert(tc.Bool[torch.Tensor, "b"], task_mask)
+
+        force_loss = self._reduce_loss(
+            force_loss,
+            task_mask,
+            reduction=self.config.force_loss_reduction,
+        )
+        force_loss = force_loss * task.force_loss_scale
+        return force_loss
+
+    def _multi_head_trick_energy_loss(
+        self,
+        data,
+        output,
+        backbone_out,
+        dense_output_mask,
+        energy_list,
+        task_idx,
+        out_energy,
+        task,
+    ):
+        energy_pred = output._compute_energy(
+            out_energy,
+            backbone_out,
+            dense_output_mask,
+        )
+        tc.tassert(tc.Float[torch.Tensor, "b"], energy_pred)
+        energy_list.append(energy_pred.detach())  # keep for metrics
+
+        # Compute the energy loss for this task
+        task_mask = data.task_mask[:, task_idx]
+        tc.tassert(tc.Bool[torch.Tensor, "b"], task_mask)
+
+        energy_target = data.y[:, task_idx]
+        tc.tassert(tc.Float[torch.Tensor, "b"], energy_target)
+
+        energy_loss = F.l1_loss(energy_pred, energy_target, reduction="none")
+        energy_loss = energy_loss.masked_fill(~task_mask, 0.0)
+        energy_loss = self._reduce_loss(
+            energy_loss,
+            task_mask,
+            reduction=self.config.energy_loss_reduction,
+        )
+        energy_loss = energy_loss * task.energy_loss_scale
+        return energy_loss
 
     def _training_step_regular(self, batch: Data, batch_idx: int):
         energy, forces = self(batch)
@@ -863,7 +1008,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
     @override
     def training_step(self, batch: Data, batch_idx: int):
         with self.log_context(prefix="train/"):
-            if not self.multi_head_loss_trick:
+            if not self.config.multi_head_loss_trick:
                 return self._training_step_regular(batch, batch_idx)
             else:
                 return self._training_step_multi_head_trick(batch, batch_idx)
