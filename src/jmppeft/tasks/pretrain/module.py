@@ -4,6 +4,7 @@ from functools import cache, partial
 from logging import getLogger
 from typing import Annotated, Any, Literal, TypeAlias, cast
 
+import ll.typecheck as tc
 import numpy as np
 import torch
 import torch.nn as nn
@@ -226,6 +227,8 @@ class PretrainConfig(BaseConfig):
     """Configuration for the Fully Sharded Data Parallel (FSDP) strategy."""
 
     gradient_checkpointing: bool = False
+
+    multi_head_loss_trick: bool = False
 
     global_train_sample_ratio: DatasetSampleRatioConfig | None = None
     global_val_sample_ratio: DatasetSampleRatioConfig | None = None
@@ -455,32 +458,33 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
                 layers.update(
                     {
-                        nn.Embedding,
-                        Bases,
+                        # nn.Embedding,
+                        # Bases,
                         InteractionBlock,
-                        PairInteraction,
-                        QuadrupletInteraction,
-                        TripletInteraction,
+                        # PairInteraction,
+                        # QuadrupletInteraction,
+                        # TripletInteraction,
                         OutputBlock,
-                        GemNetOCBackbone,
-                        GOCOutput,
+                        # GemNetOCBackbone,
+                        # GOCOutput,
                     }
                 )
             case TorchMDNetBackboneConfig():
                 from ...models.torchmdnet.backbone import (
                     EquivariantMultiHeadAttention,
-                    NeighborEmbedding,
-                    TorchMD_ET,
                 )
+
+                # NeighborEmbedding,
+                # TorchMD_ET,
                 from ...models.torchmdnet.output import Output as TorchMDOutput
 
                 layers.update(
                     {
-                        nn.Embedding,
-                        NeighborEmbedding,
+                        # nn.Embedding,
+                        # NeighborEmbedding,
                         EquivariantMultiHeadAttention,
-                        TorchMD_ET,
-                        TorchMDOutput,
+                        # TorchMD_ET,
+                        # TorchMDOutput,
                     }
                 )
             case _:
@@ -609,6 +613,9 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 metric.persistent(True)
                 task_steps[task.name] = metric
             self.task_steps = TypedModuleDict(task_steps)
+
+        if self.multi_head_loss_trick:
+            self.automatic_optimization = False
 
     def backbone_state_dict(self):
         state_dict = {
@@ -786,15 +793,80 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         return loss
 
+    def _training_step_multi_head_trick(self, data: Data, batch_idx: int):
+        match self.config.backbone:
+            case GOCBackboneConfig():
+                raise NotImplementedError
+            case Graphormer3DConfig():
+                from ...models.graphormer.model import (
+                    DenseData,
+                    GraphormerBackboneOutput,
+                )
+                from ...models.graphormer.model import (
+                    Output as GraphormerOutput,
+                )
+
+                assert isinstance(output := self.output, GraphormerOutput)
+
+                backbone_out = cast(GraphormerBackboneOutput, self.backbone(data))
+                dense_data: DenseData = data.jmp_dense_data
+
+                padding_mask = dense_data["atoms"].eq(0)
+                output_mask = dense_data["real_mask"] & ~padding_mask
+
+                energy_list: list[tc.Float[torch.Tensor, "b"]] = []
+
+                for out_energy, task in zip(output.out_energy, output.task_configs):
+                    energy = output._compute_energy(
+                        out_energy, backbone_out, output_mask
+                    )
+                    # Energy should be the same shape as data.y (except for the task dim)
+                    assert (
+                        energy.shape == data.y.shape[:-1]
+                    ), f"{energy.shape=} != {data.y.shape[:-1]=}"
+
+                    energy_list.append(energy)
+
+                E, _ = pack(energy_list, "bsz *")
+                del energy_list
+
+                forces_list: list[tc.Float[torch.Tensor, "n_sparse 3"]] = []
+                for out_forces, task in zip(output.out_forces, output.task_configs):
+                    forces = output._compute_forces(
+                        out_forces, backbone_out, output_mask
+                    )
+                    # Forces should be the same shape as data.pos
+                    assert (
+                        forces.shape == data.pos.shape
+                    ), f"{forces.shape=} != {data.pos.shape=}"
+
+                    forces_list.append(forces)
+
+                F, _ = pack(forces_list, "n_atoms p *")
+                del forces_list
+
+                return E, F
+            case TorchMDNetBackboneConfig():
+                raise NotImplementedError
+            case _:
+                assert_never(self.config.backbone)
+
+    def _training_step_regular(self, batch: Data, batch_idx: int):
+        energy, forces = self(batch)
+
+        loss = self.compute_losses(batch, energy=energy, forces=forces)
+        with torch.no_grad():
+            self.log_dict(self.train_metrics(batch, energy=energy, forces=forces))
+
+        return loss
+
     @override
     def training_step(self, batch: Data, batch_idx: int):
         with self.log_context(prefix="train/"):
-            energy, forces = self(batch)
-
-            loss = self.compute_losses(batch, energy=energy, forces=forces)
-            self.log_dict(self.train_metrics(batch, energy=energy, forces=forces))
-
-            return loss
+            if not self.multi_head_loss_trick:
+                return self._training_step_regular(batch, batch_idx)
+            else:
+                return self._training_step_multi_head_trick(batch, batch_idx)
 
     @override
     def validation_step(self, batch: Data, batch_idx: int):

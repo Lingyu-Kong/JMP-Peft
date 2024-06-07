@@ -64,6 +64,10 @@ def gradient_checkpointing_config_(config: M.PretrainConfig):
     config.gradient_checkpointing = True
 
 
+def multi_head_loss_trick_config_(config: M.PretrainConfig):
+    config.multi_head_loss_trick = True
+
+
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 
 config = M.PretrainConfig.draft()
@@ -71,7 +75,8 @@ base_config_(config)
 tasks_config_frontier_(config)
 backbone_config_(config)
 # fsdp_config_(config)
-gradient_checkpointing_config_(config)
+# gradient_checkpointing_config_(config)
+multi_head_loss_trick_config_(config)
 
 config.batch_size = 8
 config = config.finalize()
