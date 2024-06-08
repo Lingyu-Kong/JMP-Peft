@@ -5,7 +5,6 @@ from logging import getLogger
 from typing import Annotated, Any, Literal, TypeAlias, cast
 
 import ll.typecheck as tc
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -126,8 +125,13 @@ class FSDPConfig(TypedConfig):
     gradient_checkpointing: bool
     """Whether to use gradient checkpointing."""
 
-    cpu_offload: bool
+    cpu_offload: bool = False
     """Whether to offload the optimizer state to the CPU."""
+
+    sharding_strategy: Literal[
+        "FULL_SHARD", "SHARD_GRAD_OP", "NO_SHARD", "HYBRID_SHARD"
+    ] = "HYBRID_SHARD"
+    """Sharding strategy to use."""
 
 
 class PretrainConfig(BaseConfig):
@@ -549,6 +553,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             activation_checkpointing_policy=layers
             if config.gradient_checkpointing
             else None,
+            sharding_strategy=config.sharding_strategy,
         )
 
         return {"strategy": strategy}
@@ -840,9 +845,9 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
                 backbone_out = cast(GraphormerBackboneOutput, self.backbone(data))
                 z = backbone_out["output"]
-                d_energy = z.detach()
-                d_energy.requires_grad = True
-                backbone_out["output"] = d_energy
+                d = z.detach()
+                d.requires_grad = True
+                backbone_out["output"] = d
 
                 dense_data: DenseData = data.jmp_dense_data
 
@@ -868,10 +873,6 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
                 energies, _ = pack(energy_list, "bsz *")
                 del energy_list
-
-                d_force = z.detach()
-                d_force.requires_grad = True
-                backbone_out["output"] = d_force
 
                 forces_list: list[tc.Float[torch.Tensor, "n 3"]] = []
                 for task_idx, (out_forces, task) in enumerate(

@@ -149,9 +149,11 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 runner = ll.Runner(run)
 runner.session(
     configs,
-    snapshot=True,
+    snapshot=False,
     env={"CUDA_VISIBLE_DEVICES": "0"},
-    setup_commands=["source /ccs/home/nimashoghi/repositories/jmp-peft/rocm53.sh"],
+    setup_commands=[
+        "source /lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/rocm60.sh"
+    ],
 )
 
 # %%

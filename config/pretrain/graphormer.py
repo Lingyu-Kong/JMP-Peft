@@ -38,7 +38,7 @@ def base_config_(config: M.PretrainConfig):
 
     # Set data config
     config.batch_size = 8
-    config.num_workers = 8
+    config.num_workers = 4
 
     # Set up the JMP MT dataset config and tasks
     config.mt_dataset = M.MTDatasetConfig(
@@ -47,16 +47,22 @@ def base_config_(config: M.PretrainConfig):
     )
 
 
+def frontier_compute_node_config_(config: M.PretrainConfig):
+    if config.trainer.logging.wandb:
+        config.trainer.logging.wandb.offline = True
+
+
 def backbone_config_(config: M.PretrainConfig):
     backbone = M.Graphormer3DConfig.draft()
     backbone.graphormer_large_()
+    backbone.layers *= 3
     config.backbone = backbone.finalize()
 
 
 def fsdp_config_(config: M.PretrainConfig):
     config.fsdp = M.FSDPConfig(
         gradient_checkpointing=True,
-        cpu_offload=True,
+        cpu_offload=False,
     )
 
 
@@ -68,18 +74,18 @@ def multi_head_loss_trick_config_(config: M.PretrainConfig):
     config.multi_head_loss_trick = True
 
     config.trainer.optimizer.gradient_clipping = None
-    config.trainer.strategy = "ddp_find_unused_parameters_true"
 
 
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 
 config = M.PretrainConfig.draft()
 base_config_(config)
+frontier_compute_node_config_(config)
 tasks_config_frontier_(config)
 backbone_config_(config)
-# fsdp_config_(config)
+fsdp_config_(config)
 # gradient_checkpointing_config_(config)
-multi_head_loss_trick_config_(config)
+# multi_head_loss_trick_config_(config)
 
 config.batch_size = 8
 config = config.finalize()
@@ -99,10 +105,19 @@ runner = ll.Runner(run)
 runner.fast_dev_run_session(
     configs,
     n_batches=128,
+    # gpus=[0, 1, 2, 3],
+    # env={
+    #     "HSA_XNACK": "1",
+    # },
     setup_commands=[
-        "source /lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/rocm53.sh"
+        "source /lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/rocm60.sh"
     ],
 )
+
+
+# %%
+runner = ll.Runner(run)
+runner.fast_dev_run(configs, n_batches=128)
 
 # %%
 runner = ll.Runner(run)
