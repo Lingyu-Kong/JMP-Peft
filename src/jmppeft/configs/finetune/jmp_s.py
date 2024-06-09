@@ -20,8 +20,6 @@ def jmp_s_ft_config_(
     # Set the model trainer settings for maximum performance
     config.trainer.precision = "bf16-mixed" if use_bf16 else "fp16-mixed"
     config.trainer.set_float32_matmul_precision = "medium"
-    config.trainer.supports_parameter_hooks = False
-    config.trainer.supports_skip_batch_exception = False
 
     # Set backbone config
     config.backbone = BackboneConfig.base()

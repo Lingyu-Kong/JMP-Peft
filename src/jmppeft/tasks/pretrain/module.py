@@ -1,15 +1,19 @@
+import copy
 import math
 from collections.abc import Callable, Iterable
 from functools import cache, partial
 from logging import getLogger
 from typing import Annotated, Any, Literal, TypeAlias, cast
 
+import ll
 import ll.typecheck as tc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchmetrics
 from einops import pack, rearrange, reduce
 from jmppeft.modules.torch_scatter_polyfill import scatter
+from lightning.fabric.utilities.apply_func import move_data_to_device
 from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
     OptimizerLRSchedulerConfig,
@@ -230,6 +234,8 @@ class PretrainConfig(BaseConfig):
     fsdp: FSDPConfig | None = None
     """Configuration for the Fully Sharded Data Parallel (FSDP) strategy."""
 
+    perf_metrics: bool = False
+
     gradient_checkpointing: bool = False
 
     multi_head_loss_trick: bool = False
@@ -421,6 +427,24 @@ class Output(Base[PretrainConfig], nn.Module):
         F, _ = pack(forces_list, "n_atoms p *")
 
         return E, F
+
+
+class PerfMetrics(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.total_num_systems = torchmetrics.SumMetric()
+        self.total_num_atoms = torchmetrics.SumMetric()
+
+    @override
+    def forward(self, batch: Batch):
+        self.total_num_systems(batch.y.shape[0])
+        self.total_num_atoms(batch.atomic_numbers.shape[0])
+
+        return {
+            "total_num_systems": self.total_num_systems,
+            "total_num_atoms": self.total_num_atoms,
+        }
 
 
 TItem = TypeVar("TItem", infer_variance=True)
@@ -624,6 +648,8 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             denormalize=any(task.normalization for task in self.config.tasks),
             free_atoms_only=self.config.eval_on_free_atoms_only,
         )
+        if self.config.perf_metrics:
+            self.train_perf_metrics = PerfMetrics()
 
         # GemNet-OC re-uses some parameters at every layer.
         # We need to make sure that these parameters' gradients are
@@ -906,6 +932,20 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         with torch.no_grad():
             self.log_dict(self.train_metrics(data, energy=energies, forces=forces))
+            if self.config.perf_metrics:
+                metrics_dict: dict[str, torchmetrics.SumMetric] = (
+                    self.train_perf_metrics(data)
+                )
+                if self.should_update_logs:
+                    # We only log the metrics if we're updating the logs because we need to
+                    # synchronize the logs across all processes.
+                    self.log_dict(
+                        {
+                            name: metric.compute()
+                            for name, metric in metrics_dict.items()
+                        },
+                        sync_dist=True,
+                    )
 
     def _multi_head_trick_force_loss(
         self,
@@ -1172,15 +1212,17 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         )
         return data_loader
 
-    @override
-    def val_dataloader(self):
+    def _val_dataloader(self, with_sampler: bool):
         dataset = self.val_dataset()
-        sampler = self.distributed_sampler(dataset, shuffle=self.config.shuffle_val)
-        batch_sampler = BalancedBatchSampler(
-            sampler,
-            batch_size=self.config.batch_size,
-            device=self.device,
-        )
+        if with_sampler:
+            sampler = self.distributed_sampler(dataset, shuffle=self.config.shuffle_val)
+            batch_sampler = BalancedBatchSampler(
+                sampler,
+                batch_size=self.config.batch_size,
+                device=self.device,
+            )
+        else:
+            batch_sampler = None
         data_loader = DataLoader(
             dataset,
             batch_sampler=batch_sampler,
@@ -1189,6 +1231,10 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             pin_memory=self.config.pin_memory,
         )
         return data_loader
+
+    @override
+    def val_dataloader(self):
+        return self._val_dataloader(with_sampler=True)
 
     def _task_config(self, name: str):
         return next((task for task in self.config.tasks if task.name == name), None)
@@ -1512,3 +1558,25 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             filter_src_pos_by_tag=None,
             no_copy_tag=None,
         )
+
+    # @property
+    # @cache
+    # def flops_per_batch(self):
+    #     # Let's take a copy of the model so we don't modify the original
+    #     module = copy.deepcopy(self)
+
+    #     # Make sure the model is on the CPU
+    #     module.cpu()
+
+    #     # Things should still be on the CPU here
+    #     batch = next(iter(module._val_dataloader(with_sampler=False)))
+    #     batch = move_data_to_device(batch, torch.device("cpu"))
+
+    #     def loss_fn(model_output: tuple[torch.Tensor, torch.Tensor]):
+    #         energy, forces = model_output
+    #         return module.compute_losses(batch, energy=energy, forces=forces)
+
+    #     return ll._experimental.measure_flops(
+    #         lambda: module(batch),
+    #         loss_fn=loss_fn,
+    #     )

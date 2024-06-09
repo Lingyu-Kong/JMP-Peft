@@ -11,8 +11,6 @@ def base_config_(config: M.PretrainConfig):
     # Set the model trainer settings for maximum performance
     config.trainer.precision = "16-mixed-auto"
     config.trainer.set_float32_matmul_precision = "medium"
-    config.trainer.supports_parameter_hooks = False
-    config.trainer.supports_skip_batch_exception = False
 
     # Optimizer settings
     config.optimizer = AdamWConfig(

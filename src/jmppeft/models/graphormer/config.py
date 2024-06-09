@@ -97,6 +97,13 @@ class Graphormer3DConfig(BackboneConfigBase):
         self.embed_dim = 1024
         self.attention_heads = 32
 
+    def graphormer_extra_large_(self):
+        self.graphormer_large_()
+
+        self.layers = 48
+        self.embed_dim = 2048
+        self.attention_heads = 32
+
     def create_model(self):
         from .model import Graphormer3D
 
