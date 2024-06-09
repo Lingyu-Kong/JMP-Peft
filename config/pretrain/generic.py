@@ -1,4 +1,5 @@
 # %%
+from pathlib import Path
 from typing import Literal
 
 import ll
@@ -6,7 +7,20 @@ from jmppeft.configs.pretrain.tasks import tasks_config_perlmutter_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.pretrain import module as M
 
-PROJECT_ROOT = "/global/cfs/cdirs/m3641/Nima/projdata/jmp-pretrain"
+if True:
+    PROJECT_ROOT = Path("/global/cfs/cdirs/m3641/Nima/projdata/jmp-pretrain")
+    setup_commands = []
+    env = {"LL_DISABLE_TYPECHECKING": "1"}
+else:
+    PROJECT_ROOT = Path(
+        "/lustre/orion/mat265/world-shared/nimashoghi/projectdata/jmppeft-realruns-6_10"
+    )
+    PROJECT_ROOT.mkdir(exist_ok=True, parents=True)
+
+    setup_commands = [
+        "source /lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/rocm53.sh"
+    ]
+    env = {"LL_DISABLE_TYPECHECKING": "1"}
 
 
 def base_config_(config: M.PretrainConfig):
@@ -138,9 +152,6 @@ def run(config: M.PretrainConfig, model_cls: type[M.PretrainModel]):
     trainer = ll.Trainer(config, **model.fsdp_trainer_kwargs())
     trainer.fit(model)
 
-
-setup_commands = []
-env = {"LL_DISABLE_TYPECHECKING": "1"}
 
 # %%
 runner = ll.Runner(run)
