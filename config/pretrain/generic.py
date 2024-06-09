@@ -8,7 +8,8 @@ from jmppeft.configs.pretrain.tasks import tasks_config_perlmutter_
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.pretrain import module as M
 
-if True:
+perlmutter = True
+if perlmutter:
     PROJECT_ROOT = Path("/global/cfs/cdirs/m3641/Nima/projdata/jmp-pretrain")
     setup_commands = []
     env = {"LL_DISABLE_TYPECHECKING": "1"}
@@ -135,7 +136,7 @@ backbone_config_fns = (graphormer_backbone_config_, goc_backbone_config_)
 
 for variant, backbone_config_ in itertools.product(variants, backbone_config_fns):
     # Testing
-    if (variant, backbone_config_) != ("base", goc_backbone_config_):
+    if (variant, backbone_config_) != ("base", graphormer_backbone_config_):
         continue
 
     config = M.PretrainConfig.draft()
@@ -147,7 +148,11 @@ for variant, backbone_config_ in itertools.product(variants, backbone_config_fns
     gradient_checkpointing_config_(config)
     profiling_config_(config)
     config.with_project_root_(PROJECT_ROOT)
-    config.project = "jmp-pretrain-perlmutter"
+    config.project = "jmp-pretrain"
+    if perlmutter:
+        config.project += "-perlmutter"
+    else:
+        config.project += "-frontier"
 
     config.batch_size = 8
     config.num_workers = 4
@@ -185,25 +190,98 @@ runner.fast_dev_run_session(
 from datetime import timedelta
 
 
-def frontier_nodes_to_max_walltime(nodes: int) -> timedelta:
-    if 1 <= nodes <= 91:
-        return timedelta(hours=2.0)
-    elif 92 <= nodes <= 183:
-        return timedelta(hours=6.0)
-    else:
-        return timedelta(hours=12.0)
-
-
-def compute_cpus_per_task(
+def submit_frontier(
+    runner: ll.Runner[M.PretrainConfig, None, type[M.PretrainModel]],
     configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]],
+    debug: bool = False,
+    *,
+    nodes: int,
+    tasks_per_node: int = 8,
+    name: str | None = None,
+    print_command: bool = False,
+    setup_commands: list[str] = [],
+    env: dict[str, str] = {},
 ):
-    # Max `num_workers` + 1 for the main process
-    max_num_workers = max(config.num_workers for config, _ in configs)
-    return max_num_workers + 1
+    def compute_cpus_per_task(
+        configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]],
+    ):
+        # Max `num_workers` + 1 for the main process
+        max_num_workers = max(config.num_workers for config, _ in configs)
+        return max_num_workers + 1
 
+    def nodes_to_max_walltime(nodes: int) -> timedelta:
+        if 1 <= nodes <= 91:
+            return timedelta(hours=2.0)
+        elif 92 <= nodes <= 183:
+            return timedelta(hours=6.0)
+        else:
+            return timedelta(hours=12.0)
+
+    kwargs = {}
+    if name is not None:
+        kwargs["name"] = name
+    if debug:
+        kwargs["qos"] = "debug"
+    return runner.submit_slurm(
+        configs,
+        snapshot=True,
+        account="mat265",
+        partition="batch",
+        nodes=nodes,
+        tasks_per_node=tasks_per_node,
+        cpus_per_task=compute_cpus_per_task(configs_copy),
+        walltime=nodes_to_max_walltime(nodes),
+        setup_commands=setup_commands,
+        env=env,
+        print_command=print_command,
+        **kwargs,
+    )
+
+
+def submit_perlmutter(
+    runner: ll.Runner[M.PretrainConfig, None, type[M.PretrainModel]],
+    configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]],
+    debug: bool = False,
+    *,
+    nodes: int,
+    tasks_per_node: int = 4,
+    name: str | None = None,
+    print_command: bool = False,
+    setup_commands: list[str] = [],
+    env: dict[str, str] = {},
+):
+    def compute_cpus_per_task(
+        configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]],
+    ):
+        # Max `num_workers` + 1 for the main process
+        max_num_workers = max(config.num_workers for config, _ in configs)
+        return max_num_workers + 1
+
+    kwargs = {}
+    if name is not None:
+        kwargs["name"] = name
+    return runner.submit_slurm(
+        configs,
+        snapshot=True,
+        account="m3641_g",
+        qos="preempt" if not debug else "debug_preempt",
+        constraint="gpu",
+        nodes=nodes,
+        tasks_per_node=tasks_per_node,
+        cpus_per_task=compute_cpus_per_task(configs_copy),
+        gpus_per_task=1,  # Perlmutter has 4 GPUs per node
+        walltime=timedelta(hours=24.0) if not debug else timedelta(hours=0.5),
+        setup_commands=setup_commands,
+        env=env,
+        print_command=print_command,
+        **kwargs,
+    )
+
+
+submit = submit_perlmutter if perlmutter else submit_frontier
 
 nodes_list = [1, 8, 64, 128]
-nodes_list = [1, 8]
+nodes_list = [1]
 
 commands: list[str] = []
 for nodes in nodes_list:
@@ -215,18 +293,13 @@ for nodes in nodes_list:
 
     runner = ll.Runner(run)
     commands.append(
-        runner.submit_slurm(
+        submit(
+            runner,
             configs_copy,
-            snapshot=True,
-            account="mat265",
-            partition="batch",
-            # qos="debug",
+            debug=True,
             nodes=nodes,
-            tasks_per_node=8,  # frontier has 8 GPUs per node
-            cpus_per_task=compute_cpus_per_task(configs_copy),
-            walltime=frontier_nodes_to_max_walltime(nodes),
             setup_commands=setup_commands,
-            name=f"graphormer_n{nodes}",
+            env=env,
             print_command=False,
         ).command
     )
