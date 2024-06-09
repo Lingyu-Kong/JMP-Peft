@@ -4,7 +4,7 @@ from ...modules.dataset.common import DatasetFirstNConfig, DatasetSampleRatioCon
 from ...tasks.pretrain import module as M
 
 
-def tasks_config_frontier_(
+def tasks_config_frontier_old_(
     config: M.PretrainConfig,
     sample_seed: int = 0,
 ):
@@ -17,18 +17,18 @@ def tasks_config_frontier_(
             name="oc20",
             train_dataset=M.PretrainDatasetConfig(
                 src=Path(
-                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/s2ef/2M/train/"
+                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/2M/train/"
                 ),
                 metadata_path=Path(
-                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/s2ef/2M/train/metadata.npz"
+                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/2M/train/metadata.npz"
                 ),
             ),
             val_dataset=M.PretrainDatasetConfig(
                 src=Path(
-                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/s2ef/all/val_id/"
+                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/all/val_id/"
                 ),
                 metadata_path=Path(
-                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/s2ef/all/val_id/metadata.npz"
+                    "/lustre/orion/mat265/world-shared/nimashoghi/datasets/oc20/s2ef/all/val_id/metadata.npz"
                 ),
                 first_n=DatasetFirstNConfig(first_n=20_000),
             ),
@@ -228,6 +228,22 @@ def tasks_config_perlmutter_(
     sample_seed: int = 0,
     base_dir: Path = Path("/global/cfs/cdirs/m3641/Nima/datasets/"),
     metadatas_dir: Path = Path("/global/cfs/cdirs/m3641/Nima/metadatas/"),
+):
+    tasks_config_generic_(
+        config=config,
+        sample_seed=sample_seed,
+        base_dir=base_dir,
+        metadatas_dir=metadatas_dir,
+    )
+
+
+def tasks_config_frontier_(
+    config: M.PretrainConfig,
+    sample_seed: int = 0,
+    base_dir: Path = Path("/lustre/orion/mat265/world-shared/nimashoghi/datasets/"),
+    metadatas_dir: Path = Path(
+        "/lustre/orion/mat265/world-shared/nimashoghi/datasets/metadatas/"
+    ),
 ):
     tasks_config_generic_(
         config=config,
