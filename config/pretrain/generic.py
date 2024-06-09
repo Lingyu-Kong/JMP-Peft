@@ -135,7 +135,7 @@ backbone_config_fns = (graphormer_backbone_config_, goc_backbone_config_)
 
 for variant, backbone_config_ in itertools.product(variants, backbone_config_fns):
     # Testing
-    if (variant, backbone_config_) != ("base", graphormer_backbone_config_):
+    if (variant, backbone_config_) != ("base", goc_backbone_config_):
         continue
 
     config = M.PretrainConfig.draft()
@@ -149,7 +149,7 @@ for variant, backbone_config_ in itertools.product(variants, backbone_config_fns
     config.with_project_root_(PROJECT_ROOT)
     config.project = "jmp-pretrain-perlmutter"
 
-    config.batch_size = 2
+    config.batch_size = 8
     config.num_workers = 4
     config = config.finalize()
     configs.append((config, M.PretrainModel))
