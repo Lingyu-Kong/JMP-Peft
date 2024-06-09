@@ -4,11 +4,14 @@ from pathlib import Path
 from typing import Literal
 
 import ll
-from jmppeft.configs.pretrain.tasks import tasks_config_perlmutter_
+from jmppeft.configs.pretrain.tasks import (
+    tasks_config_frontier_,
+    tasks_config_perlmutter_,
+)
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.pretrain import module as M
 
-perlmutter = True
+perlmutter = False
 if perlmutter:
     PROJECT_ROOT = Path("/global/cfs/cdirs/m3641/Nima/projdata/jmp-pretrain")
     setup_commands = []
@@ -141,11 +144,13 @@ for variant, backbone_config_ in itertools.product(variants, backbone_config_fns
 
     config = M.PretrainConfig.draft()
     base_config_(config)
-    tasks_config_perlmutter_(config)
+    if perlmutter:
+        tasks_config_perlmutter_(config)
+    else:
+        tasks_config_frontier_(config)
     # graphormer_backbone_config_(config, variant)
     backbone_config_(config, variant)
     # fsdp_config_(config)
-    gradient_checkpointing_config_(config)
     profiling_config_(config)
     config.with_project_root_(PROJECT_ROOT)
     config.project = "jmp-pretrain"
@@ -154,7 +159,14 @@ for variant, backbone_config_ in itertools.product(variants, backbone_config_fns
     else:
         config.project += "-frontier"
 
-    config.batch_size = 8
+    if variant == "base":
+        config.batch_size = 6
+    elif variant == "large":
+        config.batch_size = 3
+    elif variant == "xl":
+        config.batch_size = 3
+        gradient_checkpointing_config_(config)
+
     config.num_workers = 4
     config = config.finalize()
     configs.append((config, M.PretrainModel))
@@ -281,7 +293,7 @@ def submit_perlmutter(
 submit = submit_perlmutter if perlmutter else submit_frontier
 
 nodes_list = [1, 8, 64, 128]
-nodes_list = [1]
+# nodes_list = [1]
 
 commands: list[str] = []
 for nodes in nodes_list:
@@ -296,11 +308,12 @@ for nodes in nodes_list:
         submit(
             runner,
             configs_copy,
-            debug=True,
+            # debug=True,
             nodes=nodes,
             setup_commands=setup_commands,
             env=env,
             print_command=False,
+            name=f"jmp_n{nodes}",
         ).command
     )
 
