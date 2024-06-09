@@ -2,10 +2,15 @@
 from typing import Literal
 
 import ll
-from jmppeft.configs.pretrain.tasks import tasks_config_frontier_
+from jmppeft.configs.pretrain.tasks import (
+    tasks_config_frontier_,
+    tasks_config_perlmutter_,
+)
 from jmppeft.models.gemnet.config import BackboneConfig
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.pretrain import module as M
+
+PROJECT_ROOT = "/global/cfs/cdirs/m3641/Nima/projdata/jmp-pretrain"
 
 
 def base_config_(config: M.PretrainConfig):
@@ -46,6 +51,8 @@ def base_config_(config: M.PretrainConfig):
         sample_type="temperature",
         sample_temperature=2.0,
     )
+
+    config.with_project_root_(PROJECT_ROOT)
 
 
 def backbone_config_(
@@ -92,7 +99,7 @@ variants = ("base",)
 for variant in variants:
     config = M.PretrainConfig.draft()
     base_config_(config)
-    tasks_config_frontier_(config)
+    tasks_config_perlmutter_(config)
     backbone_config_(config, variant)
     gradient_checkpointing_config_(config)
     # fsdp_config_(config)
@@ -114,9 +121,18 @@ def run(config: M.PretrainConfig, model_cls: type[M.PretrainModel]):
     trainer.fit(model)
 
 
-setup_commands = [
-    "source /lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/rocm53.sh"
-]
+setup_commands = []
+env = {"LL_DISABLE_TYPECHECKING": "1"}
+
+
+# %%
+runner = ll.Runner(run)
+runner.session(
+    configs,
+    snapshot=False,
+    setup_commands=setup_commands,
+    env=env,
+)
 
 # %%
 runner = ll.Runner(run)
@@ -124,11 +140,8 @@ runner.fast_dev_run_session(
     configs,
     n_batches=128,
     setup_commands=setup_commands,
+    env=env,
 )
-
-# %%
-runner = ll.Runner(run)
-runner.session(configs, snapshot=False)
 
 # %%
 from datetime import timedelta

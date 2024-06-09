@@ -45,6 +45,16 @@ class PretrainDatasetConfig(TypedConfig):
                 self.metadata_path.is_file()
             ), f"Could not find atoms metadata in {self.metadata_path=}."
 
+        if self.lin_ref:
+            assert (
+                self.lin_ref.is_file()
+            ), f"Could not find linear reference energies in {self.lin_ref=}."
+
+        if self.oc20_ref:
+            assert (
+                self.oc20_ref.is_file()
+            ), f"Could not find OC20 reference energies in {self.oc20_ref=}."
+
         # If metadata_path is not provided, assume it is src/metadata.npz
         if self.metadata_path is None:
             self.metadata_path = self.src / "metadata.npz"
@@ -159,6 +169,14 @@ class PretrainLmdbDataset(Dataset[BaseData]):
     def __len__(self):
         return self.num_samples
 
+    def _downgrade_oc20(self, data_object):
+        # Downgrade oc20 data format
+        if hasattr(data_object, "energy") and hasattr(data_object, "forces"):
+            data_object.y = data_object.pop("energy")
+            data_object.force = data_object.pop("forces")
+
+        return data_object
+
     @override
     def __getitem__(self, idx):
         if not self.path.is_file():
@@ -177,10 +195,16 @@ class PretrainLmdbDataset(Dataset[BaseData]):
                 )
             data_object = pyg2_data_transform(pickle.loads(datapoint_pickled))
             data_object.id = f"{db_idx}_{el_idx}"
+
+            # Downgrade oc20 data format
+            data_object = self._downgrade_oc20(data_object)
         else:
             with self.env.begin(write=False) as txn:
                 datapoint_pickled = txn.get(self._keys[idx])
             data_object = pyg2_data_transform(pickle.loads(datapoint_pickled))
+
+            # Downgrade oc20 data format
+            data_object = self._downgrade_oc20(data_object)
 
         if self.transform is not None:
             data_object = self.transform(data_object)

@@ -24,7 +24,7 @@ def base_config_(config: M.PretrainConfig):
     config.trainer.optimizer.log_grad_norm = True
     config.trainer.optimizer.gradient_clipping = ll.GradientClippingConfig(
         value=2.0,
-        algorithm="value",
+        algorithm="norm",
     )
     # LR Scheduler settings
     config.lr_scheduler = M.LinearWarmupCosineAnnealingSchedulerConfig(
