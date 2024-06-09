@@ -243,6 +243,9 @@ class PretrainConfig(BaseConfig):
     global_train_sample_ratio: DatasetSampleRatioConfig | None = None
     global_val_sample_ratio: DatasetSampleRatioConfig | None = None
 
+    generate_graphs_on_gpu: bool = False
+    """Generate graphs on the GPU."""
+
     @override
     def __post_init__(self):
         super().__post_init__()
@@ -701,6 +704,15 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
     @override
     def forward(self, batch: Data):
+        if self.config.generate_graphs_on_gpu:
+            batch = self._generate_graphs_goc(
+                batch,
+                cutoffs=Cutoffs.from_constant(12.0),
+                max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
+                pbc=True,
+                training=self.training,
+            )
+
         if not self.config.backbone.handles_atom_embedding():
             h = self.embedding(batch)
             out = self.backbone(batch, h=h)
@@ -1264,7 +1276,10 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data.natoms = self._to_int(data.natoms)
         data.sid = self._to_int(data.sid)
 
-        if isinstance(self.config.backbone, GOCBackboneConfig):
+        if (
+            isinstance(self.config.backbone, GOCBackboneConfig)
+            and not self.config.generate_graphs_on_gpu
+        ):
             for graph_type in ["main", "a2a", "a2ee2a", "qint"]:
                 key = f"{graph_type}_num_neighbors"
                 setattr(data, key, self._to_int(data[key]))
@@ -1337,9 +1352,12 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         }
 
         for graph_type, graph in graphs.items():
-            graph["num_neighbors"] = graph["edge_index"].shape[1]
             for key, value in graph.items():
                 setattr(data, f"{graph_type}_{key}", value)
+
+        if not self.config.generate_graphs_on_gpu:
+            for graph_type, graph in graphs.items():
+                graph["num_neighbors"] = graph["edge_index"].shape[1]
 
         return data
 
@@ -1391,14 +1409,19 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
     ):
         match self.config.backbone:
             case GOCBackboneConfig():
-                return self._generate_graphs_goc(
-                    data,
-                    cutoffs=cutoffs,
-                    max_neighbors=max_neighbors,
-                    pbc=pbc,
-                    training=training,
-                )
+                if not self.config.generate_graphs_on_gpu:
+                    data = self._generate_graphs_goc(
+                        data,
+                        cutoffs=cutoffs,
+                        max_neighbors=max_neighbors,
+                        pbc=pbc,
+                        training=training,
+                    )
+                return data
             case Graphormer3DConfig():
+                assert (
+                    not self.config.generate_graphs_on_gpu
+                ), "generate_graphs_on_gpu not supported for this model"
                 return self._generate_graphs_graphormer(
                     data,
                     cutoff=cutoffs.main,
@@ -1406,6 +1429,9 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                     no_copy_tag=no_copy_tag,
                 )
             case TorchMDNetBackboneConfig():
+                assert (
+                    not self.config.generate_graphs_on_gpu
+                ), "generate_graphs_on_gpu not supported for this model"
                 return self._generate_graphs_torchmd(
                     data,
                     cutoffs=cutoffs,
@@ -1515,6 +1541,11 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         data.y_scale = config.energy_loss_scale
         data.force_scale = config.force_loss_scale
 
+        if self.config.generate_graphs_on_gpu:
+            # We only support PBC graph generation on GPU,
+            # so we need to add a dummy cell to the data
+            data.cell = torch.eye(3).unsqueeze(dim=0) * 1000.0
+
         return self._generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(8.0),
@@ -1549,6 +1580,11 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
 
         data.y_scale = config.energy_loss_scale
         data.force_scale = config.force_loss_scale
+
+        if self.config.generate_graphs_on_gpu:
+            # We only support PBC graph generation on GPU,
+            # so we need to add a dummy cell to the data
+            data.cell = torch.eye(3).unsqueeze(dim=0) * 1000.0
 
         return self._generate_graphs(
             data,

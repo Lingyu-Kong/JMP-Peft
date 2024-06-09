@@ -1,4 +1,5 @@
 # %%
+import itertools
 from pathlib import Path
 from typing import Literal
 
@@ -96,7 +97,9 @@ def goc_backbone_config_(
             config.backbone = M.GOCBackboneConfig.xl()
         case _:
             raise ValueError(f"Invalid variant: {variant}")
+
     config.backbone.scale_basis = False
+    config.generate_graphs_on_gpu = True
 
 
 def fsdp_config_(config: M.PretrainConfig):
@@ -127,12 +130,19 @@ def profiling_config_(config: M.PretrainConfig):
 
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 
-variants = ("xl",)
-for variant in variants:
+variants = ("base", "large", "xl")
+backbone_config_fns = (graphormer_backbone_config_, goc_backbone_config_)
+
+for variant, backbone_config_ in itertools.product(variants, backbone_config_fns):
+    # Testing
+    if (variant, backbone_config_) != ("base", graphormer_backbone_config_):
+        continue
+
     config = M.PretrainConfig.draft()
     base_config_(config)
     tasks_config_perlmutter_(config)
-    graphormer_backbone_config_(config, variant)
+    # graphormer_backbone_config_(config, variant)
+    backbone_config_(config, variant)
     # fsdp_config_(config)
     gradient_checkpointing_config_(config)
     profiling_config_(config)

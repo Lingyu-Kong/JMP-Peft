@@ -194,62 +194,11 @@ class BackboneConfig(BackboneConfigBase):
 
     @classmethod
     def xl(cls):
-        return cls(
-            **{
-                "num_targets": 1,
-                "num_spherical": 7,
-                "num_radial": 256,
-                "num_blocks": 8,
-                "emb_size_atom": 512,
-                "emb_size_edge": 2048,
-                "emb_size_trip_in": 128,
-                "emb_size_trip_out": 256,
-                "emb_size_quad_in": 128,
-                "emb_size_quad_out": 64,
-                "emb_size_aint_in": 128,
-                "emb_size_aint_out": 128,
-                "emb_size_rbf": 64,
-                "emb_size_cbf": 32,
-                "emb_size_sbf": 128,
-                "num_before_skip": 2,
-                "num_after_skip": 2,
-                "num_concat": 8,
-                "num_atom": 3,
-                "num_output_afteratom": 3,
-                "num_atom_emb_layers": 3,
-                "num_global_out_layers": 3,
-                "regress_forces": True,
-                "regress_energy": True,
-                "direct_forces": True,
-                "use_pbc": True,
-                "scale_backprop_forces": False,
-                "rbf": {"name": "gaussian"},
-                "rbf_spherical": None,
-                "envelope": {"name": "polynomial", "exponent": 5},
-                "cbf": {"name": "spherical_harmonics"},
-                "sbf": {"name": "legendre_outer"},
-                "extensive": True,
-                "forces_coupled": False,
-                "activation": "scaled_silu",
-                "quad_interaction": True,
-                "atom_edge_interaction": True,
-                "edge_atom_interaction": True,
-                "atom_interaction": True,
-                "scale_basis": False,
-                "qint_tags": [1, 2],
-                "num_elements": 120,
-                "otf_graph": False,
-                "scale_file": None,
-                "learnable_rbf": True,
-                "learnable_rbf_stds": True,
-                "unique_basis_per_layer": True,
-            },
-            absolute_rbf_cutoff=12.0,
-            dropout=0.1,
-            edge_dropout=0.1,
-            ln_per_layer=True,
-            scale_factor_to_ln=True,
-        )
+        config = cls.large()
+        config.num_blocks = 8
+        config.emb_size_edge += 256
+        config.emb_size_atom += 256
+        return config
 
 
 class BasesConfig(ll.TypedConfig):
