@@ -561,6 +561,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 ),
                 check_fn=lambda layer: isinstance(layer, layer_cls_tuple),
             )
+            log.critical("Applied gradient checkpointing to the model.")
 
     def fsdp_trainer_kwargs(self) -> LightningTrainerKwargs:
         if not (config := self.config.fsdp):
@@ -1559,24 +1560,26 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
             no_copy_tag=None,
         )
 
-    # @property
-    # @cache
-    # def flops_per_batch(self):
-    #     # Let's take a copy of the model so we don't modify the original
-    #     module = copy.deepcopy(self)
+    if False and ll._experimental.MEASURE_FLOPS_AVAILABLE:
 
-    #     # Make sure the model is on the CPU
-    #     module.cpu()
+        @property
+        @cache
+        def flops_per_batch(self):
+            # Let's take a copy of the model so we don't modify the original
+            module = copy.deepcopy(self)
 
-    #     # Things should still be on the CPU here
-    #     batch = next(iter(module._val_dataloader(with_sampler=False)))
-    #     batch = move_data_to_device(batch, torch.device("cpu"))
+            # Make sure the model is on the CPU
+            module.cpu()
 
-    #     def loss_fn(model_output: tuple[torch.Tensor, torch.Tensor]):
-    #         energy, forces = model_output
-    #         return module.compute_losses(batch, energy=energy, forces=forces)
+            # Things should still be on the CPU here
+            batch = next(iter(module._val_dataloader(with_sampler=False)))
+            batch = move_data_to_device(batch, torch.device("cpu"))
 
-    #     return ll._experimental.measure_flops(
-    #         lambda: module(batch),
-    #         loss_fn=loss_fn,
-    #     )
+            def loss_fn(model_output: tuple[torch.Tensor, torch.Tensor]):
+                energy, forces = model_output
+                return module.compute_losses(batch, energy=energy, forces=forces)
+
+            return ll._experimental.measure_flops(
+                lambda: module(batch),
+                loss_fn=loss_fn,
+            )

@@ -40,6 +40,11 @@ class PretrainDatasetConfig(TypedConfig):
     def __post_init__(self):
         super().__post_init__()
 
+        if self.metadata_path:
+            assert (
+                self.metadata_path.is_file()
+            ), f"Could not find atoms metadata in {self.metadata_path=}."
+
         # If metadata_path is not provided, assume it is src/metadata.npz
         if self.metadata_path is None:
             self.metadata_path = self.src / "metadata.npz"
