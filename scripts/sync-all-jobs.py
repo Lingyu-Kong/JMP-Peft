@@ -2,10 +2,10 @@
 from pathlib import Path
 
 base_paths = [
-    # Path(
-    #     "/lustre/orion/mat265/world-shared/nimashoghi/projectdata/jmppeft-realruns-final"
-    # ),
-    Path("/lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/"),
+    Path(
+        "/lustre/orion/mat265/world-shared/nimashoghi/projectdata/jmppeft-realruns-6_9"
+    ),
+    # Path("/lustre/orion/mat265/world-shared/nimashoghi/repositories/jmp-peft/"),
 ]
 base_paths
 

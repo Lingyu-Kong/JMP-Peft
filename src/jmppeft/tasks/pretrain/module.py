@@ -946,19 +946,9 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         with torch.no_grad():
             self.log_dict(self.train_metrics(data, energy=energies, forces=forces))
             if self.config.perf_metrics:
-                metrics_dict: dict[str, torchmetrics.SumMetric] = (
-                    self.train_perf_metrics(data)
-                )
-                if self.should_update_logs:
-                    # We only log the metrics if we're updating the logs because we need to
-                    # synchronize the logs across all processes.
-                    self.log_dict(
-                        {
-                            name: metric.compute()
-                            for name, metric in metrics_dict.items()
-                        },
-                        sync_dist=True,
-                    )
+                # We only log the metrics if we're updating the logs because we need to
+                # synchronize the logs across all processes.
+                self.log_dict(self.train_perf_metrics(data), sync_dist=True)
 
     def _multi_head_trick_force_loss(
         self,

@@ -67,6 +67,9 @@ def base_config_(config: M.PretrainConfig):
         sample_temperature=2.0,
     )
 
+    if config.trainer.logging.wandb:
+        config.trainer.logging.wandb.offline = True
+
 
 def graphormer_backbone_config_(
     config: M.PretrainConfig,
@@ -91,7 +94,7 @@ def goc_backbone_config_(
     variant: Literal["base", "large", "xl"],
 ):
     # Set backbone config
-    config.name_parts.append("gemnet")
+    config.name_parts.extend(("goc", variant))
     match variant:
         case "base":
             config.backbone = M.GOCBackboneConfig.base()
@@ -135,12 +138,14 @@ def profiling_config_(config: M.PretrainConfig):
 configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
 
 variants = ("base", "large", "xl")
+variants = ("base",)
 backbone_config_fns = (graphormer_backbone_config_, goc_backbone_config_)
+backbone_config_fns = (graphormer_backbone_config_,)
 
 for variant, backbone_config_ in itertools.product(variants, backbone_config_fns):
     # Testing
-    if (variant, backbone_config_) != ("base", graphormer_backbone_config_):
-        continue
+    # if (variant, backbone_config_) != ("base", graphormer_backbone_config_):
+    #     continue
 
     config = M.PretrainConfig.draft()
     base_config_(config)
@@ -158,6 +163,7 @@ for variant, backbone_config_ in itertools.product(variants, backbone_config_fns
         config.project += "-perlmutter"
     else:
         config.project += "-frontier"
+    config.project += "6_10"
 
     if variant == "base":
         config.batch_size = 6
@@ -165,11 +171,13 @@ for variant, backbone_config_ in itertools.product(variants, backbone_config_fns
         config.batch_size = 3
     elif variant == "xl":
         config.batch_size = 3
-        gradient_checkpointing_config_(config)
+    gradient_checkpointing_config_(config)
 
     config.num_workers = 4
     config = config.finalize()
     configs.append((config, M.PretrainModel))
+
+print(len(configs))
 
 
 # %%
@@ -293,6 +301,7 @@ def submit_perlmutter(
 submit = submit_perlmutter if perlmutter else submit_frontier
 
 nodes_list = [1, 8, 64, 128]
+nodes_list = [128]
 # nodes_list = [1]
 
 commands: list[str] = []
