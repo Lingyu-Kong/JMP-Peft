@@ -236,6 +236,8 @@ class PretrainConfig(BaseConfig):
 
     perf_metrics: bool = False
 
+    disable_metrics: bool = False
+
     gradient_checkpointing: bool = False
 
     multi_head_loss_trick: bool = False
@@ -1044,8 +1046,9 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
         energy, forces = self(batch)
 
         loss = self.compute_losses(batch, energy=energy, forces=forces)
-        with torch.no_grad():
-            self.log_dict(self.train_metrics(batch, energy=energy, forces=forces))
+        if not self.config.disable_metrics:
+            with torch.no_grad():
+                self.log_dict(self.train_metrics(batch, energy=energy, forces=forces))
 
         return loss
 
@@ -1609,3 +1612,9 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 lambda: module(batch),
                 loss_fn=loss_fn,
             )
+
+    def throughput_monitor_batch_stats(self, batch: Data):
+        return {
+            "batch_size": batch.y.shape[0],
+            "length": batch.atomic_numbers.shape[0],
+        }
