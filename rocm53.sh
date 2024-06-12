@@ -1,7 +1,7 @@
 #!/bin/bash
 
-conda deactivate || true
-conda activate rocm53
+# conda deactivate || true
+# conda activate rocm53
 
 module reset
 module load craype-accel-amd-gfx90a
