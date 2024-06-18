@@ -343,10 +343,9 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/76/ac/a7305707cb852b7e16ff80eaf5692309bde30e2b1100a1fcacdc8f731d97/aiosignal-1.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a7/fa/e01228c2938de91d47b307831c62ab9e4001e747789d0b05baf779a6488c/async_timeout-4.0.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/64/43/7a1259741bd989723272ac7d381a43be932422abcff09a1d9f7ba212cb74/beartype-0.18.5-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/ec/25/0c87df2e53c0c5d90f7517ca0ff7aca78d050a8ec4d32c4278e8c0e52e51/frozenlist-1.4.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/2d/4a/8949827db6ddad0cd773ce14603d86fc4c0893598417cf00c3cdc2192bc5/jaxtyping-0.2.30-py3-none-any.whl
-      - pypi: git+https://github.com/nimashoghi/ll.git@f4812bc2a1a0f32db93e710a1f83e62a8b7794a9
-      - pypi: https://files.pythonhosted.org/packages/83/67/8f32a70336d3ff1149cbd31e5a877997384f78c3940edc0abff95c8a5601/lmdb-1.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/9a/0c/8055b6e60e6b2795c1cee6058287c39f168466e5937d6437b58b6c7e77f7/jaxtyping-0.2.28-py3-none-any.whl
+      - pypi: git+https://github.com/nimashoghi/ll.git@6b7315195f6afb934a86d513d1c5a2291e29544e
+      - pypi: https://files.pythonhosted.org/packages/cf/11/5e2703d1832cf24874cbf8869026cef05b6659cd8f75b1a6b219ff681acc/lmdb-1.4.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/42/d7/1ec15b46af6af88f19b8e5ffea08fa375d433c998b8a7639e76935c14f1f/markdown_it_py-3.0.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/33/62/2c9085e571318d51212a6914566fe41dd0e33d7f268f7e2f23dcd3f06c56/multidict-6.0.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
@@ -3385,7 +3384,7 @@ packages:
 - kind: pypi
   name: ll
   version: 0.0.1
-  url: git+https://github.com/nimashoghi/ll.git@f4812bc2a1a0f32db93e710a1f83e62a8b7794a9
+  url: git+https://github.com/nimashoghi/ll.git@6b7315195f6afb934a86d513d1c5a2291e29544e
 - kind: conda
   name: llvm-openmp
   version: 15.0.7
