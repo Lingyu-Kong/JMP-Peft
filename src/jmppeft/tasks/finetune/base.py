@@ -1105,7 +1105,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         for target in self.config.graph_targets:
             match target:
                 case GraphScalarTargetConfig():
-                    loss = F.l1_loss(preds[target.name], batch[target.name])
+                    # loss = F.l1_loss(preds[target.name], batch[target.name])
+                    loss = target.loss.compute(preds[target.name], batch[target.name])
                 case GraphBinaryClassificationTargetConfig():
                     y_input = preds[target.name]
                     y_target = batch[target.name].float()
@@ -1142,17 +1143,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             match target:
                 case NodeVectorTargetConfig() | GradientForcesTargetConfig():
                     assert preds[target.name].shape[-1] == 3
-                    match target.loss:
-                        case "l2mae":
-                            loss = F.pairwise_distance(
-                                preds[target.name], batch[target.name], p=2.0
-                            ).mean()
-                        case "mae":
-                            loss = F.l1_loss(preds[target.name], batch[target.name])
-                        case "mse":
-                            loss = F.mse_loss(preds[target.name], batch[target.name])
-                        case _:
-                            assert_never(target.loss)
+                    loss = target.loss.compute(preds[target.name], batch[target.name])
                 case _:
                     assert_never(target)
 

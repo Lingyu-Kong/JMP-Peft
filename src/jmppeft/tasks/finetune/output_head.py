@@ -14,6 +14,7 @@ from typing_extensions import TypedDict, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...models.gemnet.layers.force_scaler import ForceScaler
+from ...modules.loss import L2MAELossConfig, LossConfig, MAELossConfig
 from ..config import OutputConfig
 
 log = getLogger(__name__)
@@ -52,6 +53,8 @@ class BaseTargetConfig(TypedConfig, ABC):
 
 class GraphScalarTargetConfig(BaseTargetConfig):
     kind: Literal["scalar"] = "scalar"
+
+    loss: LossConfig = MAELossConfig()
 
     @override
     def construct_output_head(
@@ -142,7 +145,7 @@ GraphTargetConfig: TypeAlias = Annotated[
 class NodeVectorTargetConfig(BaseTargetConfig):
     kind: Literal["vector"] = "vector"
 
-    loss: Literal["mae", "l2mae"] = "l2mae"
+    loss: LossConfig = L2MAELossConfig()
     """The loss function to use for the target"""
 
     @override
@@ -164,7 +167,7 @@ class NodeVectorTargetConfig(BaseTargetConfig):
 class GradientForcesTargetConfig(BaseTargetConfig):
     kind: Literal["gradient_forces"] = "gradient_forces"
 
-    loss: Literal["mae", "l2mae"] = "l2mae"
+    loss: LossConfig = L2MAELossConfig()
     """The loss function to use for the target"""
 
     energy_name: str

@@ -18,6 +18,7 @@ from torch_geometric.data.data import BaseData, Data
 from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
+from ...modules.loss import L2MAELossConfig, LossConfig, MAELossConfig
 from ...modules.relaxer import RelaxationOutput, Relaxer, RelaxerConfig
 from ...modules.transforms.normalize import denormalize_batch
 from .base import FinetuneConfigBase, FinetuneModelBase
@@ -133,17 +134,23 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         *,
         gradient: bool,
         energy_coefficient: float = 1.0,
+        energy_loss: LossConfig = MAELossConfig(),
         force_coefficient: float = 100.0,
-        force_loss: Literal["mae", "l2mae"] = "l2mae",
+        force_loss: LossConfig = L2MAELossConfig(),
     ):
         self.graph_targets = [
-            GraphScalarTargetConfig(name="y", loss_coefficient=energy_coefficient),
+            GraphScalarTargetConfig(
+                name="y",
+                loss_coefficient=energy_coefficient,
+                loss=energy_loss,
+            ),
         ]
         self.node_targets = [
             GradientForcesTargetConfig(
                 name="force",
                 energy_name="y",
                 loss_coefficient=force_coefficient,
+                loss=force_loss,
             )
             if gradient
             else NodeVectorTargetConfig(
