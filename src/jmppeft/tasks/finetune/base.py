@@ -625,16 +625,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         return MetricPair(predicted=pred, ground_truth=target)
 
-    @override
-    def __init__(self, hparams: TConfig):
-        super().__init__(hparams)
-
-        # Set up callbacks
-        if (ema := self.config.ema) is not None:
-            self.register_callback(lambda: ema.construct_callback())
-
-        self._set_rlp_config_monitors()
-
+    def _construct_model(self):
         self.embedding = nn.Embedding(
             num_embeddings=self.config.embedding.num_elements,
             embedding_dim=self.config.embedding.embedding_size,
@@ -646,6 +637,18 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         )
 
         self.construct_output_heads()
+
+    @override
+    def __init__(self, hparams: TConfig):
+        super().__init__(hparams)
+
+        # Set up callbacks
+        if (ema := self.config.ema) is not None:
+            self.register_callback(lambda: ema.construct_callback())
+
+        self._set_rlp_config_monitors()
+
+        self._construct_model()
 
         self.train_metrics = FinetuneMetrics(
             self.config.metrics,
@@ -902,11 +905,12 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             param.numel() for param in all_parameters if param.requires_grad
         )
         num_total = sum(param.numel() for param in all_parameters)
-        percent_frozen = num_frozen / num_total * 100
-        log.critical(
-            f"Freezing {num_frozen:,} parameters ({percent_frozen:.2f}%) out of "
-            f"{num_total:,} total parameters ({num_train:,} trainable)"
-        )
+        if num_total:
+            percent_frozen = num_frozen / num_total * 100
+            log.critical(
+                f"Freezing {num_frozen:,} parameters ({percent_frozen:.2f}%) out of "
+                f"{num_total:,} total parameters ({num_train:,} trainable)"
+            )
 
     def construct_output_heads(self):
         self.outputs = ll.nn.TypedModuleDict(
@@ -1346,7 +1350,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         with self.log_context(prefix=f"val/{self.metric_prefix()}/"):
             preds = self(batch)
 
-            self.log_dict(self.val_metrics(batch, preds))
+            self.log_dict(self.val_metrics(batch, preds), on_epoch=True, on_step=True)
 
     @override
     def test_step(self, batch: BaseData, batch_idx: int):

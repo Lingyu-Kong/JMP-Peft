@@ -10,10 +10,11 @@ import ll
 import numpy as np
 import torch
 import torch.nn as nn
+from ase import Atoms
 from lightning import LightningModule, Trainer
 from lightning.pytorch.callbacks.prediction_writer import BasePredictionWriter
 from torch_geometric.data import Batch
-from torch_geometric.data.data import BaseData
+from torch_geometric.data.data import BaseData, Data
 from typing_extensions import TypeVar, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
@@ -98,6 +99,8 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
     relaxation: RelaxationConfig = RelaxationConfig()
     """Relaxation configuration for validation and testing."""
 
+    sanity_check_mace: bool = False
+
     def energy_config_(self):
         self.graph_targets = [
             GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
@@ -175,15 +178,24 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         if any(
             isinstance(target, NodeVectorTargetConfig) for target in self.node_targets
         ):
-            assert (
-                self.trainer.inference_mode
-            ), "NodeVectorTargetConfig requires inference mode to be enabled."
+            # assert (
+            #     self.trainer.inference_mode
+            # ), "NodeVectorTargetConfig requires inference mode to be enabled."
             assert (
                 self.backbone.regress_forces
             ), "NodeVectorTargetConfig requires `backbone.regress_forces` to be True."
             assert (
                 self.backbone.direct_forces
             ), "NodeVectorTargetConfig requires `backbone.direct_forces` to be True."
+
+        if self.sanity_check_mace:
+            assert (
+                self.batch_size == 1
+            ), "Sanity check MACE only works with batch size 1."
+            if self.eval_batch_size:
+                assert (
+                    self.eval_batch_size == 1
+                ), "Sanity check MACE only works with batch size 1."
 
 
 TConfig = TypeVar("TConfig", bound=EnergyForcesConfigBase, infer_variance=True)
@@ -228,6 +240,17 @@ class EnergyForcesModelBase(
             self.register_callback(lambda: _Writer())
 
     @override
+    def _construct_model(self):
+        if self.config.sanity_check_mace:
+            from mace.calculators import mace_mp
+
+            self._mace_calc = mace_mp(
+                "https://tinyurl.com/5yyxdm76", device="cuda", default_dtype="float64"
+            )
+        else:
+            super()._construct_model()
+
+    @override
     def construct_output_heads(self):
         self.graph_outputs = ll.nn.TypedModuleDict(
             {
@@ -254,8 +277,7 @@ class EnergyForcesModelBase(
             key_prefix="ft_mlp_",
         )
 
-    @override
-    def forward(self, data: BaseData):
+    def _forward(self, data: BaseData):
         preds: dict[str, torch.Tensor] = {}
 
         with ExitStack() as stack:
@@ -301,6 +323,100 @@ class EnergyForcesModelBase(
             preds.update(node_preds)
 
         return preds
+
+    def _mace_atoms_to_graph(self, atoms: Atoms) -> Batch:
+        """
+        Convert the given ASE `Atoms` object to a PyG `Batch` object.
+
+        Args:
+            atoms (Atoms): The input `Atoms` object.
+
+        Returns:
+            Batch: The converted `Batch` object.
+        """
+        atomic_numbers = torch.tensor(atoms.numbers, dtype=torch.long)
+        pos = torch.tensor(atoms.positions, dtype=torch.float)
+        cell = torch.tensor(atoms.cell.array, dtype=torch.float).view(1, 3, 3)
+        tags = (2 * torch.ones_like(atomic_numbers)).long()
+        fixed = torch.zeros_like(tags, dtype=torch.bool)
+        natoms = len(atoms)
+
+        data = Data.from_dict(
+            {
+                "atomic_numbers": atomic_numbers,
+                "pos": pos,
+                "cell": cell,
+                "tags": tags,
+                "fixed": fixed,
+                "natoms": natoms,
+            }
+        )
+        batch = self.collate_fn([data])
+
+        return batch
+
+    def _mace_graph_to_atoms(self, data_or_batch: Data | Batch) -> Atoms:
+        """
+        Convert a graph representation to an `Atoms` object.
+
+        Args:
+            data_or_batch (Data | Batch): The input graph or batch of graphs.
+
+        Returns:
+            Atoms: The converted `Atoms` object.
+
+        Raises:
+            AssertionError: If the batch size is not 1 for relaxation.
+            AssertionError: If the fixed flag is not a boolean tensor.
+        """
+        graph = data_or_batch
+        if isinstance(graph, Batch):
+            data_list = graph.to_data_list()
+            assert len(data_list) == 1, "Batch size must be 1 for relaxation."
+
+            graph = data_list[0]
+
+        atomic_numbers = graph.atomic_numbers.detach().cpu().numpy()
+        pos = graph.pos.detach().cpu().numpy()
+        cell = graph.cell.detach().cpu().view(3, 3).numpy()
+
+        atoms = Atoms(numbers=atomic_numbers, positions=pos, cell=cell, pbc=True)
+
+        # Apply constraints based on the fixed flag
+        if (fixed := getattr(graph, "fixed", None)) is not None:
+            assert fixed.dtype == torch.bool, "Fixed flag must be boolean."
+            fixed = fixed.detach().cpu().numpy()
+
+            from ase.constraints import FixAtoms
+
+            atoms.set_constraint(FixAtoms(mask=fixed))
+
+        return atoms
+
+    def _mace_forward(self, data: BaseData):
+        # Convert the data to an ASE Atoms object
+        atoms = self._mace_graph_to_atoms(data)
+
+        # Run the MACE calculator
+        atoms.calc = self._mace_calc
+
+        # Get the energy and forces
+        energy = atoms.get_potential_energy()
+        forces = atoms.get_forces()
+
+        # Convert the results to PyTorch tensors
+        energy = torch.tensor([energy], dtype=torch.float, device=self.device)
+        forces = torch.from_numpy(forces).to(self.device)
+
+        return {"y": energy, "force": forces}
+
+    @override
+    def forward(self, data: BaseData):
+        if self.config.sanity_check_mace:
+            with torch.enable_grad():
+                return self._mace_forward(data)
+
+        return self._forward(data)
 
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
