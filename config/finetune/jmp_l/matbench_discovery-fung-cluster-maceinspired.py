@@ -35,7 +35,7 @@ def create_config():
         config,
         dataset_base_path,
         use_megnet_133k=True,
-        use_linref=False,
+        use_linref=True,
     )
     config.energy_forces_config_(
         gradient=False,
