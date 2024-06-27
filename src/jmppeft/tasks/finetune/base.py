@@ -1341,7 +1341,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         with self.log_context(prefix=f"val/{self.metric_prefix()}/"):
             preds = self(batch)
 
-            self.log_dict(self.val_metrics(batch, preds), on_epoch=True, on_step=True)
+            self.log_dict(self.val_metrics(batch, preds))
 
     @override
     def test_step(self, batch: BaseData, batch_idx: int):
