@@ -8,7 +8,6 @@ from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base
 from jmppeft.tasks.finetune.base import (
-    BatchDumpConfig,
     FinetuneConfigBase,
     FinetuneModelBase,
     RLPConfig,
@@ -101,19 +100,9 @@ def create_config():
 
     config.with_project_root_(project_root)
 
-    config.name += "_fmae"
+    config.name += "_mace"
 
     return config.finalize(), MatbenchDiscoveryModel
-
-
-def debug_high_loss_(config: FinetuneConfigBase):
-    # config.trainer.actsave = ll.model.ActSaveConfig()
-    config.batch_dump = BatchDumpConfig(dump_if_loss_gt=2.5)
-    # config.trainer.devices = (0,)
-    # if config.trainer.logging.wandb:
-    #     config.trainer.logging.wandb.disable_()
-
-    config.name += "_debug_high_loss"
 
 
 def ln_(config: FinetuneConfigBase):
@@ -123,7 +112,7 @@ def ln_(config: FinetuneConfigBase):
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 config, model_cls = create_config()
-debug_high_loss_(config)
+# debug_high_loss_(config)
 ln_(config)
 configs.append((config, model_cls))
 
@@ -146,11 +135,12 @@ runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
 
 # %%
 runner = ll.Runner(run)
-runner.local_session_per_gpu(
+runner.session(
     configs,
     snapshot=True,
-    gpus=[(0, 2, 3, 4, 5, 6)],
+    # gpus=[(0, 2, 3, 4, 5, 6)],
     env={
+        "CUDA_VISIBLE_DEVICES": "1,2,3,5",
         "LL_DISABLE_TYPECHECKING": "1",
         # "NCCL_DEBUG": "TRACE",
         # "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
