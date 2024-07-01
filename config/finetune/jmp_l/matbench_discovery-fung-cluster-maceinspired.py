@@ -38,7 +38,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
-    config.batch_size = 48
+    config.batch_size = 32
     config.name_parts.append("jmp_s")
 
 
