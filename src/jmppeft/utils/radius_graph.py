@@ -343,6 +343,8 @@ def radius_graph_pbc(
     """
 
     device = pos.device
+    if n_atoms.ndim == 0:
+        n_atoms = n_atoms.unsqueeze(0)
     batch_size = len(n_atoms)
 
     # position of the atoms

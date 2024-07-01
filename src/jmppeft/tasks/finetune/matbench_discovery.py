@@ -2,7 +2,7 @@ import torch
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
-from ...utils.goc_graph import Cutoffs, MaxNeighbors
+from ...utils.goc_graph import Cutoffs, MaxNeighbors, recompute_distances
 from .energy_forces_base import EnergyForcesConfigBase, EnergyForcesModelBase
 
 
@@ -29,7 +29,7 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
     @override
     def generate_graphs_transform(self, data: BaseData):
         # Generate graphs
-        max_neighbors = 12
+        max_neighbors = 15
         # if self.config.conditional_max_neighbors:
         #     if (data.natoms > 300).any():
         #         max_neighbors = 5
@@ -40,12 +40,19 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
         #     else:
         #         max_neighbors = 30
 
+        cutoffs = Cutoffs.from_constant(8.0)
+        max_neighbors = MaxNeighbors.from_goc_base_proportions(max_neighbors)
         data = self.generate_graphs(
             data,
-            cutoffs=Cutoffs.from_constant(6.0),
-            max_neighbors=MaxNeighbors.from_goc_base_proportions(max_neighbors),
+            cutoffs=cutoffs,
+            max_neighbors=max_neighbors,
             pbc=True,
         )
+        return data
+
+    @override
+    def postprocess_graphs_gpu(self, data: BaseData) -> BaseData:
+        data = recompute_distances(data)
         return data
 
     @override

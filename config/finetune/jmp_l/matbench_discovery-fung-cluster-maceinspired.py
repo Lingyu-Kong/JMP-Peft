@@ -72,6 +72,7 @@ def create_config(*, grad: bool, stress: bool):
     config.project = "jmp_mptrj"
     config.name = "mptrj"
     jmp_s_(config)
+    config.backbone.qint_tags = [0, 1, 2]
 
     def dataset_fn(split: Literal["train", "val", "test"]):
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
@@ -177,6 +178,7 @@ def create_config(*, grad: bool, stress: bool):
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
     config.trainer.use_distributed_sampler = False
+    config.compute_graphs_on_cpu = True
 
     config.with_project_root_(project_root)
 
@@ -198,7 +200,7 @@ def make_configs(*, grad: bool, stress: bool):
     configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
     config, model_cls = create_config(grad=grad, stress=stress)
     ln_(config)
-    # debug_(config)
+    debug_(config)
     configs.append((config, model_cls))
     return configs
 
@@ -229,7 +231,7 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs_grad, n_batches=256)
+runner.fast_dev_run(configs_grad, n_batches=16)
 
 # # %%
 # runner = ll.Runner(run)

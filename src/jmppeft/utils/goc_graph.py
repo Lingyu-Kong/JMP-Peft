@@ -35,7 +35,7 @@ class Graph(TypedDict):
     id_swap_edge_index: NotRequired[torch.Tensor]  # e
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class Cutoffs:
     main: float
     aeaint: float
@@ -47,7 +47,7 @@ class Cutoffs:
         return cls(main=value, aeaint=value, qint=value, aint=value)
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class MaxNeighbors:
     main: int
     aeaint: int
@@ -549,5 +549,37 @@ def graphs_to_batch(data: BaseData | Batch, graphs: Graphs):
     for graph_type in GRAPH_TYPES:
         for key, value in graphs[graph_type].items():
             setattr(data, f"{graph_type}_{key}", value)
+
+    return data
+
+
+def recompute_distances(data: BaseData | Batch):
+    """
+    This function recomputes the distances and vectors for all graphs.
+
+    This allows us to compute the graph edge indices in the CPU
+        while still being able to use gradient-based output heads
+        (which require the edge distances and vectors to be in
+        the PyTorch computation graph).
+    """
+
+    global GRAPH_TYPES
+
+    for graph_type in GRAPH_TYPES:
+        edge_index = getattr(data, f"{graph_type}_edge_index")
+        cell_offsets = getattr(data, f"{graph_type}_cell_offset")
+        neighbors = getattr(data, f"{graph_type}_num_neighbors")
+        out = get_pbc_distances(
+            data.pos,
+            edge_index,
+            data.cell,
+            cell_offsets,
+            neighbors,
+            return_offsets=False,
+            return_distance_vec=True,
+        )
+
+        setattr(data, f"{graph_type}_distance", out["distances"])
+        setattr(data, f"{graph_type}_vector", out["distance_vec"])
 
     return data

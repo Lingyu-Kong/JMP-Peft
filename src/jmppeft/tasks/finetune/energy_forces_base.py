@@ -98,6 +98,8 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         ),
     ]
 
+    compute_graphs_on_cpu: bool = False
+
     relaxation: RelaxationConfig = RelaxationConfig()
     """Relaxation configuration for validation and testing."""
 
@@ -274,7 +276,7 @@ class _Writer(BasePredictionWriter):
         ).config.subdirectory("predictions")
         base_path.mkdir(exist_ok=True, parents=True)
         out_pred = (
-            base_path / f"prediction_rank{trainer.global_rank}_batch{batch_idx}.pt"
+            base_path / f"predif=ction_rank{trainer.global_rank}_batch{batch_idx}.pt"
         )
         torch.save(prediction, out_pred)
 
@@ -342,7 +344,10 @@ class EnergyForcesModelBase(
                 stack.enter_context(target.model_forward_context(data))
 
             # Generate graphs on the GPU
-            data = self.generate_graphs_transform(data)
+            if not self.config.compute_graphs_on_cpu:
+                data = self.generate_graphs_transform(data)
+            else:
+                data = self.postprocess_graphs_gpu(data)
 
             # Run the backbone
             atomic_numbers = data.atomic_numbers - 1
@@ -463,6 +468,9 @@ class EnergyForcesModelBase(
 
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
+
+    def postprocess_graphs_gpu(self, data: BaseData) -> BaseData:
+        raise NotImplementedError("`postprocess_graphs_gpu` must be implemented.")
 
     def _relaxer_forward(
         self,
@@ -689,4 +697,8 @@ class EnergyForcesModelBase(
             data.force = torch.zeros_like(data.pos)
 
         data = super().data_transform(data)
+
+        if self.config.compute_graphs_on_cpu:
+            data = self.generate_graphs_transform(data)
+
         return data
