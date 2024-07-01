@@ -38,7 +38,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
-    config.batch_size = 32
+    config.batch_size = 24
     config.name_parts.append("jmp_s")
 
 
@@ -121,7 +121,7 @@ def create_config(*, grad: bool, stress: bool):
         config.name_parts.append("grad")
         config.trainer.precision = "16-mixed-auto"
 
-        config.batch_size = 16
+        config.batch_size = 8
 
     else:
         if stress:
@@ -231,7 +231,10 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs_grad, n_batches=16)
+runner.fast_dev_run(configs_grad)
+
+runner = ll.Runner(run)
+runner.fast_dev_run(configs_nograd)
 
 # # %%
 # runner = ll.Runner(run)
