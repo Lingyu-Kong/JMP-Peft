@@ -1820,6 +1820,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         world_size: int | None = None,
         global_rank: int | None = None,
     ):
+        if self._trainer is None:
+            return None
+
         if world_size is None:
             world_size = self.trainer.world_size
         if global_rank is None:
@@ -1837,7 +1840,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             raise ValueError("No train dataset")
 
         sampler = self.distributed_sampler(dataset, shuffle=True)
-        if not self.config.use_balanced_batch_sampler:
+        if sampler is None or not self.config.use_balanced_batch_sampler:
             data_loader = DataLoader(
                 dataset,
                 sampler=sampler,
@@ -1867,7 +1870,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         sampler = self.distributed_sampler(dataset, shuffle=self.config.shuffle_val)
         batch_size = self.config.eval_batch_size or self.config.batch_size
-        if not self.config.use_balanced_batch_sampler:
+        if sampler is None or not self.config.use_balanced_batch_sampler:
             data_loader = DataLoader(
                 dataset,
                 sampler=sampler,
@@ -1896,7 +1899,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         sampler = self.distributed_sampler(dataset, shuffle=self.config.shuffle_test)
         batch_size = self.config.eval_batch_size or self.config.batch_size
-        if not self.config.use_balanced_batch_sampler:
+        if sampler is None or not self.config.use_balanced_batch_sampler:
             data_loader = DataLoader(
                 dataset,
                 sampler=sampler,
@@ -1925,7 +1928,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         sampler = self.distributed_sampler(dataset, shuffle=False)
         batch_size = self.config.eval_batch_size or self.config.batch_size
-        if not self.config.use_balanced_batch_sampler:
+        if sampler is None or not self.config.use_balanced_batch_sampler:
             data_loader = DataLoader(
                 dataset,
                 sampler=sampler,

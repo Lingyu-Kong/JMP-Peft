@@ -38,7 +38,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
-    config.batch_size = 28
+    config.batch_size = 32
     config.name_parts.append("jmp_s")
 
 
@@ -105,7 +105,7 @@ def create_config(*, grad: bool):
         config.name_parts.append("grad")
         config.trainer.precision = "16-mixed-auto"
 
-        config.batch_size = 10
+        config.batch_size = 6
 
     else:
         config.energy_forces_config_(
@@ -185,6 +185,19 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     model = model_cls.construct_and_load_checkpoint(config)
     trainer = ll.Trainer(config)
     trainer.fit(model)
+
+
+# %%
+runner = ll.Runner(run)
+cmd_grad = runner.fast_dev_run(
+    configs_nograd,
+    n_batches=512,
+    env={
+        "CUDA_VISIBLE_DEVICES": "0",
+        "CUDA_LAUNCH_BLOCKING": "1",
+        "LL_DISABLE_TYPECHECKING": "1",
+    },
+)
 
 
 # # %%
