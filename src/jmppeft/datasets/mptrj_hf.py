@@ -15,6 +15,8 @@ class FinetuneMPTrjHuggingfaceDatasetConfig(CommonDatasetConfig):
 
     split: Literal["train", "val", "test"]
     debug_repeat_largest_systems_for_testing: bool = False
+    energy_column: str = "energy_per_atom"
+    # See: https://github.com/janosh/matbench-discovery/issues/103#issuecomment-2070941629
 
     def create_dataset(self):
         return FinetuneMPTrjHuggingfaceDataset(self)
@@ -58,7 +60,7 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
                 "force": data_dict["forces"],
                 "cell": data_dict["cell"].unsqueeze(dim=0),
                 "stress": data_dict["stress"].unsqueeze(dim=0),
-                "y": data_dict["ef_per_atom"],
+                "y": data_dict[self.config.energy_column],
                 "natoms": data_dict["num_atoms"],
             }
         )

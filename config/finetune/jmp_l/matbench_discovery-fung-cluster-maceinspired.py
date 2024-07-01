@@ -38,7 +38,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
-    config.batch_size = 32
+    config.batch_size = 28
     config.name_parts.append("jmp_s")
 
 
@@ -75,7 +75,8 @@ def create_config(*, grad: bool):
 
     def dataset_fn(split: Literal["train", "val", "test"]):
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
-            split=split, debug_repeat_largest_systems_for_testing=True
+            split=split,
+            debug_repeat_largest_systems_for_testing=False,
         )
 
     config.train_dataset = dataset_fn("train")
@@ -90,7 +91,7 @@ def create_config(*, grad: bool):
         config.energy_forces_config_(
             gradient=True,
             energy_coefficient=1.0,
-            energy_pooling="mean",
+            energy_pooling="sum",
             force_coefficient=1.0,
             force_loss=loss.MACEHuberLossConfig(delta=0.01),
             energy_loss=loss.HuberLossConfig(delta=0.01),
@@ -104,13 +105,13 @@ def create_config(*, grad: bool):
         config.name_parts.append("grad")
         config.trainer.precision = "16-mixed-auto"
 
-        config.batch_size = 12
+        config.batch_size = 10
 
     else:
         config.energy_forces_config_(
             gradient=False,
             energy_coefficient=1.0,
-            energy_pooling="mean",
+            energy_pooling="sum",
             force_coefficient=1.0,
             force_loss=loss.MACEHuberLossConfig(delta=0.01),
             energy_loss=loss.HuberLossConfig(delta=0.01),
@@ -197,7 +198,7 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = ll.Runner(run)
-runner.session(
+cmd_grad = runner.session(
     configs_grad,
     snapshot=True,
     env={
@@ -208,7 +209,7 @@ runner.session(
 
 # %%
 runner = ll.Runner(run)
-runner.session(
+cmd_nograd = runner.session(
     configs_nograd,
     snapshot=True,
     env={
@@ -218,3 +219,4 @@ runner.session(
 )
 
 # %%
+print(f"{cmd_grad} && {cmd_nograd}")
