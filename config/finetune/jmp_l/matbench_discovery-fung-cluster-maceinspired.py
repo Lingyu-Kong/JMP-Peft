@@ -2,7 +2,6 @@
 from pathlib import Path
 
 import ll
-from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base
@@ -16,21 +15,60 @@ from jmppeft.tasks.finetune.base import (
 from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_config
 
 project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
+ckpt_path = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
 
-ckpt_path = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/jmp-l.pt")
+
+def jmp_s_(config: FinetuneConfigBase):
+    from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
+
+    jmp_s_ft_config_(config)
+    config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
+        path=ckpt_path / "jmp-s.pt", ema=True
+    )
+
+    config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
+        config,
+        config.backbone.num_blocks,
+        {
+            "embedding": 0.3,
+            "blocks_0": 0.30,
+            "blocks_1": 0.40,
+            "blocks_2": 0.55,
+            "blocks_3": 0.625,
+        },
+    )
+    config.name_parts.append("jmp_s")
+
+
+def jmp_l_(config: FinetuneConfigBase):
+    from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
+
+    jmp_l_ft_config_(config)
+    config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
+        path=ckpt_path / "jmp-l.pt", ema=True
+    )
+
+    config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
+        config,
+        config.backbone.num_blocks,
+        {
+            "embedding": 0.3,
+            "blocks_0": 0.55,
+            "blocks_1": 0.40,
+            "blocks_2": 0.30,
+            "blocks_3": 0.40,
+            "blocks_4": 0.55,
+            "blocks_5": 0.625,
+        },
+    )
+    config.name_parts.append("jmp_l")
 
 
 def create_config():
     config = M.MatbenchDiscoveryConfig.draft()
     config.project = "jmp_mptrj"
     config.name = "matbench_discovery-nograd"
-    jmp_l_ft_config_(config)
-    # jmp_matbench_discovery_config_(
-    #     config,
-    #     dataset_base_path,
-    #     use_megnet_133k=True,
-    #     use_linref=True,
-    # )
+    jmp_s_(config)
 
     config.train_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="train")
     config.val_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="val")
@@ -82,26 +120,6 @@ def create_config():
     config.backbone.regress_forces = True
     config.backbone.direct_forces = True
     config.backbone.regress_energy = True
-
-    # config.meta["ft_ckpt_path"] = ckpt_path
-    # config.meta["ckpt_path"] = ckpt_path
-    config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
-        path=ckpt_path, ema=True
-    )
-
-    config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
-        config,
-        config.backbone.num_blocks,
-        {
-            "embedding": 0.3,
-            "blocks_0": 0.55,
-            "blocks_1": 0.40,
-            "blocks_2": 0.30,
-            "blocks_3": 0.40,
-            "blocks_4": 0.55,
-            "blocks_5": 0.625,
-        },
-    )
 
     config.with_project_root_(project_root)
 
