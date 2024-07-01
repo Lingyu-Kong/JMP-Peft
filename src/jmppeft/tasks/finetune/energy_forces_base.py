@@ -25,6 +25,7 @@ from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import (
     GradientForcesTargetConfig,
     GradientOutputHeadInput,
+    GradientStressTargetConfig,
     GraphScalarTargetConfig,
     GraphTargetConfig,
     NodeTargetConfig,
@@ -158,6 +159,49 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
             else NodeVectorTargetConfig(
                 name="force", loss_coefficient=force_coefficient, loss=force_loss
             ),
+        ]
+
+        if gradient:
+            self.trainer.inference_mode = False
+
+    def energy_forces_stress_config_(
+        self,
+        *,
+        gradient: bool,
+        energy_coefficient: float = 1.0,
+        energy_loss: LossConfig = MAELossConfig(),
+        energy_pooling: Literal["mean", "sum"] = "mean",
+        force_coefficient: float = 100.0,
+        force_loss: LossConfig = L2MAELossConfig(),
+        stress_coefficient: float = 1.0,
+        stress_loss: LossConfig = MAELossConfig(),
+    ):
+        if not gradient:
+            raise ValueError("Stress target requires gradient forces.")
+
+        self.graph_targets = [
+            GraphScalarTargetConfig(
+                name="y",
+                loss_coefficient=energy_coefficient,
+                loss=energy_loss,
+                reduction=energy_pooling,
+            ),
+            GradientStressTargetConfig(
+                name="stress",
+                energy_name="y",
+                loss_coefficient=stress_coefficient,
+                loss=stress_loss,
+                forces=True,
+            ),
+        ]
+        self.node_targets = [
+            GradientForcesTargetConfig(
+                name="force",
+                energy_name="y",
+                loss_coefficient=force_coefficient,
+                loss=force_loss,
+                use_stress_forces=True,
+            )
         ]
 
         if gradient:
@@ -305,30 +349,20 @@ class EnergyForcesModelBase(
             h = self.embedding(atomic_numbers)  # (N, d_model)
             out = cast(GOCBackboneOutput, self.backbone(data, h=h))
 
-            output_head_input: OutputHeadInput = {
-                "backbone_output": out,
-                "data": data,
-            }
-            graph_preds = {
-                target: module(output_head_input)
-                for target, module in self.graph_outputs.items()
-            }
-            preds.update(graph_preds)
-
-            # We need to send the graph predictions to the node output heads
-            #   in case they need to use the graph predictions to compute the
-            #   node predictions.
-            # Currently, this is only the case for the gradient forces target,
-            #   which needs to use the energy to compute the forces.
-            node_output_head_input: GradientOutputHeadInput = {
+            graph_preds: dict[str, torch.Tensor] = {}
+            node_preds: dict[str, torch.Tensor] = {}
+            output_head_input = {
                 "backbone_output": out,
                 "data": data,
                 "graph_preds": graph_preds,
+                "node_preds": node_preds,
             }
-            node_preds = {
-                target: module(node_output_head_input)
-                for target, module in self.node_outputs.items()
-            }
+            for target, module in self.graph_outputs.items():
+                graph_preds[target] = module(output_head_input)
+            preds.update(graph_preds)
+
+            for target, module in self.node_outputs.items():
+                node_preds[target] = module(output_head_input)
             preds.update(node_preds)
 
         return preds

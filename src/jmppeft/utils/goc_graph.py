@@ -224,7 +224,11 @@ def _generate_graph(
 ):
     if pbc:
         edge_index, cell_offsets, neighbors = radius_graph_pbc(
-            data, cutoff, max_neighbors
+            cutoff,
+            max_neighbors,
+            data.pos,
+            data.cell,
+            data.natoms,
         )
 
         out = get_pbc_distances(

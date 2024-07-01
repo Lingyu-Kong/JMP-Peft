@@ -35,9 +35,9 @@ from ll import (
 )
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, Dataset, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler
 from torch_geometric.data.batch import Batch
-from torch_geometric.data.data import BaseData, Data
+from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, assert_never, override
 
 from ...datasets.finetune_lmdb import (
@@ -89,16 +89,18 @@ from ..config import (
     optimizer_from_config,
 )
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
+from .output_head import GradientForcesTargetConfig as GradientForcesTargetConfig
 from .output_head import (
-    GradientForcesTargetConfig,
-    GraphBinaryClassificationTargetConfig,
-    GraphMulticlassClassificationTargetConfig,
-    GraphScalarTargetConfig,
-    GraphTargetConfig,
-    NodeTargetConfig,
-    NodeVectorTargetConfig,
-    OutputHeadInput,
+    GraphBinaryClassificationTargetConfig as GraphBinaryClassificationTargetConfig,
 )
+from .output_head import (
+    GraphMulticlassClassificationTargetConfig as GraphMulticlassClassificationTargetConfig,
+)
+from .output_head import GraphScalarTargetConfig as GraphScalarTargetConfig
+from .output_head import GraphTargetConfig as GraphTargetConfig
+from .output_head import NodeTargetConfig as NodeTargetConfig
+from .output_head import NodeVectorTargetConfig as NodeVectorTargetConfig
+from .output_head import OutputHeadInput
 
 log = getLogger(__name__)
 
@@ -1109,9 +1111,6 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         # Compute losses for graph targets
         for target in self.config.graph_targets:
             match target:
-                case GraphScalarTargetConfig():
-                    # loss = F.l1_loss(preds[target.name], batch[target.name])
-                    loss = target.loss.compute(preds[target.name], batch[target.name])
                 case GraphBinaryClassificationTargetConfig():
                     y_input = preds[target.name]
                     y_target = batch[target.name].float()
@@ -1133,7 +1132,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                         reduction="sum",
                     )
                 case _:
-                    assert_never(target)
+                    # loss = F.l1_loss(preds[target.name], batch[target.name])
+                    loss = target.loss.compute(preds[target.name], batch[target.name])
 
             # Log the loss
             self.log(f"{target.name}_loss", loss)
@@ -1145,12 +1145,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             losses.append(loss)
 
         for target in self.config.node_targets:
-            match target:
-                case NodeVectorTargetConfig() | GradientForcesTargetConfig():
-                    assert preds[target.name].shape[-1] == 3
-                    loss = target.loss.compute(preds[target.name], batch[target.name])
-                case _:
-                    assert_never(target)
+            loss = target.loss.compute(preds[target.name], batch[target.name])
 
             # Log the loss
             self.log(f"{target.name}_loss", loss)

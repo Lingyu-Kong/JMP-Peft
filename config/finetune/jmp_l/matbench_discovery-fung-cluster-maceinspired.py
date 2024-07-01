@@ -67,7 +67,7 @@ def jmp_l_(config: FinetuneConfigBase):
     config.name_parts.append("jmp_l")
 
 
-def create_config(*, grad: bool):
+def create_config(*, grad: bool, stress: bool):
     config = M.MatbenchDiscoveryConfig.draft()
     config.project = "jmp_mptrj"
     config.name = "mptrj"
@@ -87,15 +87,30 @@ def create_config(*, grad: bool):
         name="matbench_discovery/force_mae", mode="min"
     )
 
+    if stress:
+        config.name_parts.append("stress")
+
     if grad:
-        config.energy_forces_config_(
-            gradient=True,
-            energy_coefficient=1.0,
-            energy_pooling="sum",
-            force_coefficient=1.0,
-            force_loss=loss.MACEHuberLossConfig(delta=0.01),
-            energy_loss=loss.HuberLossConfig(delta=0.01),
-        )
+        if stress:
+            config.energy_forces_stress_config_(
+                gradient=True,
+                energy_coefficient=1.0,
+                energy_pooling="sum",
+                force_coefficient=10.0,
+                force_loss=loss.MACEHuberLossConfig(delta=0.01),
+                energy_loss=loss.HuberLossConfig(delta=0.01),
+                stress_coefficient=100.0,
+                stress_loss=loss.HuberLossConfig(delta=0.01),
+            )
+        else:
+            config.energy_forces_config_(
+                gradient=True,
+                energy_coefficient=1.0,
+                energy_pooling="sum",
+                force_coefficient=10.0,
+                force_loss=loss.MACEHuberLossConfig(delta=0.01),
+                energy_loss=loss.HuberLossConfig(delta=0.01),
+            )
 
         config.backbone.regress_forces = False
         config.backbone.direct_forces = False
@@ -108,14 +123,26 @@ def create_config(*, grad: bool):
         config.batch_size = 16
 
     else:
-        config.energy_forces_config_(
-            gradient=False,
-            energy_coefficient=1.0,
-            energy_pooling="sum",
-            force_coefficient=1.0,
-            force_loss=loss.MACEHuberLossConfig(delta=0.01),
-            energy_loss=loss.HuberLossConfig(delta=0.01),
-        )
+        if stress:
+            config.energy_forces_stress_config_(
+                gradient=False,
+                energy_coefficient=1.0,
+                energy_pooling="sum",
+                force_coefficient=10.0,
+                force_loss=loss.MACEHuberLossConfig(delta=0.01),
+                energy_loss=loss.HuberLossConfig(delta=0.01),
+                stress_coefficient=100.0,
+                stress_loss=loss.HuberLossConfig(delta=0.01),
+            )
+        else:
+            config.energy_forces_config_(
+                gradient=False,
+                energy_coefficient=1.0,
+                energy_pooling="sum",
+                force_coefficient=10.0,
+                force_loss=loss.MACEHuberLossConfig(delta=0.01),
+                energy_loss=loss.HuberLossConfig(delta=0.01),
+            )
 
         config.backbone.regress_forces = True
         config.backbone.direct_forces = True
@@ -167,17 +194,17 @@ def debug_(config: FinetuneConfigBase):
     config.num_workers = 0
 
 
-def make_configs(*, grad: bool):
+def make_configs(*, grad: bool, stress: bool):
     configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-    config, model_cls = create_config(grad=grad)
+    config, model_cls = create_config(grad=grad, stress=stress)
     ln_(config)
     # debug_(config)
     configs.append((config, model_cls))
     return configs
 
 
-configs_nograd = make_configs(grad=False)
-configs_grad = make_configs(grad=True)
+configs_nograd = make_configs(grad=False, stress=False)
+configs_grad = make_configs(grad=True, stress=True)
 
 
 # %%
@@ -200,9 +227,9 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 # )
 
 
-# # %%
-# runner = ll.Runner(run)
-# runner.fast_dev_run(configs, n_batches=256)
+# %%
+runner = ll.Runner(run)
+runner.fast_dev_run(configs_grad, n_batches=256)
 
 # # %%
 # runner = ll.Runner(run)

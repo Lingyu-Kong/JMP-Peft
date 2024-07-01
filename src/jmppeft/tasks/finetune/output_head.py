@@ -11,7 +11,7 @@ from jmppeft.modules.torch_scatter_polyfill import scatter
 from ll import Field, TypedConfig
 from ll.nn import MLP
 from torch_geometric.data.data import BaseData
-from typing_extensions import TypedDict, override
+from typing_extensions import NotRequired, TypedDict, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...models.gemnet.layers.force_scaler import ForceScaler
@@ -203,6 +203,9 @@ class GradientStressTargetConfig(BaseTargetConfig):
     be registered as a graph scalar target.
     """
 
+    forces: bool = False
+    """Whether to compute the forces as well"""
+
     @override
     def construct_output_head(
         self,
@@ -234,6 +237,10 @@ class GradientStressTargetConfig(BaseTargetConfig):
             symmetric_displacement = 0.5 * (
                 data.displacement + data.displacement.transpose(-1, -2)
             )
+
+            # # Disable autograd here so that we don't downcast the `pos` and `cell`
+            # # tensors to [b]float16.
+            # with torch.autocast(device_type=data.pos.device.type, enabled=False):
             data.pos = data.pos + torch.bmm(
                 data.pos.unsqueeze(-2), symmetric_displacement[data.batch]
             ).squeeze(-2)
@@ -250,6 +257,7 @@ class GradientStressOutputHeadInput(TypedDict):
     data: BaseData
     backbone_output: GOCBackboneOutput
     graph_preds: dict[str, torch.Tensor]
+    _stress_precomputed_forces: NotRequired[torch.Tensor]
 
 
 class GradientStressOutputHead(nn.Module):
@@ -271,18 +279,36 @@ class GradientStressOutputHead(nn.Module):
         if "displacement" not in data:
             raise ValueError("Displacement tensor not found in data")
 
-        grad = torch.autograd.grad(
-            energy,
-            [data.pos, data.displacement],
-            grad_outputs=torch.ones_like(energy),
-            create_graph=self.training,
-        )
-        forces = -1 * grad[0]
-        virial = grad[1]
+        if self.target_config.forces:
+            grad = torch.autograd.grad(
+                energy,
+                [data.pos, data.displacement],
+                grad_outputs=torch.ones_like(energy),
+                create_graph=self.training,
+            )
+            forces = -1 * grad[0]
+            virial = grad[1]
 
-        volume = torch.linalg.det(data.cell).abs()
-        tc.tassert(tc.Float[torch.Tensor, "bsz"], volume)
-        stress = virial / rearrange(volume, "b -> b 1 1")
+            volume = torch.linalg.det(data.cell).abs()
+            tc.tassert(tc.Float[torch.Tensor, "bsz"], volume)
+            stress = virial / rearrange(volume, "b -> b 1 1")
+
+            # Store the forces in the input dict so that they can be used
+            # by the force head.
+            input["_stress_precomputed_forces"] = forces
+        else:
+            grad = torch.autograd.grad(
+                energy,
+                [data.displacement],
+                grad_outputs=torch.ones_like(energy),
+                create_graph=self.training,
+            )
+            # forces = -1 * grad[0]
+            virial = grad[0]
+
+            volume = torch.linalg.det(data.cell).abs()
+            tc.tassert(tc.Float[torch.Tensor, "bsz"], volume)
+            stress = virial / rearrange(volume, "b -> b 1 1")
 
         return stress
 
@@ -291,7 +317,7 @@ GraphTargetConfig: TypeAlias = Annotated[
     GraphScalarTargetConfig
     | GraphBinaryClassificationTargetConfig
     | GraphMulticlassClassificationTargetConfig
-    | GradientStressOutputHead,
+    | GradientStressTargetConfig,
     Field(discriminator="kind"),
 ]
 
@@ -329,6 +355,9 @@ class GradientForcesTargetConfig(BaseTargetConfig):
     The name of the energy target. This target must
     be registered as a graph scalar target.
     """
+
+    use_stress_forces: bool = False
+    """If True, assumes that the stress head has already computed the forces."""
 
     @override
     def construct_output_head(
@@ -541,6 +570,7 @@ class GradientOutputHeadInput(TypedDict):
     data: BaseData
     backbone_output: GOCBackboneOutput
     graph_preds: dict[str, torch.Tensor]
+    _stress_precomputed_forces: NotRequired[torch.Tensor]
 
 
 class GradientForcesOutputHead(nn.Module):
@@ -553,6 +583,12 @@ class GradientForcesOutputHead(nn.Module):
 
     @override
     def forward(self, input: GradientOutputHeadInput) -> torch.Tensor:
+        if self.target_config.use_stress_forces:
+            assert (
+                forces := input.pop("_stress_precomputed_forces")
+            ) is not None, "Forces not found"
+            return forces
+
         data = input["data"]
         assert (graph_preds := input.get("graph_preds")), "Graph predictions not found"
         energy = graph_preds[self.target_config.energy_name]
