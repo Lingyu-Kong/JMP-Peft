@@ -135,6 +135,7 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         gradient: bool,
         energy_coefficient: float = 1.0,
         energy_loss: LossConfig = MAELossConfig(),
+        energy_pooling: Literal["mean", "sum"] = "mean",
         force_coefficient: float = 100.0,
         force_loss: LossConfig = L2MAELossConfig(),
     ):
@@ -143,6 +144,7 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
                 name="y",
                 loss_coefficient=energy_coefficient,
                 loss=energy_loss,
+                reduction=energy_pooling,
             ),
         ]
         self.node_targets = [

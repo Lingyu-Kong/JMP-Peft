@@ -3,48 +3,53 @@ from pathlib import Path
 
 import ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
-from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base
+from jmppeft.tasks.finetune import matbench_discovery as M
 from jmppeft.tasks.finetune.base import (
     FinetuneConfigBase,
     FinetuneModelBase,
     RLPConfig,
     WarmupCosRLPConfig,
 )
-from jmppeft.tasks.finetune.matbench_discovery import (
-    MatbenchDiscoveryConfig,
-    MatbenchDiscoveryModel,
-)
 from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_config
 
-project_root = Path("/nimahome/experiment-data/")
+project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
 
-ckpt_path = Path("/nimahome/checkpoints/jmp-l.pt")
-dataset_base_path = Path("/nimahome/datasets/matbench_discovery/")
+ckpt_path = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/jmp-l.pt")
 
 
 def create_config():
-    config = MatbenchDiscoveryConfig.draft()
-    config.project = "jmp_peft_nersc"
+    config = M.MatbenchDiscoveryConfig.draft()
+    config.project = "jmp_mptrj"
     config.name = "matbench_discovery-nograd"
     jmp_l_ft_config_(config)
-    jmp_matbench_discovery_config_(
-        config,
-        dataset_base_path,
-        use_megnet_133k=True,
-        use_linref=True,
+    # jmp_matbench_discovery_config_(
+    #     config,
+    #     dataset_base_path,
+    #     use_megnet_133k=True,
+    #     use_linref=True,
+    # )
+
+    config.train_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="train")
+    config.val_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="val")
+    config.test_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="test")
+
+    config.primary_metric = ll.PrimaryMetricConfig(
+        name="matbench_discovery/force_mae", mode="min"
     )
+
     config.energy_forces_config_(
         gradient=False,
         energy_coefficient=1.0,
+        energy_pooling="mean",
         force_coefficient=1.0,
         force_loss=loss.MACEHuberLossConfig(delta=0.01),
         energy_loss=loss.HuberLossConfig(delta=0.01),
     )
     config.trainer.optimizer.gradient_clipping = ll.GradientClippingConfig(
-        value=2.0,
+        value=5.0,
         algorithm="norm",
     )
 
@@ -102,18 +107,22 @@ def create_config():
 
     config.name += "_mace"
 
-    return config.finalize(), MatbenchDiscoveryModel
+    return config.finalize(), M.MatbenchDiscoveryModel
 
 
 def ln_(config: FinetuneConfigBase):
     config.backbone.ln_per_layer = True
-    config.backbone.scale_factor_to_ln = True
+    config.backbone.scale_factor_to_ln = False
+
+
+def debug_(config: FinetuneConfigBase):
+    config.num_workers = 0
 
 
 configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
 config, model_cls = create_config()
-# debug_high_loss_(config)
 ln_(config)
+# debug_(config)
 configs.append((config, model_cls))
 
 

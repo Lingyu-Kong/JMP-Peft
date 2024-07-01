@@ -4,19 +4,29 @@ from collections.abc import Callable
 from functools import cache, partial
 from logging import getLogger
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast, runtime_checkable
 
 import numpy as np
 import torch
 import wrapt
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
-from typing_extensions import override
+from torch_geometric.data.data import BaseData
+from typing_extensions import TypeVar, override
 
 from .. import transforms as T
-from .dataset_typing import DatasetProtocol, TDataset
 
 log = getLogger(__name__)
+
+
+@runtime_checkable
+class DatasetProtocol(Protocol):
+    def __getitem__(self, index: int, /) -> BaseData: ...
+
+    def __len__(self) -> int: ...
+
+
+TDataset = TypeVar("TDataset", bound=DatasetProtocol, infer_variance=True)
 
 
 def transform(
