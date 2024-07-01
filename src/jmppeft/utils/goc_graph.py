@@ -424,6 +424,15 @@ def generate_graphs(
     symmetrize_main: bool = False,
     qint_tags: list[int] | None = [1, 2],
 ):
+    """
+    Data needs the following attributes:
+        - cell
+        - pos
+        - natoms
+        - batch
+        - tags
+    """
+
     if callable(cutoffs):
         cutoffs = cutoffs(data)
     if callable(max_neighbors):
