@@ -1,5 +1,6 @@
 # %%
 from pathlib import Path
+from typing import Literal
 
 import ll
 from jmppeft.modules import loss
@@ -66,37 +67,63 @@ def jmp_l_(config: FinetuneConfigBase):
     config.name_parts.append("jmp_l")
 
 
-def create_config():
+def create_config(*, grad: bool):
     config = M.MatbenchDiscoveryConfig.draft()
     config.project = "jmp_mptrj"
-    config.name = "matbench_discovery-nograd"
+    config.name = "mptrj"
     jmp_s_(config)
 
-    config.train_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(
-        split="train",
-        debug_repeat_largest_systems_for_testing=True,
-    )
-    config.val_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(
-        split="val",
-        debug_repeat_largest_systems_for_testing=True,
-    )
-    config.test_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(
-        split="test",
-        debug_repeat_largest_systems_for_testing=True,
-    )
+    def dataset_fn(split: Literal["train", "val", "test"]):
+        return base.FinetuneMPTrjHuggingfaceDatasetConfig(
+            split=split, debug_repeat_largest_systems_for_testing=True
+        )
+
+    config.train_dataset = dataset_fn("train")
+    config.val_dataset = dataset_fn("val")
+    config.test_dataset = dataset_fn("test")
 
     config.primary_metric = ll.PrimaryMetricConfig(
         name="matbench_discovery/force_mae", mode="min"
     )
 
-    config.energy_forces_config_(
-        gradient=False,
-        energy_coefficient=1.0,
-        energy_pooling="mean",
-        force_coefficient=1.0,
-        force_loss=loss.MACEHuberLossConfig(delta=0.01),
-        energy_loss=loss.HuberLossConfig(delta=0.01),
-    )
+    if grad:
+        config.energy_forces_config_(
+            gradient=True,
+            energy_coefficient=1.0,
+            energy_pooling="mean",
+            force_coefficient=1.0,
+            force_loss=loss.MACEHuberLossConfig(delta=0.01),
+            energy_loss=loss.HuberLossConfig(delta=0.01),
+        )
+
+        config.backbone.regress_forces = False
+        config.backbone.direct_forces = False
+        config.backbone.regress_energy = True
+
+        config.tags.append("grad")
+        config.name_parts.append("grad")
+        config.trainer.precision = "16-mixed-auto"
+
+        config.batch_size = 12
+
+    else:
+        config.energy_forces_config_(
+            gradient=False,
+            energy_coefficient=1.0,
+            energy_pooling="mean",
+            force_coefficient=1.0,
+            force_loss=loss.MACEHuberLossConfig(delta=0.01),
+            energy_loss=loss.HuberLossConfig(delta=0.01),
+        )
+
+        config.backbone.regress_forces = True
+        config.backbone.direct_forces = True
+        config.backbone.regress_energy = True
+
+        config.tags.append("nograd")
+        config.name_parts.append("nograd")
+        config.trainer.precision = "16-mixed-auto"
+
     config.trainer.optimizer.gradient_clipping = ll.GradientClippingConfig(
         value=5.0,
         algorithm="norm",
@@ -117,23 +144,15 @@ def create_config():
         rlp=RLPConfig(patience=3, factor=0.8),
     )
 
-    config.tags.append("direct_forces")
-    config.name += "_direct_forces"
-    config.trainer.precision = "16-mixed-auto"
-
     # Set data config
     config.num_workers = 4
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
     config.trainer.use_distributed_sampler = False
 
-    config.backbone.regress_forces = True
-    config.backbone.direct_forces = True
-    config.backbone.regress_energy = True
-
     config.with_project_root_(project_root)
 
-    config.name += "_mace"
+    config.name_parts.append("maceconf")
 
     return config.finalize(), M.MatbenchDiscoveryModel
 
@@ -147,11 +166,17 @@ def debug_(config: FinetuneConfigBase):
     config.num_workers = 0
 
 
-configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
-config, model_cls = create_config()
-ln_(config)
-# debug_(config)
-configs.append((config, model_cls))
+def make_configs(*, grad: bool):
+    configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
+    config, model_cls = create_config(grad=grad)
+    ln_(config)
+    # debug_(config)
+    configs.append((config, model_cls))
+    return configs
+
+
+configs_nograd = make_configs(grad=False)
+configs_grad = make_configs(grad=True)
 
 
 # %%
@@ -161,26 +186,35 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
-# %%
-runner = ll.Runner(run)
-runner.fast_dev_run(configs, n_batches=256)
+# # %%
+# runner = ll.Runner(run)
+# runner.fast_dev_run(configs, n_batches=256)
 
-# %%
-runner = ll.Runner(run)
-runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
+# # %%
+# runner = ll.Runner(run)
+# runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
 
 
 # %%
 runner = ll.Runner(run)
 runner.session(
-    configs,
+    configs_grad,
     snapshot=True,
-    # gpus=[(0, 2, 3, 4, 5, 6)],
     env={
-        "CUDA_VISIBLE_DEVICES": "1,2,3,5",
+        "CUDA_VISIBLE_DEVICES": "0,1",
         "LL_DISABLE_TYPECHECKING": "1",
-        # "NCCL_DEBUG": "TRACE",
-        # "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
-        # "TORCH_CPP_LOG_LEVEL": "INFO",
     },
 )
+
+# %%
+runner = ll.Runner(run)
+runner.session(
+    configs_nograd,
+    snapshot=True,
+    env={
+        "CUDA_VISIBLE_DEVICES": "2,3",
+        "LL_DISABLE_TYPECHECKING": "1",
+    },
+)
+
+# %%
