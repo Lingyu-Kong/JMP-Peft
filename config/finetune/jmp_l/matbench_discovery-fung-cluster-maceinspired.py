@@ -37,6 +37,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
+    config.batch_size = 32
     config.name_parts.append("jmp_s")
 
 
@@ -61,6 +62,7 @@ def jmp_l_(config: FinetuneConfigBase):
             "blocks_5": 0.625,
         },
     )
+    config.batch_size = 3
     config.name_parts.append("jmp_l")
 
 
@@ -70,9 +72,18 @@ def create_config():
     config.name = "matbench_discovery-nograd"
     jmp_s_(config)
 
-    config.train_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="train")
-    config.val_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="val")
-    config.test_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(split="test")
+    config.train_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(
+        split="train",
+        debug_repeat_largest_systems_for_testing=True,
+    )
+    config.val_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(
+        split="val",
+        debug_repeat_largest_systems_for_testing=True,
+    )
+    config.test_dataset = base.FinetuneMPTrjHuggingfaceDatasetConfig(
+        split="test",
+        debug_repeat_largest_systems_for_testing=True,
+    )
 
     config.primary_metric = ll.PrimaryMetricConfig(
         name="matbench_discovery/force_mae", mode="min"
@@ -111,8 +122,7 @@ def create_config():
     config.trainer.precision = "16-mixed-auto"
 
     # Set data config
-    config.batch_size = 3
-    config.num_workers = 2
+    config.num_workers = 4
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
     config.trainer.use_distributed_sampler = False
@@ -153,7 +163,7 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs)
+runner.fast_dev_run(configs, n_batches=256)
 
 # %%
 runner = ll.Runner(run)
