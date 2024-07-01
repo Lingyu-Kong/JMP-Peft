@@ -14,7 +14,7 @@ from torch_geometric.data.data import BaseData
 from typing_extensions import NotRequired, TypedDict, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
-from ...models.gemnet.layers.force_scaler import ForceScaler
+from ...models.gemnet.layers.force_scaler import ForceScaler, ForceStressScaler
 from ...modules.loss import L2MAELossConfig, LossConfig, MAELossConfig
 from ..config import OutputConfig
 
@@ -266,6 +266,8 @@ class GradientStressOutputHead(nn.Module):
         super().__init__()
 
         self.target_config = target_config
+        if target_config.forces:
+            self.force_stress_scaler = ForceStressScaler()
 
     @override
     def forward(self, input: GradientStressOutputHeadInput) -> torch.Tensor:
@@ -280,18 +282,22 @@ class GradientStressOutputHead(nn.Module):
             raise ValueError("Displacement tensor not found in data")
 
         if self.target_config.forces:
-            grad = torch.autograd.grad(
-                energy,
-                [data.pos, data.displacement],
-                grad_outputs=torch.ones_like(energy),
-                create_graph=self.training,
-            )
-            forces = -1 * grad[0]
-            virial = grad[1]
+            # grad = torch.autograd.grad(
+            #     energy,
+            #     [data.pos, data.displacement],
+            #     grad_outputs=torch.ones_like(energy),
+            #     create_graph=self.training,
+            # )
+            # forces = -1 * grad[0]
+            # virial = grad[1]
 
-            volume = torch.linalg.det(data.cell).abs()
-            tc.tassert(tc.Float[torch.Tensor, "bsz"], volume)
-            stress = virial / rearrange(volume, "b -> b 1 1")
+            # volume = torch.linalg.det(data.cell).abs()
+            # tc.tassert(tc.Float[torch.Tensor, "bsz"], volume)
+            # stress = virial / rearrange(volume, "b -> b 1 1")
+
+            forces, stress = self.force_stress_scaler.calc_forces_and_update(
+                energy, data.pos, data.displacement, data.cell
+            )
 
             # Store the forces in the input dict so that they can be used
             # by the force head.

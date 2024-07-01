@@ -38,7 +38,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
-    config.batch_size = 24
+    config.batch_size = 8
     config.name_parts.append("jmp_s")
 
 
@@ -178,7 +178,7 @@ def create_config(*, grad: bool, stress: bool):
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
     config.trainer.use_distributed_sampler = False
-    config.compute_graphs_on_cpu = True
+    config.compute_graphs_on_cpu = False
 
     config.with_project_root_(project_root)
 
@@ -230,11 +230,12 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 
 # %%
-runner = ll.Runner(run)
-runner.fast_dev_run(configs_grad)
+# runner = ll.Runner(run)
+# runner.fast_dev_run(configs_grad, n_batches=64)
 
-runner = ll.Runner(run)
-runner.fast_dev_run(configs_nograd)
+# # %%
+# runner = ll.Runner(run)
+# runner.fast_dev_run(configs_nograd)
 
 # # %%
 # runner = ll.Runner(run)
