@@ -64,8 +64,7 @@ class MetricPair:
 class MetricPairProvider(Protocol):
     def __call__(
         self, prop: str, batch: BaseData, preds: dict[str, torch.Tensor]
-    ) -> MetricPair | None:
-        ...
+    ) -> MetricPair | None: ...
 
 
 class ConflictingMetrics(nn.Module):
@@ -80,7 +79,9 @@ class ConflictingMetrics(nn.Module):
         super().__init__()
 
         from .base import (
+            DirectStressTargetConfig,
             GradientForcesTargetConfig,
+            GradientStressTargetConfig,
             GraphScalarTargetConfig,
             NodeVectorTargetConfig,
         )
@@ -100,6 +101,8 @@ class ConflictingMetrics(nn.Module):
                         GraphScalarTargetConfig,
                         NodeVectorTargetConfig,
                         GradientForcesTargetConfig,
+                        DirectStressTargetConfig,
+                        GradientStressTargetConfig,
                     ),
                 )
             }
@@ -114,6 +117,8 @@ class ConflictingMetrics(nn.Module):
                         GraphScalarTargetConfig,
                         NodeVectorTargetConfig,
                         GradientForcesTargetConfig,
+                        DirectStressTargetConfig,
+                        GradientStressTargetConfig,
                     ),
                 )
             }
@@ -263,7 +268,9 @@ class FinetuneMetrics(nn.Module):
         super().__init__()
 
         from .base import (
+            DirectStressTargetConfig,
             GradientForcesTargetConfig,
+            GradientStressTargetConfig,
             GraphBinaryClassificationTargetConfig,
             GraphMulticlassClassificationTargetConfig,
             GraphScalarTargetConfig,
@@ -290,6 +297,8 @@ class FinetuneMetrics(nn.Module):
                         GraphScalarTargetConfig,
                         NodeVectorTargetConfig,
                         GradientForcesTargetConfig,
+                        GradientStressTargetConfig,
+                        DirectStressTargetConfig,
                     ),
                 )
             },
@@ -306,6 +315,8 @@ class FinetuneMetrics(nn.Module):
                             GraphScalarTargetConfig,
                             NodeVectorTargetConfig,
                             GradientForcesTargetConfig,
+                            GradientStressTargetConfig,
+                            DirectStressTargetConfig,
                         ),
                     )
                 },

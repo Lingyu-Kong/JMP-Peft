@@ -90,7 +90,9 @@ from ..config import (
     optimizer_from_config,
 )
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
+from .output_head import DirectStressTargetConfig as DirectStressTargetConfig
 from .output_head import GradientForcesTargetConfig as GradientForcesTargetConfig
+from .output_head import GradientStressTargetConfig as GradientStressTargetConfig
 from .output_head import (
     GraphBinaryClassificationTargetConfig as GraphBinaryClassificationTargetConfig,
 )
