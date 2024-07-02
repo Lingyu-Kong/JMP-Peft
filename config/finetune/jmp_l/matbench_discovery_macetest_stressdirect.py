@@ -225,7 +225,7 @@ runner.fast_dev_run(configs, n_batches=250)
 runner = ll.Runner(run)
 _ = runner.session(
     configs,
-    snapshot=False,
+    snapshot=True,
     env={
         "CUDA_VISIBLE_DEVICES": "0,1",
         "LL_DISABLE_TYPECHECKING": "1",
