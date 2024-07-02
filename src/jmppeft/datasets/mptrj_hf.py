@@ -35,7 +35,7 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
         assert isinstance(dataset, datasets.Dataset)
 
         if self.config.filter_small_systems:
-            dataset = dataset.filter(lambda x: x["num_atoms"] > 5)
+            dataset = dataset.filter(lambda x: x["num_atoms"] > 4)
 
         self.dataset = dataset
         self.dataset.set_format("torch")

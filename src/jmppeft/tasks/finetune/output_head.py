@@ -11,7 +11,7 @@ from jmppeft.modules.torch_scatter_polyfill import scatter
 from ll import Field, TypedConfig
 from ll.nn import MLP
 from torch_geometric.data.data import BaseData
-from typing_extensions import NotRequired, TypedDict, override
+from typing_extensions import NotRequired, TypedDict, assert_never, override
 
 from ...models.gemnet.backbone import GOCBackboneOutput
 from ...models.gemnet.layers.force_scaler import ForceScaler, ForceStressScaler
@@ -28,7 +28,7 @@ class BaseTargetConfig(TypedConfig, ABC):
     loss_coefficient: float = 1.0
     """The loss coefficient for the target"""
 
-    reduction: Literal["sum", "mean", "max"] = "sum"
+    reduction: Literal["sum", "mean"] = "sum"
     """
     The reduction method for the target. This refers to how the target is computed.
     For example, for graph scalar targets, this refers to how the scalar targets are
@@ -194,7 +194,7 @@ class GradientStressTargetConfig(BaseTargetConfig):
 
     kind: Literal["gradient_stress"] = "gradient_stress"
 
-    loss: LossConfig = L2MAELossConfig()
+    loss: LossConfig = MAELossConfig()
     """The loss function to use for the target"""
 
     energy_name: str
@@ -319,11 +319,81 @@ class GradientStressOutputHead(nn.Module):
         return stress
 
 
+class DirectStressTargetConfig(BaseTargetConfig):
+    kind: Literal["direct_stress"] = "direct_stress"
+
+    loss: LossConfig = MAELossConfig()
+    """The loss function to use for the target"""
+
+    num_layers: int = 2
+    """The number of layers in the output head"""
+
+    @property
+    def extensive(self):
+        match self.reduction:
+            case "sum":
+                return True
+            case "mean":
+                return False
+            case _:
+                assert_never(self.reduction)
+
+    @override
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return DirectStressOutputHead(self, d_model=d_model_edge)
+
+
+class DirectStressOutputHeadInput(TypedDict):
+    data: BaseData
+    backbone_output: GOCBackboneOutput
+
+
+class DirectStressOutputHead(nn.Module):
+    @override
+    def __init__(
+        self,
+        target_config: DirectStressTargetConfig,
+        d_model: int,
+    ):
+        super().__init__()
+
+        self.target_config = target_config
+        del target_config
+
+        from ._output_head.stress import Rank2DecompositionEdgeBlock
+
+        self.block = Rank2DecompositionEdgeBlock(
+            d_model,
+            edge_level=True,
+            extensive=self.target_config.extensive,
+            num_layers=self.target_config.num_layers,
+        )
+
+    @override
+    def forward(
+        self, input: DirectStressOutputHeadInput
+    ) -> tc.Float[torch.Tensor, "bsz 3 3"]:
+        return self.block(
+            input["backbone_output"]["forces"],
+            input["backbone_output"]["V_st"],
+            input["backbone_output"]["idx_t"],
+            input["data"].batch,
+            input["data"].cell.shape[0],
+        )
+
+
 GraphTargetConfig: TypeAlias = Annotated[
     GraphScalarTargetConfig
     | GraphBinaryClassificationTargetConfig
     | GraphMulticlassClassificationTargetConfig
-    | GradientStressTargetConfig,
+    | GradientStressTargetConfig
+    | DirectStressTargetConfig,
     Field(discriminator="kind"),
 ]
 

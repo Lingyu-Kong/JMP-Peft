@@ -182,9 +182,11 @@ class ForceStressScaler(nn.Module):
                         ~torch.all(stress.isfinite())
                     )
                     found_nans_or_infs = found_nans_or_infs.view(-1)
-                    found_nans_or_infs = _all_gather_ddp_if_available(
-                        found_nans_or_infs
-                    )
+                    # NOTE: This is disabled for now because SkipBatch exception
+                    #   leads to a deadlock in DDP.
+                    # found_nans_or_infs = _all_gather_ddp_if_available(
+                    #     found_nans_or_infs
+                    # )
                     # ^ (world_size, 1)
                     found_nans_or_infs = bool(found_nans_or_infs.any().item())
 

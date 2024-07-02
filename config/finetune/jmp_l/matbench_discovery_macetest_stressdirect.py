@@ -206,8 +206,7 @@ def make_configs(*, grad: bool, stress: bool):
     return configs
 
 
-configs_nograd = make_configs(grad=False, stress=False)
-configs_grad = make_configs(grad=True, stress=True)
+configs = make_configs(grad=False, stress=True)
 
 
 # %%
@@ -217,63 +216,18 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
     trainer.fit(model)
 
 
-# # %%
-# runner = ll.Runner(run)
-# runner.fast_dev_run(
-#     configs_nograd,
-#     n_batches=512,
-#     env={
-#         "CUDA_VISIBLE_DEVICES": "0",
-#         "CUDA_LAUNCH_BLOCKING": "1",
-#         "LL_DISABLE_TYPECHECKING": "1",
-#     },
-# )
-
-
 # %%
-# runner = ll.Runner(run)
-# runner.fast_dev_run(configs_nograd, n_batches=4)
-
-# %%
-# runner = ll.Runner(run)
-# runner.fast_dev_run(configs_nograd)
-
-# %%
-# runner = ll.Runner(run)
-# runner.local(configs_nograd, env={"CUDA_VISIBLE_DEVICES": "0"})
-# %%
-# runner = ll.Runner(run)
-# _ = runner.session(
-#     configs_nograd,
-#     snapshot=False,
-#     env={
-#         "CUDA_VISIBLE_DEVICES": "0,1,2,3",
-#         # "LL_DISABLE_TYPECHECKING": "1",
-#         "NCCL_DEBUG": "TRACE",
-#         "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
-#         "TORCH_CPP_LOG_LEVEL": "INFO",
-#     },
-# )
+runner = ll.Runner(run)
+runner.fast_dev_run(configs, n_batches=250)
 
 
 # %%
 runner = ll.Runner(run)
-cmd_grad = runner.session(
-    configs_grad,
-    snapshot=True,
+_ = runner.session(
+    configs,
+    snapshot=False,
     env={
         "CUDA_VISIBLE_DEVICES": "0,1",
-        "LL_DISABLE_TYPECHECKING": "1",
-    },
-)
-
-# %%
-runner = ll.Runner(run)
-cmd_nograd = runner.session(
-    configs_nograd,
-    snapshot=True,
-    env={
-        "CUDA_VISIBLE_DEVICES": "2,3",
         "LL_DISABLE_TYPECHECKING": "1",
     },
 )

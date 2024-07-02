@@ -287,8 +287,8 @@ class Rank2DecompositionEdgeBlock(nn.Module):
         self,
         x_edge: tc.Float[torch.Tensor, "num_edges emb_size"],
         edge_vec: tc.Float[torch.Tensor, "num_edges 3"],
-        edge_index: tc.Float[torch.Tensor, "2 num_edges"],
-        batch_idx: tc.Float[torch.Tensor, "num_nodes"],
+        idx_t: tc.Int[torch.Tensor, "num_edges"],
+        batch_idx: tc.Int[torch.Tensor, "num_nodes"],
         batch_size: int,
     ) -> tc.Float[torch.Tensor, "bsz 3 3"]:
         """evaluate
@@ -316,24 +316,33 @@ class Rank2DecompositionEdgeBlock(nn.Module):
                 edge_scalar = module(edge_scalar)
 
             # Irrep 2 prediction
-            edge_irrep2 = (
-                sphere_irrep2[:, :, None] * x_edge[:, None, :]
-            )  # (nEdges, 5, emb_size)
+            edge_irrep2 = x_edge  # (nEdges, 5, emb_size)
             for i, module in enumerate(self.irrep2_MLP):
-                if i == 0:
-                    edge_irrep2 = module(edge_irrep2)
-                else:
-                    edge_irrep2 = module(edge_irrep2)
+                edge_irrep2 = module(edge_irrep2)
+            edge_irrep2 = sphere_irrep2[:, :, None] * edge_irrep2[:, None, :]
 
-            node_scalar = scatter(edge_scalar, edge_index, dim=0, reduce="mean")
-            node_irrep2 = scatter(edge_irrep2, edge_index, dim=0, reduce="mean")
+            node_scalar = scatter(
+                edge_scalar,
+                idx_t,
+                dim=0,
+                dim_size=batch_idx.shape[0],
+                reduce="mean",
+            )
+            node_irrep2 = scatter(
+                edge_irrep2,
+                idx_t,
+                dim=0,
+                dim_size=batch_idx.shape[0],
+                reduce="mean",
+            )
         else:
+            raise NotImplementedError
             edge_irrep2 = (
                 sphere_irrep2[:, :, None] * x_edge[:, None, :]
             )  # (nAtoms, 5, emb_size)
 
-            node_scalar = scatter(x_edge, edge_index, dim=0, reduce="mean")
-            node_irrep2 = scatter(edge_irrep2, edge_index, dim=0, reduce="mean")
+            node_scalar = scatter(x_edge, idx_t, dim=0, reduce="mean")
+            node_irrep2 = scatter(edge_irrep2, idx_t, dim=0, reduce="mean")
 
             # Irrep 0 prediction
             for i, module in enumerate(self.scalar_MLP):
@@ -350,11 +359,35 @@ class Rank2DecompositionEdgeBlock(nn.Module):
                     node_irrep2 = module(node_irrep2)
 
         if self.extensive:
-            scalar = scatter(node_scalar.view(-1), batch_idx, dim=0, reduce="sum")
-            irrep2 = scatter(node_irrep2.view(-1, 5), batch_idx, dim=0, reduce="sum")
+            scalar = scatter(
+                node_scalar.view(-1),
+                batch_idx,
+                dim=0,
+                dim_size=batch_size,
+                reduce="sum",
+            )
+            irrep2 = scatter(
+                node_irrep2.view(-1, 5),
+                batch_idx,
+                dim=0,
+                dim_size=batch_size,
+                reduce="sum",
+            )
         else:
-            irrep2 = scatter(node_irrep2.view(-1, 5), batch_idx, dim=0, reduce="mean")
-            scalar = scatter(node_scalar.view(-1), batch_idx, dim=0, reduce="mean")
+            irrep2 = scatter(
+                node_irrep2.view(-1, 5),
+                batch_idx,
+                dim=0,
+                dim_size=batch_size,
+                reduce="mean",
+            )
+            scalar = scatter(
+                node_scalar.view(-1),
+                batch_idx,
+                dim=0,
+                dim_size=batch_size,
+                reduce="mean",
+            )
 
         # Change of basis to compute a rank 2 symmetric tensor
 

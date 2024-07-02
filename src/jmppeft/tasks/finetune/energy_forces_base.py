@@ -21,8 +21,10 @@ from ...models.gemnet.backbone import GOCBackboneOutput
 from ...modules.loss import L2MAELossConfig, LossConfig, MAELossConfig
 from ...modules.relaxer import RelaxationOutput, Relaxer, RelaxerConfig
 from ...modules.transforms.normalize import denormalize_batch
-from .base import FinetuneConfigBase, FinetuneModelBase
+from .base import FinetuneConfigBase, FinetuneModelBase, SkipBatch
 from .output_head import (
+    DirectStressOutputHead,
+    DirectStressTargetConfig,
     GradientForcesTargetConfig,
     GradientOutputHeadInput,
     GradientStressTargetConfig,
@@ -34,10 +36,6 @@ from .output_head import (
 )
 
 log = getLogger(__name__)
-
-
-class SkipBatch(Exception):
-    pass
 
 
 class RelaxationConfig(ll.TypedConfig):
@@ -181,10 +179,8 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
         force_loss: LossConfig = L2MAELossConfig(),
         stress_coefficient: float = 1.0,
         stress_loss: LossConfig = MAELossConfig(),
+        stress_pooling: Literal["mean", "sum"] = "mean",
     ):
-        if not gradient:
-            raise ValueError("Stress target requires gradient forces.")
-
         self.graph_targets = [
             GraphScalarTargetConfig(
                 name="y",
@@ -198,6 +194,13 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
                 loss_coefficient=stress_coefficient,
                 loss=stress_loss,
                 forces=True,
+            )
+            if gradient
+            else DirectStressTargetConfig(
+                name="stress",
+                loss_coefficient=stress_coefficient,
+                loss=stress_loss,
+                reduction=stress_pooling,
             ),
         ]
         self.node_targets = [
@@ -207,6 +210,12 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
                 loss_coefficient=force_coefficient,
                 loss=force_loss,
                 use_stress_forces=True,
+            )
+            if gradient
+            else NodeVectorTargetConfig(
+                name="force",
+                loss_coefficient=force_coefficient,
+                loss=force_loss,
             )
         ]
 
