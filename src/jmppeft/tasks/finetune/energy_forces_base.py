@@ -36,6 +36,10 @@ from .output_head import (
 log = getLogger(__name__)
 
 
+class SkipBatch(Exception):
+    pass
+
+
 class RelaxationConfig(ll.TypedConfig):
     validation: RelaxerConfig | None = None
     """Relaxer configuration for validation. If None, relaxer is disabled for validation."""
@@ -344,10 +348,19 @@ class EnergyForcesModelBase(
                 stack.enter_context(target.model_forward_context(data))
 
             # Generate graphs on the GPU
-            if not self.config.compute_graphs_on_cpu:
-                data = self.generate_graphs_transform(data)
-            else:
-                data = self.postprocess_graphs_gpu(data)
+            try:
+                if not self.config.compute_graphs_on_cpu:
+                    data = self.generate_graphs_transform(data)
+                else:
+                    data = self.postprocess_graphs_gpu(data)
+            except Exception as e:
+                # If this is a CUDA error, rethrow it
+                if "CUDA" in str(data):
+                    raise
+
+                # Otherwise, log the error and skip the batch
+                log.error(f"Error generating graphs: {e}")
+                raise SkipBatch()
 
             # Run the backbone
             atomic_numbers = data.atomic_numbers - 1

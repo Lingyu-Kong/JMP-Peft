@@ -18,6 +18,8 @@ class FinetuneMPTrjHuggingfaceDatasetConfig(CommonDatasetConfig):
     energy_column: str = "energy_per_atom"
     # See: https://github.com/janosh/matbench-discovery/issues/103#issuecomment-2070941629
 
+    filter_small_systems: bool = True
+
     def create_dataset(self):
         return FinetuneMPTrjHuggingfaceDataset(self)
 
@@ -31,6 +33,10 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
 
         dataset = datasets.load_dataset("nimashoghi/mptrj", split=self.config.split)
         assert isinstance(dataset, datasets.Dataset)
+
+        if self.config.filter_small_systems:
+            dataset = dataset.filter(lambda x: x["num_atoms"] > 5)
+
         self.dataset = dataset
         self.dataset.set_format("torch")
 

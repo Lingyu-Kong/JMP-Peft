@@ -38,7 +38,7 @@ def jmp_s_(config: FinetuneConfigBase):
             "blocks_3": 0.625,
         },
     )
-    config.batch_size = 64
+    config.batch_size = 32
     config.name_parts.append("jmp_s")
 
 
@@ -121,7 +121,7 @@ def create_config(*, grad: bool, stress: bool):
         config.name_parts.append("grad")
         config.trainer.precision = "16-mixed-auto"
 
-        config.batch_size = 8
+        config.batch_size = 12
 
     else:
         if stress:
@@ -178,7 +178,7 @@ def create_config(*, grad: bool, stress: bool):
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
     config.trainer.use_distributed_sampler = False
-    config.compute_graphs_on_cpu = True
+    config.compute_graphs_on_cpu = False
 
     config.with_project_root_(project_root)
 
@@ -201,7 +201,7 @@ def make_configs(*, grad: bool, stress: bool):
     configs: list[tuple[FinetuneConfigBase, type[FinetuneModelBase]]] = []
     config, model_cls = create_config(grad=grad, stress=stress)
     ln_(config)
-    debug_(config)
+    # debug_(config)
     configs.append((config, model_cls))
     return configs
 
@@ -232,15 +232,28 @@ def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:
 
 # %%
 # runner = ll.Runner(run)
-# runner.fast_dev_run(configs_grad, n_batches=64)
+# runner.fast_dev_run(configs_nograd, n_batches=4)
 
 # %%
-runner = ll.Runner(run)
-runner.fast_dev_run(configs_nograd)
-
-# # %%
 # runner = ll.Runner(run)
-# runner.local(configs, env={"CUDA_VISIBLE_DEVICES": "0"})
+# runner.fast_dev_run(configs_nograd)
+
+# %%
+# runner = ll.Runner(run)
+# runner.local(configs_nograd, env={"CUDA_VISIBLE_DEVICES": "0"})
+# %%
+# runner = ll.Runner(run)
+# _ = runner.session(
+#     configs_nograd,
+#     snapshot=False,
+#     env={
+#         "CUDA_VISIBLE_DEVICES": "0,1,2,3",
+#         # "LL_DISABLE_TYPECHECKING": "1",
+#         "NCCL_DEBUG": "TRACE",
+#         "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
+#         "TORCH_CPP_LOG_LEVEL": "INFO",
+#     },
+# )
 
 
 # %%

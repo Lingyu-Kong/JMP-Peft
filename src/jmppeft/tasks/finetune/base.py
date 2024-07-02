@@ -1,3 +1,4 @@
+import contextlib
 import copy
 import fnmatch
 import math
@@ -103,6 +104,18 @@ from .output_head import NodeVectorTargetConfig as NodeVectorTargetConfig
 from .output_head import OutputHeadInput
 
 log = getLogger(__name__)
+
+
+class SkipBatch(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def _ignore_skip_batch():
+    try:
+        yield
+    except SkipBatch:
+        pass
 
 
 class RLPWarmupConfig(TypedConfig):
@@ -1252,17 +1265,20 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     @override
     def training_step(self, batch: BaseData, batch_idx: int):
-        with self.log_context(prefix=f"train/{self.metric_prefix()}/"):
-            preds = self(batch)
+        try:
+            with self.log_context(prefix=f"train/{self.metric_prefix()}/"):
+                preds = self(batch)
 
-            loss = self.compute_losses(batch, preds)
-            self._process_batch_dump(batch, batch_idx, loss)
+                loss = self.compute_losses(batch, preds)
+                self._process_batch_dump(batch, batch_idx, loss)
 
-            self.log_dict(self.train_metrics(batch, preds))
+                self.log_dict(self.train_metrics(batch, preds))
 
-            self._lora_debug_print()
-
-            return loss
+                self._lora_debug_print()
+                return loss
+        except SkipBatch:
+            log.warning(f"Batch #{batch_idx} {batch} skipped.")
+            return self.zero_loss()
 
     @torch.no_grad()
     def _process_batch_dump(self, data: BaseData, batch_idx: int, loss: torch.Tensor):
@@ -1338,14 +1354,18 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     @override
     def validation_step(self, batch: BaseData, batch_idx: int):
-        with self.log_context(prefix=f"val/{self.metric_prefix()}/"):
+        with _ignore_skip_batch(), self.log_context(
+            prefix=f"val/{self.metric_prefix()}/"
+        ):
             preds = self(batch)
 
             self.log_dict(self.val_metrics(batch, preds))
 
     @override
     def test_step(self, batch: BaseData, batch_idx: int):
-        with self.log_context(prefix=f"test/{self.metric_prefix()}/"):
+        with _ignore_skip_batch(), self.log_context(
+            prefix=f"test/{self.metric_prefix()}/"
+        ):
             preds = self(batch)
 
             self.log_dict(self.test_metrics(batch, preds))
