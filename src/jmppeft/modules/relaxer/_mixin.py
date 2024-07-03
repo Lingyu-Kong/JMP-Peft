@@ -269,6 +269,6 @@ class Relaxer:
             if self.config.traj_file
             else None,
             interval=self.config.interval,
-            verbose=self.config.verbose,
+            # verbose=self.config.verbose,
             **self.config.optimizer_kwargs,
         )

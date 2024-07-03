@@ -205,11 +205,11 @@ class TrajectoryObserver:
 
 @dataclass
 class RelaxationTrajectoryFrame:
-    energy: float
-    forces: np.ndarray
-    stresses: np.ndarray | None
-    atom_positions: np.ndarray
-    cell: np.ndarray
+    energy: torch.Tensor
+    forces: torch.Tensor
+    stresses: torch.Tensor | None
+    pos: torch.Tensor
+    cell: torch.Tensor
 
 
 @dataclass
@@ -220,13 +220,13 @@ class RelaxationTrajectory:
     def from_observer(cls, observer: TrajectoryObserver):
         frames = [
             RelaxationTrajectoryFrame(
-                energy=float(energy),
-                forces=forces,
-                stresses=stresses,
-                atom_positions=atom_positions,
-                cell=cell,
+                energy=torch.tensor(float(energy), dtype=torch.float),
+                forces=torch.from_numpy(forces).float(),
+                stresses=torch.from_numpy(stresses).float(),
+                pos=torch.from_numpy(pos).float(),
+                cell=torch.from_numpy(cell).float(),
             )
-            for energy, forces, stresses, atom_positions, cell in zip(
+            for energy, forces, stresses, pos, cell in zip(
                 observer.energies,
                 observer.forces,
                 observer.stresses
@@ -297,7 +297,7 @@ class Relaxer:
         steps: int = 500,
         traj_file: str | None = None,
         interval=1,
-        verbose=False,
+        # verbose=False,
         **kwargs,
     ):
         """
@@ -315,8 +315,9 @@ class Relaxer:
         if isinstance(atoms, (Structure, Molecule)):
             atoms = self.ase_adaptor.get_atoms(atoms)
         atoms.set_calculator(self.calculator)
-        stream = sys.stdout if verbose else io.StringIO()
-        with contextlib.redirect_stdout(stream):
+        # stream = sys.stdout if verbose else io.StringIO()
+        # with contextlib.redirect_stdout(stream):
+        with contextlib.nullcontext():
             obs = TrajectoryObserver(atoms, self.compute_stress)
             if self.relax_cell:
                 atoms = cast(Atoms, ExpCellFilter(atoms))
@@ -335,9 +336,6 @@ class Relaxer:
         # }
 
         final_structure = self.ase_adaptor.get_structure(atoms)
-        trajectory = obs
+        trajectory = RelaxationTrajectory.from_observer(obs)
 
-        return RelaxationOutput(
-            RelaxationTrajectory.from_observer(obs),
-            final_structure,
-        )
+        return RelaxationOutput(trajectory, final_structure)
