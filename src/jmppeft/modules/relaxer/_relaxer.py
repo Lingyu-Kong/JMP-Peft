@@ -4,9 +4,7 @@ https://github.com/materialsvirtuallab/m3gnet/blob/main/m3gnet/models/_dynamics.
 """
 
 import contextlib
-import io
 import pickle
-import sys
 from dataclasses import asdict, dataclass, field
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
