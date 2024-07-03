@@ -1,14 +1,11 @@
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast, runtime_checkable
+from typing import Any, Literal
 
 import ll
-import numpy as np
 import torch
 from ase import Atoms
-from lightning.pytorch import LightningModule
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
 from typing_extensions import assert_never
@@ -113,31 +110,11 @@ class RelaxerConfig(ll.TypedConfig):
                 assert_never(self.optimizer)
 
 
-@dataclass
-class RelaxationEpochState:
-    y_pred: list[float] = field(default_factory=lambda: [])
-    y_true: list[float] = field(default_factory=lambda: [])
-
-
-@runtime_checkable
-class RelaxationOutputToEnergy(Protocol):
-    def __call__(self, output: RelaxationOutput) -> torch.Tensor: ...
-
-
-def _default_relaxation_output_to_energy(output: RelaxationOutput) -> torch.Tensor:
+def default_relaxation_output_to_energy(output: RelaxationOutput) -> torch.Tensor:
     return torch.tensor(output.trajectory.energies[-1], dtype=torch.float)
 
 
 class Relaxer:
-    def initialize_state(self):
-        """
-        Initializes the state for relaxation epoch.
-
-        Returns:
-            RelaxationEpochState: The initialized relaxation epoch state.
-        """
-        return RelaxationEpochState()
-
     def __init__(
         self,
         config: RelaxerConfig,
@@ -146,8 +123,6 @@ class Relaxer:
         ],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
-        relaxation_output_to_energy: RelaxationOutputToEnergy | None = None,
-        state: RelaxationEpochState | None = None,
     ):
         super().__init__()
 
@@ -155,12 +130,6 @@ class Relaxer:
         self.model = model
         self.collate_fn = collate_fn
         self.device = device
-        self.relaxation_output_to_energy = (
-            _default_relaxation_output_to_energy
-            if relaxation_output_to_energy is None
-            else relaxation_output_to_energy
-        )
-        self.state = self.initialize_state() if state is None else state
 
     def _atoms_to_graph(self, atoms: Atoms) -> Batch:
         """
@@ -261,7 +230,7 @@ class Relaxer:
         else:
             return energy, forces
 
-    def _relax(self, graph: Batch):
+    def relax(self, graph: Batch):
         """
         Perform relaxation on the given atoms.
 
@@ -296,70 +265,3 @@ class Relaxer:
             verbose=self.config.verbose,
             **self.config.optimizer_kwargs,
         )
-
-    def step(self, input: Batch, y_true: torch.Tensor):
-        """
-        Perform a relaxation step on the input structure.
-
-        Args:
-            input (Batch): The input batch of structures.
-            y_true (torch.Tensor): The true target values.
-        """
-        state = self.state
-
-        # Relax the structure
-        relax_out = self._relax(input)
-
-        # Add to state
-        state.y_pred.append(float(self.relaxation_output_to_energy(relax_out).item()))
-        state.y_true.append(float(y_true.float().item()))
-
-        self.state = state
-
-    def compute_metrics(self, module: LightningModule):
-        """
-        Calculates the metrics at the end of a relaxation epoch.
-
-        Returns:
-            metrics (dict): A dictionary containing the calculated metrics.
-        """
-
-        y_pred = torch.tensor(
-            self.state.y_pred, dtype=torch.float, device=self.device
-        ).view(-1)
-        y_true = torch.tensor(
-            self.state.y_true, dtype=torch.float, device=self.device
-        ).view(-1)
-        assert (
-            len(y_pred) == len(y_true)
-        ), f"Shapes of y_pred and y_true must match, got {len(y_pred)=} and {len(y_true)=}."
-
-        # Gather all the metrics from all nodes
-        y_pred = cast(torch.Tensor | list[torch.Tensor], module.all_gather(y_pred))
-        y_true = cast(torch.Tensor | list[torch.Tensor], module.all_gather(y_true))
-
-        # Flatten the tensors
-        if isinstance(y_pred, list):
-            y_pred = torch.cat(y_pred, dim=0)
-        if isinstance(y_true, list):
-            y_true = torch.cat(y_true, dim=0)
-
-        # Convert to lists of floats
-        y_pred = cast(list[float], y_pred.tolist())
-        y_true = cast(list[float], y_true.tolist())
-        assert (
-            len(y_pred) == len(y_true)
-        ), f"Shapes of y_pred and y_true must match, got {len(y_pred)=} and {len(y_true)=}."
-
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
-
-        # Compute the metrics
-        from matbench_discovery.metrics import stable_metrics
-
-        metrics = stable_metrics(
-            y_true,
-            y_pred,
-            stability_threshold=self.config.stability_threshold,
-        )
-        return metrics

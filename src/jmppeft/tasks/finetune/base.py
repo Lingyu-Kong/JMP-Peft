@@ -1108,6 +1108,25 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         }
         return preds
 
+    def denormalize_preds(self, preds: dict[str, torch.Tensor]):
+        if not self.config.normalization:
+            return preds
+
+        return {
+            key: (pred * norm.std + norm.mean)
+            if (norm := self.config.normalization.get(key)) is not None
+            else pred
+            for key, pred in preds.items()
+        }
+
+    def forward_denormalized(self, data: BaseData, detach: bool = True):
+        preds = self(data)
+        if detach:
+            preds = {
+                k: v.detach() if torch.is_tensor(v) else v for k, v in preds.items()
+            }
+        return self.denormalize_preds(preds)
+
     def compute_losses(self, batch: BaseData, preds: dict[str, torch.Tensor]):
         losses: list[torch.Tensor] = []
 
