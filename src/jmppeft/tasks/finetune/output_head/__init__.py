@@ -3,6 +3,26 @@ from typing import Annotated, TypeAlias
 import ll
 
 from ._base import BaseTargetConfig as BaseTargetConfig
+from .direct_graph import (
+    GraphBinaryClassificationOutputHead as GraphBinaryClassificationOutputHead,
+)
+from .direct_graph import (
+    GraphBinaryClassificationTargetConfig as GraphBinaryClassificationTargetConfig,
+)
+from .direct_graph import (
+    GraphMulticlassClassificationOutputHead as GraphMulticlassClassificationOutputHead,
+)
+from .direct_graph import (
+    GraphMulticlassClassificationTargetConfig as GraphMulticlassClassificationTargetConfig,
+)
+from .direct_graph import GraphScalarOutputHead as GraphScalarOutputHead
+from .direct_graph import GraphScalarTargetConfig as GraphScalarTargetConfig
+from .direct_graph_referenced_scalar import (
+    ReferencedScalarOutputHead as ReferencedScalarOutputHead,
+)
+from .direct_graph_referenced_scalar import (
+    ReferencedScalarTargetConfig as ReferencedScalarTargetConfig,
+)
 from .direct_node import NodeVectorOutputHead as NodeVectorOutputHead
 from .direct_node import NodeVectorTargetConfig as NodeVectorTargetConfig
 from .direct_stress import DirectStressOutputHead as DirectStressOutputHead
@@ -15,27 +35,14 @@ from .gradient_force_stress import GradientStressOutputHead as GradientStressOut
 from .gradient_force_stress import (
     GradientStressTargetConfig as GradientStressTargetConfig,
 )
-from .graph_direct import (
-    GraphBinaryClassificationOutputHead as GraphBinaryClassificationOutputHead,
-)
-from .graph_direct import (
-    GraphBinaryClassificationTargetConfig as GraphBinaryClassificationTargetConfig,
-)
-from .graph_direct import (
-    GraphMulticlassClassificationOutputHead as GraphMulticlassClassificationOutputHead,
-)
-from .graph_direct import (
-    GraphMulticlassClassificationTargetConfig as GraphMulticlassClassificationTargetConfig,
-)
-from .graph_direct import GraphScalarOutputHead as GraphScalarOutputHead
-from .graph_direct import GraphScalarTargetConfig as GraphScalarTargetConfig
 
 GraphTargetConfig: TypeAlias = Annotated[
     GraphScalarTargetConfig
     | GraphBinaryClassificationTargetConfig
     | GraphMulticlassClassificationTargetConfig
     | GradientStressTargetConfig
-    | DirectStressTargetConfig,
+    | DirectStressTargetConfig
+    | ReferencedScalarTargetConfig,
     ll.Field(discriminator="kind"),
 ]
 
