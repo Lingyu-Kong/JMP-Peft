@@ -51,11 +51,6 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
         return data
 
     @override
-    def postprocess_graphs_gpu(self, data: BaseData) -> BaseData:
-        data = recompute_distances(data)
-        return data
-
-    @override
     def data_transform(self, data: BaseData):
         data = super().data_transform(data)
 

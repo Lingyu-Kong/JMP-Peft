@@ -7,7 +7,7 @@ import contextlib
 import io
 import pickle
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
 import numpy as np
@@ -198,16 +198,56 @@ class TrajectoryObserver:
                 f,
             )
 
+    @override
+    def __repr__(self) -> str:
+        return f"TrajectoryObserver(energy=[{len(self.energies)}], forces=[{len(self.forces)}], stresses=[{len(self.stresses)}], atom_positions=[{len(self.atom_positions)}], cell=[{len(self.cells)}])"
+
+
+@dataclass
+class RelaxationTrajectoryFrame:
+    energy: float
+    forces: np.ndarray
+    stresses: np.ndarray | None
+    atom_positions: np.ndarray
+    cell: np.ndarray
+
+
+@dataclass
+class RelaxationTrajectory:
+    frames: list[RelaxationTrajectoryFrame]
+
+    @classmethod
+    def from_observer(cls, observer: TrajectoryObserver):
+        frames = [
+            RelaxationTrajectoryFrame(
+                energy=float(energy),
+                forces=forces,
+                stresses=stresses,
+                atom_positions=atom_positions,
+                cell=cell,
+            )
+            for energy, forces, stresses, atom_positions, cell in zip(
+                observer.energies,
+                observer.forces,
+                observer.stresses
+                if observer.stresses is not None
+                else [None] * len(observer.energies),
+                observer.atom_positions,
+                observer.cells,
+            )
+        ]
+        return cls(frames)
+
 
 @dataclass
 class RelaxationOutput:
-    final_structure: Structure
-    trajectory: TrajectoryObserver
+    trajectory: RelaxationTrajectory
+    structure: Structure = field(repr=False)
 
     def as_dict(self):
         return {
-            "final_structure": self.final_structure.as_dict(),
-            "trajectory": self.trajectory.as_dict(),
+            "structure": self.structure.as_dict(),
+            "trajectory": asdict(self.trajectory),
         }
 
 
@@ -297,4 +337,7 @@ class Relaxer:
         final_structure = self.ase_adaptor.get_structure(atoms)
         trajectory = obs
 
-        return RelaxationOutput(final_structure, trajectory)
+        return RelaxationOutput(
+            RelaxationTrajectory.from_observer(obs),
+            final_structure,
+        )
