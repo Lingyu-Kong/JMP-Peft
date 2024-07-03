@@ -366,7 +366,7 @@ class DirectStressOutputHead(nn.Module):
         self.target_config = target_config
         del target_config
 
-        from ._output_head.stress import Rank2DecompositionEdgeBlock
+        from ._output_head.direct_stress import Rank2DecompositionEdgeBlock
 
         self.block = Rank2DecompositionEdgeBlock(
             d_model,

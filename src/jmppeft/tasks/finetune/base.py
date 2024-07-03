@@ -89,21 +89,8 @@ from ..config import (
     OutputConfig,
     optimizer_from_config,
 )
+from . import output_head as output_head
 from .metrics import FinetuneMetrics, MetricPair, MetricsConfig
-from .output_head import DirectStressTargetConfig as DirectStressTargetConfig
-from .output_head import GradientForcesTargetConfig as GradientForcesTargetConfig
-from .output_head import GradientStressTargetConfig as GradientStressTargetConfig
-from .output_head import (
-    GraphBinaryClassificationTargetConfig as GraphBinaryClassificationTargetConfig,
-)
-from .output_head import (
-    GraphMulticlassClassificationTargetConfig as GraphMulticlassClassificationTargetConfig,
-)
-from .output_head import GraphScalarTargetConfig as GraphScalarTargetConfig
-from .output_head import GraphTargetConfig as GraphTargetConfig
-from .output_head import NodeTargetConfig as NodeTargetConfig
-from .output_head import NodeVectorTargetConfig as NodeVectorTargetConfig
-from .output_head import OutputHeadInput
 
 log = getLogger(__name__)
 
@@ -435,10 +422,10 @@ class FinetuneConfigBase(BaseConfig):
     test: TestConfig | None = None
     """Configuration for test stage"""
 
-    graph_targets: list[GraphTargetConfig] = []
+    graph_targets: list[output_head.GraphTargetConfig] = []
     """List of graph targets (e.g., energy, is_metal)"""
 
-    node_targets: list[NodeTargetConfig] = []
+    node_targets: list[output_head.NodeTargetConfig] = []
     """List of node targets (e.g., force)"""
 
     @property
@@ -706,7 +693,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         for target in self.config.graph_targets:
             match target:
-                case GraphMulticlassClassificationTargetConfig(
+                case output_head.GraphMulticlassClassificationTargetConfig(
                     class_weights=class_weights
                 ) if class_weights:
                     self.register_buffer(
@@ -1110,7 +1097,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         h = self.embedding(atomic_numbers)  # (N, d_model)
         out = cast(GOCBackboneOutput, self.backbone(data, h=h))
 
-        output_head_input: OutputHeadInput = {
+        output_head_input = {
             "backbone_output": out,
             "data": data,
         }
@@ -1126,7 +1113,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         # Compute losses for graph targets
         for target in self.config.graph_targets:
             match target:
-                case GraphBinaryClassificationTargetConfig():
+                case output_head.GraphBinaryClassificationTargetConfig():
                     y_input = preds[target.name]
                     y_target = batch[target.name].float()
                     pos_weight = None
@@ -1135,7 +1122,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     loss = F.binary_cross_entropy_with_logits(
                         y_input, y_target, reduction="sum", pos_weight=pos_weight
                     )
-                case GraphMulticlassClassificationTargetConfig():
+                case output_head.GraphMulticlassClassificationTargetConfig():
                     weight = None
                     if target.class_weights:
                         weight = self.get_buffer(f"{target.name}_class_weights")
@@ -1767,13 +1754,13 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         """
         for target_config in self.config.graph_targets:
             match target_config:
-                case GraphBinaryClassificationTargetConfig():
+                case output_head.GraphBinaryClassificationTargetConfig():
                     if (value := getattr(data, target_config.name, None)) is None:
                         log.warning(f"target {target_config.name} not found in data")
                         continue
 
                     setattr(data, target_config.name, value.float())
-                case GraphMulticlassClassificationTargetConfig():
+                case output_head.GraphMulticlassClassificationTargetConfig():
                     if (value := getattr(data, target_config.name, None)) is None:
                         log.warning(f"target {target_config.name} not found in data")
                         continue
@@ -1793,8 +1780,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             isinstance(
                 target,
                 (
-                    GraphBinaryClassificationTargetConfig,
-                    GraphMulticlassClassificationTargetConfig,
+                    output_head.GraphBinaryClassificationTargetConfig,
+                    output_head.GraphMulticlassClassificationTargetConfig,
                 ),
             )
             for target in self.config.graph_targets
