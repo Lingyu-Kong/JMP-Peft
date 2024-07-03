@@ -24,6 +24,7 @@ import torch.nn.functional as F
 from lightning.fabric.utilities.throughput import measure_flops
 from lightning.pytorch.core.optimizer import LightningOptimizer
 from lightning.pytorch.utilities.types import (
+    LRSchedulerConfigType,
     OptimizerLRScheduler,
 )
 from ll import (
@@ -1517,7 +1518,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     def _construct_lr_scheduler(
         self, optimizer: torch.optim.Optimizer, config: RLPConfig
-    ):
+    ) -> LRSchedulerConfigType:
         assert config.monitor is not None, f"{config=}"
         assert config.mode is not None, f"{config=}"
 
@@ -1539,7 +1540,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             "monitor": config.monitor,
             "interval": config.interval,
             "frequency": config.frequency,
-            "strict": True,
+            "strict": True,  # type: ignore
         }
 
     def configure_optimizers_param_specific_optimizers(

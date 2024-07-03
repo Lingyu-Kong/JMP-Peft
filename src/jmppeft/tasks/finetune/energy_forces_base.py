@@ -21,7 +21,8 @@ from ...models.gemnet.backbone import GOCBackboneOutput
 from ...modules.loss import L2MAELossConfig, LossConfig, MAELossConfig
 from ...modules.relaxer import RelaxationOutput, Relaxer, RelaxerConfig
 from ...modules.transforms.normalize import denormalize_batch
-from ._output_head import (
+from .base import FinetuneConfigBase, FinetuneModelBase, SkipBatch
+from .output_head import (
     DirectStressTargetConfig,
     GradientForcesTargetConfig,
     GradientStressTargetConfig,
@@ -30,7 +31,6 @@ from ._output_head import (
     NodeTargetConfig,
     NodeVectorTargetConfig,
 )
-from .base import FinetuneConfigBase, FinetuneModelBase, SkipBatch
 
 log = getLogger(__name__)
 
