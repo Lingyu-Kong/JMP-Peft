@@ -4,7 +4,7 @@ import fnmatch
 import math
 import time
 from abc import abstractmethod
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
 from functools import cache, partial
 from logging import getLogger
 from pathlib import Path
@@ -649,7 +649,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         self.construct_output_heads()
 
     @override
-    def __init__(self, hparams: TConfig):
+    def __init__(self, hparams: TConfig | MutableMapping[str, Any]):
         super().__init__(hparams)
 
         # Set up callbacks

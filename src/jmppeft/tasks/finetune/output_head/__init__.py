@@ -2,6 +2,7 @@ from typing import Annotated, TypeAlias
 
 import ll
 
+from ._base import BaseTargetConfig as BaseTargetConfig
 from .direct_node import NodeVectorOutputHead as NodeVectorOutputHead
 from .direct_node import NodeVectorTargetConfig as NodeVectorTargetConfig
 from .direct_stress import DirectStressOutputHead as DirectStressOutputHead

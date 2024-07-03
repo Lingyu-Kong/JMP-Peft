@@ -78,7 +78,7 @@ class ConflictingMetrics(nn.Module):
     ):
         super().__init__()
 
-        from .base import (
+        from .output_head import (
             DirectStressTargetConfig,
             GradientForcesTargetConfig,
             GradientStressTargetConfig,
@@ -267,7 +267,7 @@ class FinetuneMetrics(nn.Module):
     ):
         super().__init__()
 
-        from .base import (
+        from .output_head import (
             DirectStressTargetConfig,
             GradientForcesTargetConfig,
             GradientStressTargetConfig,

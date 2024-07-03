@@ -1,4 +1,4 @@
-from typing import ClassVar, Literal, TypeAlias, final
+from typing import Any, ClassVar, Literal, TypeAlias, final
 
 import torch
 from ase.data import atomic_masses
@@ -8,7 +8,7 @@ from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
 from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors
-from .base import FinetuneConfigBase, FinetuneModelBase, OutputHeadInput
+from .base import FinetuneConfigBase, FinetuneModelBase
 from .output_head import GraphScalarOutputHead, GraphScalarTargetConfig
 
 QM9Target: TypeAlias = Literal[
@@ -57,7 +57,7 @@ class GraphSpatialExtentScalarOutputHead(GraphScalarOutputHead):
     @override
     def forward(
         self,
-        input: OutputHeadInput,
+        input: dict[str, Any],
         *,
         scale: torch.Tensor | None = None,
         shift: torch.Tensor | None = None,

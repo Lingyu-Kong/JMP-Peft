@@ -1,14 +1,14 @@
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 import ll
 import torch
 from ase import Atoms
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
-from typing_extensions import assert_never
+from typing_extensions import NotRequired, assert_never
 
 from ._relaxer import RelaxationOutput
 from ._relaxer import Relaxer as _Relaxer
@@ -114,13 +114,17 @@ def default_relaxation_output_to_energy(output: RelaxationOutput) -> torch.Tenso
     return torch.tensor(output.trajectory.energies[-1], dtype=torch.float)
 
 
+class ModelOutput(TypedDict):
+    energy: torch.Tensor
+    forces: torch.Tensor
+    stress: NotRequired[torch.Tensor]
+
+
 class Relaxer:
     def __init__(
         self,
         config: RelaxerConfig,
-        model: Callable[
-            [Batch, Batch], tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
-        ],
+        model: Callable[[Batch], ModelOutput],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
     ):
@@ -200,7 +204,7 @@ class Relaxer:
 
         return atoms
 
-    def _potential(self, graph: Batch, initial_graph: Batch):
+    def _potential(self, graph: Batch):
         """
         Compute the potential energy, forces, and stresses of the given graph.
 
@@ -219,7 +223,10 @@ class Relaxer:
         graph = graph.to(self.device)
 
         # Compute the energy and forces
-        energy, forces, stress = self.model(graph, initial_graph)
+        model_out = self.model(graph)
+        energy = model_out["energy"]
+        forces = model_out["forces"]
+        stress = model_out.get("stress")
         energy = energy.detach().float().cpu()
         forces = forces.detach().float().cpu()
 
@@ -247,7 +254,7 @@ class Relaxer:
         atoms = self._graph_to_atoms(graph)
 
         relaxer = _Relaxer(
-            potential=partial(self._potential, initial_graph=graph),
+            potential=self._potential,
             graph_converter=self._atoms_to_graph,
             optimizer_cls=self.config.optimizer_cls,
             relax_cell=self.config.relax_cell,
