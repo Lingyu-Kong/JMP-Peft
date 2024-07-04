@@ -8,6 +8,7 @@ import io
 import pickle
 import sys
 from dataclasses import asdict, dataclass, field
+from functools import cached_property
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
 import numpy as np
@@ -242,7 +243,11 @@ class RelaxationTrajectory:
 @dataclass
 class RelaxationOutput:
     trajectory: RelaxationTrajectory
-    structure: Structure = field(repr=False)
+    atoms: Atoms
+
+    @cached_property
+    def structure(self):
+        return AseAtomsAdaptor.get_structure(self.atoms)
 
     def as_dict(self):
         return {
@@ -288,7 +293,6 @@ class Relaxer:
         self.compute_stress = compute_stress
         self.relax_cell = relax_cell
         self.potential = potential
-        self.ase_adaptor = AseAtomsAdaptor()
 
     def relax(
         self,
@@ -313,7 +317,7 @@ class Relaxer:
         Returns:
         """
         if isinstance(atoms, (Structure, Molecule)):
-            atoms = self.ase_adaptor.get_atoms(atoms)
+            atoms = AseAtomsAdaptor.get_atoms(atoms)
         atoms.set_calculator(self.calculator)
         stream = sys.stdout if verbose else io.StringIO()
         with contextlib.redirect_stdout(stream):
@@ -330,11 +334,11 @@ class Relaxer:
             atoms = cast(Atoms, atoms.atoms)
 
         # return {
-        #     "final_structure": self.ase_adaptor.get_structure(atoms),
+        #     "final_structure": AseAtomsAdaptor.get_structure(atoms),
         #     "trajectory": obs,
         # }
 
-        final_structure = self.ase_adaptor.get_structure(atoms)
+        # atoms = AseAtomsAdaptor.get_structure(atoms)
         trajectory = RelaxationTrajectory.from_observer(obs)
 
-        return RelaxationOutput(trajectory, final_structure)
+        return RelaxationOutput(trajectory, atoms)
