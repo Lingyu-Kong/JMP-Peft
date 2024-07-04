@@ -14,9 +14,18 @@ class FinetuneMPTrjHuggingfaceDatasetConfig(CommonDatasetConfig):
     name: Literal["mp_trj_huggingface"] = "mp_trj_huggingface"
 
     split: Literal["train", "val", "test"]
-    debug_repeat_largest_systems_for_testing: bool = False
-    energy_column: str = "energy_per_atom"
+
     # See: https://github.com/janosh/matbench-discovery/issues/103#issuecomment-2070941629
+    energy_column: Literal[
+        "energy",
+        "corrected_total_energy",
+        "e_per_atom_relaxed",
+        "energy_per_atom",
+        "ef_per_atom_relaxed",
+        "ef_per_atom",
+    ]
+
+    debug_repeat_largest_systems_for_testing: bool = False
 
     filter_small_systems: bool = True
 

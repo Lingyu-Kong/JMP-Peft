@@ -1,4 +1,5 @@
 import copy
+from collections.abc import Iterable
 from typing import Any, cast
 
 from jmppeft.tasks.finetune.base import (
@@ -6,7 +7,7 @@ from jmppeft.tasks.finetune.base import (
     ParamSpecificOptimizerConfig,
     WarmupCosRLPConfig,
 )
-from typing_extensions import TypeVar
+from typing_extensions import NotRequired, TypedDict, TypeVar
 
 
 def PARAMETER_PATTERNS(num_blocks: int):
@@ -154,3 +155,54 @@ def make_parameter_specific_optimizer_config(
 
     # We want the LoRA parameter specific optimizers to come first, as they are more specific.
     return parameter_specific_optimizers_lora + parameter_specific_optimizers
+
+
+class ParameterGroupConfig(TypedDict):
+    parameter_patterns: Iterable[str]
+    lr_multiplier: float
+    name: NotRequired[str]
+
+
+def parameter_specific_optimizer_config(
+    config: FinetuneConfigBase,
+    parameter_groups: Iterable[ParameterGroupConfig],
+):
+    """
+    Create a list of parameter specific optimizers based on the max_lr_scales.
+
+    Args:
+        config: The finetune config.
+        max_lr_scales: A dictionary of max_lr_scales for each parameter group.
+    """
+    base_lr = config.optimizer.lr
+
+    configs: list[ParamSpecificOptimizerConfig] = []
+
+    for group in parameter_groups:
+        optimizer = copy.deepcopy(config.optimizer)
+        optimizer.lr = base_lr * group["lr_multiplier"]
+
+        lrs = None
+        match config.lr_scheduler:
+            case WarmupCosRLPConfig():
+                lrs = copy.deepcopy(config.lr_scheduler)
+                # We now scale down the cos annealing min LR factor
+                #   so that the final LR is the same as the original config.
+                lrs.min_lr_factor = lrs.min_lr_factor / group["lr_multiplier"]
+                lrs.min_lr_factor = max(0.01, min(0.99, lrs.min_lr_factor))
+            case _:
+                raise ValueError(
+                    "You must set config.lr_scheduler to WarmupCosRLPConfig to use parameter specific optimizers.\n"
+                    "Other LR schedulers are not supported at the moment."
+                )
+
+        configs.append(
+            ParamSpecificOptimizerConfig(
+                name=group.get("name"),
+                paremeter_patterns=list(group["parameter_patterns"]),
+                optimizer=optimizer,
+                lr_scheduler=lrs,
+            )
+        )
+
+    return configs

@@ -1438,6 +1438,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         pattern_lists: list[list[str]],
         no_double_counting: bool = True,
         requires_grad_only: bool = True,
+        on_unused: Literal["error", "warn", "ignore"] = "warn",
     ):
         """
         Splits the parameters of the model into multiple groups based on the provided pattern lists.
@@ -1447,6 +1448,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 used to match parameter names.
             no_double_counting (bool): If True, parameters that match multiple patterns will only be counted once.
             requires_grad_only (bool): If True, only parameters with requires_grad=True will be considered.
+            on_unused (Literal["error","warn", "ignore"]): What to do if no parameters match the pattern. Options are:
 
         Returns:
             parameters (list[list[nn.Parameter]]): A list of parameter groups. Each group contains the parameters
@@ -1480,6 +1482,19 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             # If no_double_counting is True, add the matching parameters to the set of matched parameters.
             if no_double_counting:
                 matched_parameters.update(matching)
+
+            # If no parameters matched the pattern, raise an error or warning.
+            if not matching:
+                error_msg = f"No parameters matched the pattern list: {patterns}"
+                match on_unused:
+                    case "error":
+                        raise ValueError(error_msg)
+                    case "warn":
+                        log.warning(error_msg)
+                    case "ignore":
+                        pass
+                    case _:
+                        assert_never(on_unused)
 
         return parameters, all_parameters
 
@@ -1566,7 +1581,8 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         self, configs: list[ParamSpecificOptimizerConfig]
     ):
         params_list, rest_params = self.split_parameters(
-            [c.paremeter_patterns for c in configs]
+            [c.paremeter_patterns for c in configs],
+            on_unused="error",
         )
         optimizer = optimizer_from_config(
             [

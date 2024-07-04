@@ -12,7 +12,10 @@ from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base, output_head
 from jmppeft.tasks.finetune import matbench_discovery as M
-from jmppeft.utils.param_specific_util import make_parameter_specific_optimizer_config
+from jmppeft.utils.param_specific_util import (
+    make_parameter_specific_optimizer_config,
+    parameter_specific_optimizer_config,
+)
 
 project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
 ckpt_path = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
@@ -38,6 +41,41 @@ def parameter_specific_optimizers_(config: base.FinetuneConfigBase):
             "blocks_2": 0.55,
             "blocks_3": 0.625,
         },
+    )
+
+
+def parameter_specific_optimizers_energy_references_(
+    config: base.FinetuneConfigBase,
+    lr_multiplier: float = 0.1,
+):
+    if not config.parameter_specific_optimizers:
+        config.parameter_specific_optimizers = []
+
+    if (
+        energy_ref_head := next(
+            (
+                t
+                for t in config.graph_targets
+                if isinstance(t, output_head.ReferencedScalarTargetConfig)
+            ),
+            None,
+        )
+    ) is None:
+        raise ValueError("Referenced energy head not found")
+
+    config.parameter_specific_optimizers.extend(
+        parameter_specific_optimizer_config(
+            config,
+            [
+                {
+                    "name": f"{energy_ref_head.name}.ref",
+                    "lr_multiplier": lr_multiplier,
+                    "parameter_patterns": [
+                        f"graph_outputs._module_dict.ft_mlp_{energy_ref_head.name}.references.*"
+                    ],
+                }
+            ],
+        )
     )
 
 
@@ -75,6 +113,7 @@ def create_config():
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
             split=split,
             debug_repeat_largest_systems_for_testing=False,
+            energy_column="corrected_total_energy",
         )
 
     config.train_dataset = dataset_fn("train")
@@ -104,7 +143,7 @@ def create_config():
     )
 
     # Set data config
-    config.num_workers = 4
+    config.num_workers = 8
 
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
@@ -153,11 +192,13 @@ config.node_targets.append(
         reduction="sum",
     )
 )
-config.batch_size = 80
-config.name_parts.append("bsz80")
-config.lr_scheduler.max_epochs = 64
+config.batch_size = 100
+config.name_parts.append(f"bsz{config.batch_size}")
+config.lr_scheduler.warmup_epochs = 1
+config.lr_scheduler.max_epochs = 128
 
 parameter_specific_optimizers_(config)
+parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 # endregion
