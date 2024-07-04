@@ -305,7 +305,7 @@ def generate_graph(
         "vector": edge_vector,
         "cell_offset": cell_offsets,
         "num_neighbors": num_neighbors,
-        "cutoff": torch.tensor(cutoff, dtype=torch.float, device=data.pos.device),
+        "cutoff": torch.tensor(cutoff, dtype=data.pos.dtype, device=data.pos.device),
         "max_neighbors": torch.tensor(
             max_neighbors, dtype=torch.long, device=data.pos.device
         ),

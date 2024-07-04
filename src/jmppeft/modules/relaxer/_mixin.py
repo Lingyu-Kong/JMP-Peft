@@ -136,7 +136,7 @@ class Relaxer:
         self.collate_fn = collate_fn
         self.device = device
 
-    def _atoms_to_graph(self, atoms: Atoms) -> Batch:
+    def _atoms_to_graph(self, atoms: Atoms, initial_graph: Batch) -> Batch:
         """
         Convert the given ASE `Atoms` object to a PyG `Batch` object.
 
@@ -146,12 +146,22 @@ class Relaxer:
         Returns:
             Batch: The converted `Batch` object.
         """
-        atomic_numbers = torch.tensor(atoms.numbers, dtype=torch.long)
-        pos = torch.tensor(atoms.positions, dtype=torch.float)
-        cell = torch.tensor(atoms.cell.array, dtype=torch.float).view(1, 3, 3)
-        tags = (2 * torch.ones_like(atomic_numbers)).long()
-        fixed = torch.zeros_like(tags, dtype=torch.bool)
-        natoms = len(atoms)
+        atomic_numbers = torch.tensor(
+            atoms.numbers,
+            dtype=initial_graph.atomic_numbers.dtype,
+        )
+        pos = torch.tensor(
+            atoms.positions,
+            dtype=initial_graph.pos.dtype,
+        )
+        cell = torch.tensor(atoms.cell.array, dtype=initial_graph.cell.dtype).view(
+            1, 3, 3
+        )
+        tags = (
+            2 * torch.ones_like(atomic_numbers, dtype=initial_graph.tags.dtype).long()
+        )
+        fixed = torch.zeros_like(tags, dtype=initial_graph.fixed.dtype)
+        natoms = torch.tensor(len(atoms), dtype=initial_graph.natoms.dtype)
 
         data = Data.from_dict(
             {
@@ -233,12 +243,12 @@ class Relaxer:
         energy = model_out["energy"]
         forces = model_out["forces"]
         stress = model_out.get("stress")
-        energy = energy.detach().float().cpu()
-        forces = forces.detach().float().cpu()
+        energy = energy.detach().cpu()
+        forces = forces.detach().cpu()
 
         if self.config.compute_stress:
             assert stress is not None, "Stress key must be set in the relaxer config."
-            stress = stress.detach().float().cpu()
+            stress = stress.detach().cpu()
             return energy, forces, stress
         else:
             return energy, forces
@@ -261,7 +271,7 @@ class Relaxer:
 
         relaxer = _Relaxer(
             potential=partial(self._potential, initial_graph=graph),
-            graph_converter=self._atoms_to_graph,
+            graph_converter=partial(self._atoms_to_graph, initial_graph=graph),
             optimizer_cls=self.config.optimizer_cls,
             relax_cell=self.config.relax_cell,
             compute_stress=self.config.compute_stress,

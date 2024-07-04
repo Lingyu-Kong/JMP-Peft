@@ -43,7 +43,12 @@ def get_max_neighbors_mask(natoms, index, atom_distance, max_num_neighbors_thres
 
     # Create a tensor of size [num_atoms, max_num_neighbors] to sort the distances of the neighbors.
     # Fill with infinity so we can easily remove unused distances later.
-    distance_sort = torch.full([num_atoms * max_num_neighbors], np.inf, device=device)
+    distance_sort = torch.full(
+        [num_atoms * max_num_neighbors],
+        np.inf,
+        device=device,
+        dtype=atom_distance.dtype,
+    )
 
     # Create an index map to map distances from atom_distance to distance_sort
     # index_sort_map assumes index to be sorted
