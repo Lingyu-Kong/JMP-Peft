@@ -199,8 +199,10 @@ config.node_targets.append(
         use_stress_forces=True,  # Uses the force computed by the stress head
     )
 )
-config.batch_size = 16
-config.name_parts.append("bsz16")
+config.batch_size = 8
+config.trainer.precision = "32-true"
+config.trainer.set_float32_matmul_precision = "high"
+config.name_parts.append("bsz8")
 
 parameter_specific_optimizers_(config)
 config = config.finalize()
