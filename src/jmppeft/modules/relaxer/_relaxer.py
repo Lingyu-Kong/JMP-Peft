@@ -4,7 +4,9 @@ https://github.com/materialsvirtuallab/m3gnet/blob/main/m3gnet/models/_dynamics.
 """
 
 import contextlib
+import io
 import pickle
+import sys
 from dataclasses import asdict, dataclass, field
 from typing import Protocol, TypeAlias, cast, runtime_checkable
 
@@ -295,7 +297,7 @@ class Relaxer:
         steps: int = 500,
         traj_file: str | None = None,
         interval=1,
-        # verbose=False,
+        verbose=False,
         **kwargs,
     ):
         """
@@ -313,9 +315,8 @@ class Relaxer:
         if isinstance(atoms, (Structure, Molecule)):
             atoms = self.ase_adaptor.get_atoms(atoms)
         atoms.set_calculator(self.calculator)
-        # stream = sys.stdout if verbose else io.StringIO()
-        # with contextlib.redirect_stdout(stream):
-        with contextlib.nullcontext():
+        stream = sys.stdout if verbose else io.StringIO()
+        with contextlib.redirect_stdout(stream):
             obs = TrajectoryObserver(atoms, self.compute_stress)
             if self.relax_cell:
                 atoms = cast(Atoms, ExpCellFilter(atoms))

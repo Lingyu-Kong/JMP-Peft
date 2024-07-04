@@ -43,6 +43,9 @@ class MatBenchDiscoveryIS2REDataset(Dataset[Data]):
                 1, 3, 3
             ),
             y_formation=torch.tensor(summary_row[Key.e_form], dtype=torch.float),
+            y_formation_correction=torch.tensor(
+                summary_row["e_correction_per_atom_mp2020"], dtype=torch.float
+            ),
             y_above_hull=torch.tensor(summary_row[Key.each_true], dtype=torch.float),
             natoms=torch.tensor(len(structure), dtype=torch.long),
         )

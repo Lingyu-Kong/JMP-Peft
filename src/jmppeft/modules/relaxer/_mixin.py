@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
@@ -61,7 +62,7 @@ class RelaxerConfig(ll.TypedConfig):
     The step interval for saving the trajectories
     """
 
-    verbose: bool = False
+    verbose: bool = True
     """
     Whether to print the relaxation progress.
     """
@@ -124,7 +125,7 @@ class Relaxer:
     def __init__(
         self,
         config: RelaxerConfig,
-        model: Callable[[Batch], ModelOutput],
+        model: Callable[[Batch], ModelOutput] | Callable[[Batch, Batch], ModelOutput],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
     ):
@@ -166,7 +167,8 @@ class Relaxer:
 
         return batch
 
-    def _graph_to_atoms(self, data_or_batch: Data | Batch) -> Atoms:
+    @staticmethod
+    def _graph_to_atoms(data_or_batch: Data | Batch) -> Atoms:
         """
         Convert a graph representation to an `Atoms` object.
 
@@ -204,13 +206,13 @@ class Relaxer:
 
         return atoms
 
-    def _potential(self, graph: Batch):
+    def _potential(self, graph: Batch, initial_graph: Batch):
         """
         Compute the potential energy, forces, and stresses of the given graph.
 
         Args:
-            initial_graph (Batch): The initial graph (from the original dataset).
             graph (Batch): The input graph.
+            initial_graph (Batch): The initial graph (from the original dataset).
 
         Returns:
             tuple: A tuple containing the potential energy and forces. If `config.compute_stress`
@@ -223,7 +225,11 @@ class Relaxer:
         graph = graph.to(self.device)
 
         # Compute the energy and forces
-        model_out = self.model(graph)
+        # If self.model takes 2 arguments, pass the initial graph as well
+        if len(inspect.signature(self.model).parameters) == 2:
+            model_out = self.model(graph, initial_graph)
+        else:
+            model_out = self.model(graph)
         energy = model_out["energy"]
         forces = model_out["forces"]
         stress = model_out.get("stress")
@@ -254,7 +260,7 @@ class Relaxer:
         atoms = self._graph_to_atoms(graph)
 
         relaxer = _Relaxer(
-            potential=self._potential,
+            potential=partial(self._potential, initial_graph=graph),
             graph_converter=self._atoms_to_graph,
             optimizer_cls=self.config.optimizer_cls,
             relax_cell=self.config.relax_cell,
@@ -269,6 +275,6 @@ class Relaxer:
             if self.config.traj_file
             else None,
             interval=self.config.interval,
-            # verbose=self.config.verbose,
+            verbose=self.config.verbose,
             **self.config.optimizer_kwargs,
         )
