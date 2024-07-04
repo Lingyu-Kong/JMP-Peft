@@ -80,6 +80,10 @@ class GradientStressTargetConfig(BaseTargetConfig):
     """Whether to compute the forces as well"""
 
     @override
+    def is_classification(self) -> bool:
+        return False
+
+    @override
     def construct_output_head(
         self,
         output_config,
@@ -206,6 +210,10 @@ class GradientForcesTargetConfig(BaseTargetConfig):
 
     use_stress_forces: bool = False
     """If True, assumes that the stress head has already computed the forces."""
+
+    @override
+    def is_classification(self) -> bool:
+        return False
 
     @override
     def construct_output_head(

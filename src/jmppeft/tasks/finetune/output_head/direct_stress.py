@@ -212,6 +212,10 @@ class DirectStressTargetConfig(BaseTargetConfig):
     num_layers: int = 2
     """The number of layers in the output head"""
 
+    @override
+    def is_classification(self) -> bool:
+        return False
+
     @property
     def extensive(self):
         match self.reduction:

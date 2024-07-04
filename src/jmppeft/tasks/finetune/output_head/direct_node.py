@@ -30,6 +30,10 @@ class NodeVectorTargetConfig(BaseTargetConfig):
     """The loss function to use for the target"""
 
     @override
+    def is_classification(self) -> bool:
+        return False
+
+    @override
     def construct_output_head(
         self,
         output_config,

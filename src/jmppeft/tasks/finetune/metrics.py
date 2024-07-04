@@ -78,14 +78,6 @@ class ConflictingMetrics(nn.Module):
     ):
         super().__init__()
 
-        from .output_head import (
-            DirectStressTargetConfig,
-            GradientForcesTargetConfig,
-            GradientStressTargetConfig,
-            GraphScalarTargetConfig,
-            NodeVectorTargetConfig,
-        )
-
         self.graph_targets = graph_targets
         self.node_targets = node_targets
         self.targets = graph_targets + node_targets
@@ -95,32 +87,14 @@ class ConflictingMetrics(nn.Module):
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.targets
-                if isinstance(
-                    target,
-                    (
-                        GraphScalarTargetConfig,
-                        NodeVectorTargetConfig,
-                        GradientForcesTargetConfig,
-                        DirectStressTargetConfig,
-                        GradientStressTargetConfig,
-                    ),
-                )
+                if not target.is_classification()
             }
         )
         self.non_conflicting_maes = TypedModuleDict(
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.targets
-                if isinstance(
-                    target,
-                    (
-                        GraphScalarTargetConfig,
-                        NodeVectorTargetConfig,
-                        GradientForcesTargetConfig,
-                        DirectStressTargetConfig,
-                        GradientStressTargetConfig,
-                    ),
-                )
+                if not target.is_classification()
             }
         )
 
@@ -267,15 +241,7 @@ class FinetuneMetrics(nn.Module):
     ):
         super().__init__()
 
-        from .output_head import (
-            DirectStressTargetConfig,
-            GradientForcesTargetConfig,
-            GradientStressTargetConfig,
-            GraphBinaryClassificationTargetConfig,
-            GraphMulticlassClassificationTargetConfig,
-            GraphScalarTargetConfig,
-            NodeVectorTargetConfig,
-        )
+        from .output_head import GraphBinaryClassificationTargetConfig
 
         if not isinstance(provider, MetricPairProvider):
             raise TypeError(
@@ -291,16 +257,7 @@ class FinetuneMetrics(nn.Module):
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.graph_targets + self.node_targets
-                if isinstance(
-                    target,
-                    (
-                        GraphScalarTargetConfig,
-                        NodeVectorTargetConfig,
-                        GradientForcesTargetConfig,
-                        GradientStressTargetConfig,
-                        DirectStressTargetConfig,
-                    ),
-                )
+                if not target.is_classification()
             },
             key_prefix="mae_",
         )
@@ -309,16 +266,7 @@ class FinetuneMetrics(nn.Module):
                 {
                     target.name: torchmetrics.MeanSquaredError(squared=False)
                     for target in self.graph_targets + self.node_targets
-                    if isinstance(
-                        target,
-                        (
-                            GraphScalarTargetConfig,
-                            NodeVectorTargetConfig,
-                            GradientForcesTargetConfig,
-                            GradientStressTargetConfig,
-                            DirectStressTargetConfig,
-                        ),
-                    )
+                    if not target.is_classification()
                 },
                 key_prefix="rmse_",
             )
@@ -330,13 +278,7 @@ class FinetuneMetrics(nn.Module):
                     else MulticlassClassificationMetrics(target.num_classes)
                 )
                 for target in self.graph_targets + self.node_targets
-                if isinstance(
-                    target,
-                    (
-                        GraphBinaryClassificationTargetConfig,
-                        GraphMulticlassClassificationTargetConfig,
-                    ),
-                )
+                if target.is_classification()
             },
             key_prefix="cls_",
         )

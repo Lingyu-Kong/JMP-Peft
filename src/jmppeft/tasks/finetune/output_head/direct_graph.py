@@ -23,6 +23,10 @@ class GraphScalarTargetConfig(BaseTargetConfig):
     loss: LossConfig = MAELossConfig()
 
     @override
+    def is_classification(self) -> bool:
+        return False
+
+    @override
     def construct_output_head(
         self,
         output_config,
@@ -57,6 +61,10 @@ class GraphBinaryClassificationTargetConfig(BaseTargetConfig):
             )
 
     @override
+    def is_classification(self) -> bool:
+        return True
+
+    @override
     def construct_output_head(
         self,
         output_config,
@@ -83,6 +91,10 @@ class GraphMulticlassClassificationTargetConfig(BaseTargetConfig):
 
     dropout: float | None = None
     """The dropout probability to use before the output layer"""
+
+    @override
+    def is_classification(self) -> bool:
+        return True
 
     @override
     def construct_output_head(

@@ -35,6 +35,9 @@ class BaseTargetConfig(ll.TypedConfig, ABC):
         activation_cls: type[nn.Module],
     ) -> nn.Module: ...
 
+    @abstractmethod
+    def is_classification(self) -> bool: ...
+
     @contextlib.contextmanager
     def model_forward_context(self, data: BaseData):
         yield

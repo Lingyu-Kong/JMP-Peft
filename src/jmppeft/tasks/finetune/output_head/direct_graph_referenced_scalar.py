@@ -99,6 +99,10 @@ class ReferencedScalarTargetConfig(BaseTargetConfig):
     """Whether to train the references. If False, the references must be initialized."""
 
     @override
+    def is_classification(self) -> bool:
+        return False
+
+    @override
     def construct_output_head(
         self,
         output_config,
