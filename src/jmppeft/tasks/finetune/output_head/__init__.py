@@ -18,10 +18,19 @@ from .direct_graph import (
 from .direct_graph import GraphScalarOutputHead as GraphScalarOutputHead
 from .direct_graph import GraphScalarTargetConfig as GraphScalarTargetConfig
 from .direct_graph_referenced_scalar import (
+    MPElementalReferenceInitializationConfig as MPElementalReferenceInitializationConfig,
+)
+from .direct_graph_referenced_scalar import (
+    RandomReferenceInitializationConfig as RandomReferenceInitializationConfig,
+)
+from .direct_graph_referenced_scalar import (
     ReferencedScalarOutputHead as ReferencedScalarOutputHead,
 )
 from .direct_graph_referenced_scalar import (
     ReferencedScalarTargetConfig as ReferencedScalarTargetConfig,
+)
+from .direct_graph_referenced_scalar import (
+    ZerosReferenceInitializationConfig as ZerosReferenceInitializationConfig,
 )
 from .direct_node import NodeVectorOutputHead as NodeVectorOutputHead
 from .direct_node import NodeVectorTargetConfig as NodeVectorTargetConfig

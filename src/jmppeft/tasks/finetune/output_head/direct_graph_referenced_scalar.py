@@ -65,6 +65,7 @@ class MPElementalReferenceInitializationConfig(ReferenceInitializationConfigBase
             pd.read_json(DATA_FILES.mp_elemental_ref_entries, typ="series")
             .map(ComputedEntry.from_dict)
             .to_dict()
+            .items()
         ):
             references[Element(elem_str).Z] = round(entry.energy_per_atom, 4)
 

@@ -17,16 +17,8 @@ log = getLogger(__name__)
 
 
 class EnergyForcesConfigBase(FinetuneConfigBase):
-    graph_targets: list[output_head.GraphTargetConfig] = [
-        output_head.GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
-    ]
-    node_targets: list[output_head.NodeTargetConfig] = [
-        output_head.GradientForcesTargetConfig(
-            name="force",
-            energy_name="y",
-            loss_coefficient=100.0,
-        ),
-    ]
+    graph_targets: list[output_head.GraphTargetConfig] = []
+    node_targets: list[output_head.NodeTargetConfig] = []
 
     def energy_config_(self):
         self.graph_targets = [
