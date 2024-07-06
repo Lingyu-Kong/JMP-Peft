@@ -2,7 +2,7 @@ import inspect
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 import ll
 import torch
@@ -70,6 +70,11 @@ class RelaxerConfig(ll.TypedConfig):
     stability_threshold: float = 0.0
     """
     Threshold for stable metrics, used to compute the relaxation metrics.
+    """
+
+    ase_filter: Literal["frechet", "exp"] | None = None
+    """
+    The filter to use for ASE relaxation.
     """
 
     @property
@@ -267,6 +272,7 @@ class Relaxer:
             None
 
         """
+
         atoms = self._graph_to_atoms(graph)
 
         relaxer = _Relaxer(
@@ -276,6 +282,7 @@ class Relaxer:
             relax_cell=self.config.relax_cell,
             compute_stress=self.config.compute_stress,
             stress_weight=self.config.stress_weight,
+            ase_filter=self.config.ase_filter,
         )
         return relaxer.relax(
             atoms,

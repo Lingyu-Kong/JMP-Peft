@@ -9,14 +9,14 @@ import pickle
 import sys
 from dataclasses import asdict, dataclass, field
 from functools import cached_property
-from typing import Protocol, TypeAlias, cast, runtime_checkable
+from typing import Any, Literal, Protocol, TypeAlias, cast, runtime_checkable
 
 import numpy as np
 import torch
 from ase import Atoms
 from ase.calculators.calculator import Calculator as ASECalculator
 from ase.calculators.calculator import all_changes
-from ase.constraints import ExpCellFilter
+from ase.filters import ExpCellFilter, FrechetCellFilter, UnitCellFilter
 from ase.optimize.bfgs import BFGS
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.optimize.fire import FIRE
@@ -269,6 +269,7 @@ class Relaxer:
         relax_cell: bool = False,
         stress_weight: float = 0.01,
         compute_stress: bool = False,
+        ase_filter: Literal["frechet", "exp"] | None = None,
     ):
         """
 
@@ -293,10 +294,11 @@ class Relaxer:
         self.compute_stress = compute_stress
         self.relax_cell = relax_cell
         self.potential = potential
+        self.ase_filter = ase_filter
 
     def relax(
         self,
-        atoms: Atoms,
+        atoms: Any,
         fmax: float = 0.1,
         steps: int = 500,
         traj_file: str | None = None,
@@ -318,19 +320,23 @@ class Relaxer:
         """
         if isinstance(atoms, (Structure, Molecule)):
             atoms = AseAtomsAdaptor.get_atoms(atoms)
-        atoms.set_calculator(self.calculator)
+
+        atoms.calc = self.calculator
         stream = sys.stdout if verbose else io.StringIO()
         with contextlib.redirect_stdout(stream):
             obs = TrajectoryObserver(atoms, self.compute_stress)
-            if self.relax_cell:
-                atoms = cast(Atoms, ExpCellFilter(atoms))
+            # if self.relax_cell:
+            #     atoms = cast(Atoms, ExpCellFilter(atoms))
+
+            if (f := self.ase_filter) is not None:
+                atoms = {"frechet": FrechetCellFilter, "exp": ExpCellFilter}[f](atoms)
             optimizer = self.optimizer_cls(atoms, **kwargs)
             optimizer.attach(obs, interval=interval)
             optimizer.run(fmax=fmax, steps=steps)
             obs()
         if traj_file is not None:
             obs.save(traj_file)
-        if isinstance(atoms, ExpCellFilter):
+        if isinstance(atoms, UnitCellFilter):
             atoms = cast(Atoms, atoms.atoms)
 
         # return {
