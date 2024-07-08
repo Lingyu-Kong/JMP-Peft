@@ -1,8 +1,7 @@
-import inspect
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, TypedDict
 
 import ll
 import torch
@@ -60,11 +59,6 @@ class RelaxerConfig(ll.TypedConfig):
     interval: int = 1
     """
     The step interval for saving the trajectories
-    """
-
-    verbose: bool = True
-    """
-    Whether to print the relaxation progress.
     """
 
     stability_threshold: float = 0.0
@@ -130,7 +124,7 @@ class Relaxer:
     def __init__(
         self,
         config: RelaxerConfig,
-        model: Callable[[Batch], ModelOutput] | Callable[[Batch, Batch], ModelOutput],
+        model: Callable[[Batch, Batch], ModelOutput],
         collate_fn: Callable[[list[BaseData]], Batch],
         device: torch.device,
     ):
@@ -241,10 +235,7 @@ class Relaxer:
 
         # Compute the energy and forces
         # If self.model takes 2 arguments, pass the initial graph as well
-        if len(inspect.signature(self.model).parameters) == 2:
-            model_out = self.model(graph, initial_graph)
-        else:
-            model_out = self.model(graph)
+        model_out = self.model(graph, initial_graph)
         energy = model_out["energy"]
         forces = model_out["forces"]
         stress = model_out.get("stress")
@@ -258,7 +249,7 @@ class Relaxer:
         else:
             return energy, forces
 
-    def relax(self, graph: Batch):
+    def relax(self, graph: Batch, verbose: bool = True):
         """
         Perform relaxation on the given atoms.
 
@@ -292,6 +283,6 @@ class Relaxer:
             if self.config.traj_file
             else None,
             interval=self.config.interval,
-            verbose=self.config.verbose,
+            verbose=verbose,
             **self.config.optimizer_kwargs,
         )
