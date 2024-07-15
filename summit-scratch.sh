@@ -37,3 +37,5 @@ pip install lmdb ase datasets
 
 # Install other packages
 pip install tabulate pysnooper
+
+mamba install -c conda-forge spglib ruamel.yaml

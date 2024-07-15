@@ -254,53 +254,6 @@ config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 # endregion
 
-# # region grad, energy+force+stress
-# config = create_config()
-# ln_(config)
-# grad_(config)
-# # Energy head
-# config.graph_targets.append(
-#     output_head.ReferencedScalarTargetConfig(
-#         name="y",
-#         loss_coefficient=1.0,
-#         loss=loss.HuberLossConfig(delta=0.01),
-#         reduction="sum",
-#         max_atomic_number=config.backbone.num_elements,
-#         initialization=output_head.MPElementalReferenceInitializationConfig(),
-#         trainable_references=True,
-#     )
-# )
-# # Stress head
-# config.graph_targets.append(
-#     output_head.GradientStressTargetConfig(
-#         name="stress",
-#         energy_name="y",
-#         loss_coefficient=100.0,
-#         loss=loss.HuberLossConfig(delta=0.01),
-#         reduction="mean",
-#         forces=True,  # Computes forces and stress using 1 single "torch.autograd.grad"
-#     )
-# )
-# # Force head
-# config.node_targets.append(
-#     output_head.GradientForcesTargetConfig(
-#         name="force",
-#         energy_name="y",
-#         loss_coefficient=10.0,
-#         loss=loss.MACEHuberLossConfig(delta=0.01),
-#         use_stress_forces=True,  # Uses the force computed by the stress head
-#     )
-# )
-# config.batch_size = 8
-# config.trainer.precision = "32-true"
-# config.trainer.set_float32_matmul_precision = "high"
-# config.name_parts.append("bsz8")
-
-# parameter_specific_optimizers_(config)
-# config = config.finalize()
-# configs.append((config, M.MatbenchDiscoveryModel))
-# # endregion
-
 rich.print(configs)
 
 

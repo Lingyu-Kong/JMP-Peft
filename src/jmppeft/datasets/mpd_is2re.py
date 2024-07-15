@@ -5,7 +5,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
-from matbench_discovery.data import Key
 from pymatgen.core import Structure
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
@@ -18,7 +17,7 @@ class MatBenchDiscoveryIS2REDataset(Dataset[Data]):
     def __init__(self):
         super().__init__()
 
-        from matbench_discovery.data import DATA_FILES
+        from matbench_discovery.data import DATA_FILES, Key
 
         self.df = pd.read_json(DATA_FILES.wbm_initial_structures).set_index(Key.mat_id)
         self.df_summary = pd.read_csv(DATA_FILES.wbm_summary).set_index(Key.mat_id)
@@ -28,6 +27,8 @@ class MatBenchDiscoveryIS2REDataset(Dataset[Data]):
 
     @override
     def __getitem__(self, idx: Any):
+        from matbench_discovery.data import Key
+
         row = self.df.iloc[idx]
         # Get the ID (`Key.mat_id`) and the initial structure (`Key.init_struct`)
         id_ = row.name
@@ -55,6 +56,8 @@ class MatBenchDiscoveryIS2REDataset(Dataset[Data]):
     @property
     @cache
     def atoms_metadata(self):
+        from matbench_discovery.data import Key
+
         log.critical("Computing atoms metadata...")
         atoms_metadata = (
             self.df[Key.init_struct].apply(lambda x: len(Structure.from_dict(x))).values
