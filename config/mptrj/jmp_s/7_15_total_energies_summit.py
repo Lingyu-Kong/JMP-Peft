@@ -299,11 +299,20 @@ _ = runner.session(
 )
 
 # %%
+import datetime
+
 runner = ll.Runner(run)
 _ = runner.submit_lsf(
     configs,
     snapshot=True,
+    nodes=2,
+    project="MAT273",
+    queue="debug",
+    walltime=datetime.timedelta(hours=2),
     lsf_kwargs={
         "summit": True,
+    },
+    env={
+        "LL_DISABLE_TYPECHECKING": "1",
     },
 )
