@@ -39,3 +39,6 @@ pip install lmdb ase datasets
 pip install tabulate pysnooper
 
 mamba install -c conda-forge spglib ruamel.yaml
+
+pip install pymatgen matbench-discovery
+pip install e3nn
