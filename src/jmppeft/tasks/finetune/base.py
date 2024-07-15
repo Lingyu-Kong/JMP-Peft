@@ -33,7 +33,6 @@ from ll import (
     BaseConfig,
     Field,
     LightningModuleBase,
-    TypedConfig,
 )
 from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -66,6 +65,7 @@ from ...modules.dist_lora import AdapterLayer, DLoraConfig
 from ...modules.ema import EMAConfig
 from ...modules.lora import Linear as LoraLinear
 from ...modules.lora import LoraConfig, LoRALayer, LoraRootConfig
+from ...modules.pos_noise import PositionNoiseAugmentationConfig
 from ...modules.scheduler.linear_warmup_cos_rlp import (
     PerParamGroupLinearWarmupCosineAnnealingRLPLR,
 )
@@ -108,7 +108,7 @@ def _ignore_skip_batch():
         pass
 
 
-class RLPWarmupConfig(TypedConfig):
+class RLPWarmupConfig(ll.TypedConfig):
     step_type: Literal["step", "epoch"]
     """The type of step to use for the warmup"""
 
@@ -119,7 +119,7 @@ class RLPWarmupConfig(TypedConfig):
     """The factor to multiply the initial learning rate by at the start of the warmup"""
 
 
-class RLPConfig(TypedConfig):
+class RLPConfig(ll.TypedConfig):
     name: Literal["rlp"] = "rlp"
 
     monitor: str | None = None
@@ -161,7 +161,7 @@ class RLPConfig(TypedConfig):
         }
 
 
-class WarmupCosRLPConfig(TypedConfig):
+class WarmupCosRLPConfig(ll.TypedConfig):
     name: Literal["warmup_cos_rlp"] = "warmup_cos_rlp"
 
     warmup_steps: int | None = None
@@ -187,7 +187,7 @@ LRSchedulerConfig: TypeAlias = Annotated[
 ]
 
 
-class FreezeConfig(TypedConfig):
+class FreezeConfig(ll.TypedConfig):
     backbone: bool = False
     """Should the backbone be frozen?"""
     embedding: bool = False
@@ -212,7 +212,7 @@ class FreezeConfig(TypedConfig):
     """
 
 
-class ParamSpecificOptimizerConfig(TypedConfig):
+class ParamSpecificOptimizerConfig(ll.TypedConfig):
     name: str | None = None
     """The name of the parameter group for this config"""
 
@@ -232,7 +232,7 @@ class ParamSpecificOptimizerConfig(TypedConfig):
     """
 
 
-class PretrainedCheckpointConfig(TypedConfig):
+class PretrainedCheckpointConfig(ll.TypedConfig):
     kind: Literal["pretrained"] = "pretrained"
 
     path: Path
@@ -247,7 +247,7 @@ class PretrainedCheckpointConfig(TypedConfig):
     """
 
 
-class ResumeCheckpointConfig(TypedConfig):
+class ResumeCheckpointConfig(ll.TypedConfig):
     kind: Literal["resume"] = "resume"
 
     path: Path
@@ -261,7 +261,7 @@ CheckpointConfig: TypeAlias = Annotated[
 ]
 
 
-class CheckpointLoadConfig(TypedConfig):
+class CheckpointLoadConfig(ll.TypedConfig):
     ignored_key_patterns: list[str] = []
     """Patterns to ignore when loading the checkpoint"""
 
@@ -283,7 +283,7 @@ class CheckpointLoadConfig(TypedConfig):
     """
 
 
-class TestConfig(TypedConfig):
+class TestConfig(ll.TypedConfig):
     save_checkpoint_base_dir: Path | None = None
     """Where to save the checkpoint information for this run (or None to disable)"""
 
@@ -354,7 +354,7 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
 ]
 
 
-class BatchDumpConfig(TypedConfig):
+class BatchDumpConfig(ll.TypedConfig):
     dump_if_loss_gt: float | None = None
     """Dump the batch if the loss is greater than this value"""
 
@@ -386,7 +386,7 @@ class FinetuneConfigBase(BaseConfig):
     lr_scheduler: LRSchedulerConfig | None = None
     """Learning rate scheduler configuration. If None, no learning rate scheduler is used."""
 
-    embedding: AllowMissing[EmbeddingConfig] = TypedConfig.MISSING
+    embedding: AllowMissing[EmbeddingConfig] = ll.TypedConfig.MISSING
     """Configuration for the embedding layer."""
     backbone: BackboneConfig
     """Configuration for the backbone."""
@@ -471,11 +471,14 @@ class FinetuneConfigBase(BaseConfig):
     batch_dump: BatchDumpConfig | None = None
     """Configuration for dumping batches"""
 
+    pos_noise_augmentation: PositionNoiseAugmentationConfig | None = None
+    """Configuration for adding noise to atomic coordinates"""
+
     @override
     def __post_init__(self):
         super().__post_init__()
 
-        if self.embedding is TypedConfig.MISSING:
+        if self.embedding is ll.TypedConfig.MISSING:
             self.embedding = EmbeddingConfig(
                 num_elements=self.backbone.num_elements,
                 embedding_size=self.backbone.emb_size_atom,
@@ -1750,19 +1753,18 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
     ) -> DatasetType | None:
         match split:
             case "train":
-                if (config := self.config.train_dataset) is None:
-                    return None
+                config = self.config.train_dataset
             case "val":
-                if (config := self.config.val_dataset) is None:
-                    return None
+                config = self.config.val_dataset
             case "test":
-                if (config := self.config.test_dataset) is None:
-                    return None
+                config = self.config.test_dataset
             case "predict":
-                if (config := self.config.predict_dataset) is None:
-                    return None
+                config = self.config.predict_dataset
             case _:
                 assert_never(split)
+
+        if config is None:
+            return None
 
         dataset = config.create_dataset()
         dataset = wrap_common_dataset(dataset, config)
@@ -1991,6 +1993,9 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         return data_loader
 
     def data_transform(self, data: BaseData):
+        if (config := self.config.pos_noise_augmentation) is not None:
+            config.apply_transform_(cast(Any, data))
+
         return data
 
     def collate_fn(self, data_list: list[BaseData]):
