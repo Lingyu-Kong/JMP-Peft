@@ -194,7 +194,7 @@ def create_config():
     )
 
     # Set data config
-    config.num_workers = 8
+    config.num_workers = 2
 
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
@@ -295,5 +295,15 @@ _ = runner.session(
     env={
         "CUDA_VISIBLE_DEVICES": "0,1,2,3",
         "LL_DISABLE_TYPECHECKING": "1",
+    },
+)
+
+# %%
+runner = ll.Runner(run)
+_ = runner.submit_lsf(
+    configs,
+    snapshot=True,
+    lsf_kwargs={
+        "summit": True,
     },
 )
