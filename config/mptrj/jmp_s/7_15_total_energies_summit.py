@@ -14,33 +14,78 @@ from jmppeft.utils.param_specific_util import (
     parameter_specific_optimizer_config,
 )
 
-project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
-ckpt_path = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
+base_dir = Path("/gpfs/alpine2/proj-shared/mat273/nimashoghi/")
+assert base_dir.exists() and base_dir.is_dir(), f"Base directory not found: {base_dir}"
+
+project_root = base_dir / "experiment-data"
+project_root.mkdir(exist_ok=True, parents=True)
+
+ckpt_dir = base_dir / "checkpoints"
+assert (
+    ckpt_dir.exists() and ckpt_dir.is_dir()
+), f"Checkpoints directory not found: {ckpt_dir}"
+
+
+def jmp_s_(config: base.FinetuneConfigBase):
+    ckpt_path = ckpt_dir / "jmp-s.pt"
+    assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
+
+    jmp_l_ft_config_(config)
+    config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
+        path=ckpt_path, ema=True
+    )
+
+    config.meta["jmp_kind"] = "s"
+    config.name_parts.append("jmps")
 
 
 def jmp_l_(config: base.FinetuneConfigBase):
+    ckpt_path = ckpt_dir / "jmp-l.pt"
+    assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
+
     jmp_l_ft_config_(config)
     config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
-        path=ckpt_path / "jmp-l.pt", ema=True
+        path=ckpt_path, ema=True
     )
 
-    config.name_parts.append("jmp_l")
+    config.meta["jmp_kind"] = "l"
+    config.name_parts.append("jmpl")
 
 
 def parameter_specific_optimizers_jmp_l_(config: base.FinetuneConfigBase):
-    config.parameter_specific_optimizers = make_parameter_specific_optimizer_config(
-        config,
-        config.backbone.num_blocks,
-        {
-            "embedding": 0.5,
-            "blocks_0": 0.50,
-            "blocks_1": 0.60,
-            "blocks_2": 0.75,
-            "blocks_3": 0.825,
-            "blocks_4": 0.875,
-            "blocks_5": 0.90,
-        },
-    )
+    match config.meta["jmp_kind"]:
+        case "l":
+            config.parameter_specific_optimizers = (
+                make_parameter_specific_optimizer_config(
+                    config,
+                    config.backbone.num_blocks,
+                    {
+                        "embedding": 0.5,
+                        "blocks_0": 0.50,
+                        "blocks_1": 0.60,
+                        "blocks_2": 0.75,
+                        "blocks_3": 0.825,
+                        "blocks_4": 0.875,
+                        "blocks_5": 0.90,
+                    },
+                )
+            )
+        case "s":
+            config.parameter_specific_optimizers = (
+                make_parameter_specific_optimizer_config(
+                    config,
+                    config.backbone.num_blocks,
+                    {
+                        "embedding": 0.65,
+                        "blocks_0": 0.75,
+                        "blocks_1": 0.825,
+                        "blocks_2": 0.875,
+                        "blocks_3": 0.90,
+                    },
+                )
+            )
+        case _:
+            raise ValueError(f"Invalid jmp_kind: {config.meta['jmp_kind']}")
 
 
 def parameter_specific_optimizers_energy_references_(
@@ -119,9 +164,7 @@ def create_config():
 
     def dataset_fn(split: Literal["train", "val", "test"]):
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
-            split=split,
-            debug_repeat_largest_systems_for_testing=False,
-            energy_column="corrected_total_energy",
+            split=split, energy_column="corrected_total_energy"
         )
 
     config.train_dataset = dataset_fn("train")
@@ -175,7 +218,7 @@ config.graph_targets.append(
     output_head.ReferencedScalarTargetConfig(
         name="y",
         loss_coefficient=1.0,
-        loss=loss.HuberLossConfig(delta=0.01),
+        loss=loss.MACEHuberEnergyLossConfig(delta=0.01),
         reduction="sum",
         max_atomic_number=config.backbone.num_elements,
         initialization=output_head.MPElementalReferenceInitializationConfig(),

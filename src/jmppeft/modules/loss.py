@@ -5,6 +5,7 @@ import ll
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch_geometric.data.data import BaseData
 from typing_extensions import assert_never, override
 
 Reduction: TypeAlias = Literal["mean", "sum", "none"]
@@ -14,6 +15,7 @@ class LossConfigBase(ll.TypedConfig, ABC):
     @abstractmethod
     def compute(
         self,
+        data: BaseData,
         y_pred: torch.Tensor,
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
@@ -26,6 +28,7 @@ class MAELossConfig(LossConfigBase):
     @override
     def compute(
         self,
+        data: BaseData,
         y_pred: torch.Tensor,
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
@@ -39,6 +42,7 @@ class MSELossConfig(LossConfigBase):
     @override
     def compute(
         self,
+        data: BaseData,
         y_pred: torch.Tensor,
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
@@ -54,6 +58,7 @@ class HuberLossConfig(LossConfigBase):
     @override
     def compute(
         self,
+        data: BaseData,
         y_pred: torch.Tensor,
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
@@ -82,6 +87,7 @@ class MACEHuberLossConfig(LossConfigBase):
     @override
     def compute(
         self,
+        data: BaseData,
         y_pred: torch.Tensor,
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
@@ -121,6 +127,33 @@ class MACEHuberLossConfig(LossConfigBase):
                 assert_never(reduction)
 
 
+class MACEHuberEnergyLossConfig(LossConfigBase):
+    name: Literal["mace_huber_energy"] = "mace_huber_energy"
+
+    delta: float
+
+    @override
+    def compute(
+        self,
+        data: BaseData,
+        y_pred: torch.Tensor,
+        y_true: torch.Tensor,
+        reduction: Reduction = "mean",
+    ) -> torch.Tensor:
+        assert (
+            natoms := getattr(data, "natoms", None)
+        ) is not None, "natoms is required"
+
+        # First, divide the energy by the number of atoms
+        y_pred = y_pred / natoms
+        y_true = y_true / natoms
+
+        # Compute the loss
+        loss = F.huber_loss(y_pred, y_true, reduction=reduction, delta=self.delta)
+
+        return loss
+
+
 class L2MAELossConfig(LossConfigBase):
     name: Literal["l2mae"] = "l2mae"
 
@@ -129,6 +162,7 @@ class L2MAELossConfig(LossConfigBase):
     @override
     def compute(
         self,
+        data: BaseData,
         y_pred: torch.Tensor,
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
@@ -151,6 +185,7 @@ LossConfig: TypeAlias = Annotated[
     | MSELossConfig
     | HuberLossConfig
     | MACEHuberLossConfig
+    | MACEHuberEnergyLossConfig
     | L2MAELossConfig,
     ll.Field(discriminator="name"),
 ]

@@ -25,8 +25,6 @@ class FinetuneMPTrjHuggingfaceDatasetConfig(CommonDatasetConfig):
         "ef_per_atom",
     ]
 
-    debug_repeat_largest_systems_for_testing: bool = False
-
     filter_small_systems: bool = True
 
     def create_dataset(self):
@@ -59,12 +57,7 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
 
     @override
     def __getitem__(self, idx: int) -> Data:
-        if self.config.debug_repeat_largest_systems_for_testing:
-            largest_idx = int(np.argmax(self.atoms_metadata))
-            data_dict = self.dataset[largest_idx]
-        else:
-            data_dict = self.dataset[idx]
-
+        data_dict = self.dataset[idx]
         data = Data.from_dict(
             {
                 "idx": idx,

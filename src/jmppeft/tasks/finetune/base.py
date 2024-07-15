@@ -1158,7 +1158,11 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     )
                 case _:
                     # loss = F.l1_loss(preds[target.name], batch[target.name])
-                    loss = target.loss.compute(preds[target.name], batch[target.name])
+                    loss = target.loss.compute(
+                        batch,
+                        preds[target.name],
+                        batch[target.name],
+                    )
 
             # Log the loss
             self.log(f"{target.name}_loss", loss)
@@ -1170,7 +1174,11 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             losses.append(loss)
 
         for target in self.config.node_targets:
-            loss = target.loss.compute(preds[target.name], batch[target.name])
+            loss = target.loss.compute(
+                batch,
+                preds[target.name],
+                batch[target.name],
+            )
 
             # Log the loss
             self.log(f"{target.name}_loss", loss)
