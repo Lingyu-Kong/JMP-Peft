@@ -245,7 +245,7 @@ config.node_targets.append(
         reduction="sum",
     )
 )
-config.batch_size = 32
+config.batch_size = 24
 config.name_parts.append(f"bsz{config.batch_size}")
 config.lr_scheduler.warmup_epochs = 1
 config.lr_scheduler.max_epochs = 128
@@ -312,11 +312,11 @@ runner = ll.Runner(run)
 _ = runner.submit_lsf(
     configs,
     snapshot=True,
-    nodes=2,
+    nodes=4,
     tasks_per_node=6,
     project="MAT273",
-    queue="debug",
-    walltime=datetime.timedelta(hours=2),
+    queue="batch-hm",
+    walltime=datetime.timedelta(hours=24.0),
     lsf_options={
         "summit": True,
     },
