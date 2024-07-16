@@ -6,6 +6,7 @@ from typing import Literal
 import ll
 import rich
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
+from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
 from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base, output_head
@@ -31,7 +32,7 @@ def jmp_s_(config: base.FinetuneConfigBase):
     ckpt_path = ckpt_dir / "jmp-s.pt"
     assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
 
-    jmp_l_ft_config_(config)
+    jmp_s_ft_config_(config)
     config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
         path=ckpt_path, ema=True
     )
@@ -53,7 +54,7 @@ def jmp_l_(config: base.FinetuneConfigBase):
     config.name_parts.append("jmpl")
 
 
-def parameter_specific_optimizers_jmp_l_(config: base.FinetuneConfigBase):
+def parameter_specific_optimizers_(config: base.FinetuneConfigBase):
     match config.meta["jmp_kind"]:
         case "l":
             config.parameter_specific_optimizers = (
@@ -249,7 +250,7 @@ config.name_parts.append(f"bsz{config.batch_size}")
 config.lr_scheduler.warmup_epochs = 1
 config.lr_scheduler.max_epochs = 128
 
-parameter_specific_optimizers_jmp_l_(config)
+parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
 
 config.runner.submit.auto_requeue_signals = ["SIGUSR1"]
