@@ -316,7 +316,7 @@ _ = runner.submit_lsf(
     tasks_per_node=6,
     project="MAT273",
     queue="debug",
-    walltime=datetime.timedelta(hours=0.5),
+    walltime=datetime.timedelta(hours=0.25),
     lsf_options={
         "summit": True,
     },
