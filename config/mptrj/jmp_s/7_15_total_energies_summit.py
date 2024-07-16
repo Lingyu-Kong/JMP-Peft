@@ -312,11 +312,11 @@ runner = ll.Runner(run)
 _ = runner.submit_lsf(
     configs,
     snapshot=True,
-    nodes=1,
-    # tasks_per_node=6,
+    nodes=4,
+    tasks_per_node=6,
     project="MAT273",
-    queue="debug",
-    walltime=datetime.timedelta(hours=1.0),
+    queue="batch-hm",
+    walltime=datetime.timedelta(hours=24.0),
     lsf_options={
         "summit": True,
     },
