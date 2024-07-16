@@ -1,4 +1,5 @@
 # %%
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -154,11 +155,11 @@ def pos_aug_(config: base.FinetuneConfigBase):
     config.name_parts.append("posaug")
 
 
-def create_config():
+def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
     config = M.MatbenchDiscoveryConfig.draft()
     config.project = "jmp_mptrj"
     config.name = "mptrj"
-    jmp_l_(config)
+    config_fn(config)
     ln_(config)
     config.backbone.qint_tags = [0, 1, 2]
 
@@ -194,7 +195,7 @@ def create_config():
     )
 
     # Set data config
-    config.num_workers = 2
+    config.num_workers = 7
 
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
@@ -210,7 +211,7 @@ def create_config():
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
 # region direct, energy+force+stress
-config = create_config()
+config = create_config(jmp_s_)
 ln_(config)
 direct_(config)
 # Energy head
@@ -311,6 +312,7 @@ _ = runner.submit_lsf(
     configs,
     snapshot=True,
     nodes=2,
+    tasks_per_node=4,
     project="MAT273",
     queue="debug",
     walltime=datetime.timedelta(hours=2),
