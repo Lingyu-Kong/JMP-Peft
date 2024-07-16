@@ -313,7 +313,7 @@ _ = runner.submit_lsf(
     configs,
     snapshot=True,
     nodes=2,
-    tasks_per_node=4,
+    tasks_per_node=6,
     project="MAT273",
     queue="debug",
     walltime=datetime.timedelta(hours=2),
