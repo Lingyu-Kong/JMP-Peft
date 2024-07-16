@@ -267,36 +267,36 @@ def run(
 
 
 # %%
-runner = ll.Runner(run)
-runner.fast_dev_run(configs, n_batches=128)
+# runner = ll.Runner(run)
+# runner.fast_dev_run(configs, n_batches=128)
 
-# %%
-for i, env in enumerate(
-    [
-        {"CUDA_VISIBLE_DEVICES": "0,1"},
-        {"CUDA_VISIBLE_DEVICES": "2,3"},
-    ]
-):
-    runner = ll.Runner(run)
-    _ = runner.session(
-        [configs[i]],
-        snapshot=True,
-        env={
-            **env,
-            "LL_DISABLE_TYPECHECKING": "1",
-        },
-    )
+# # %%
+# for i, env in enumerate(
+#     [
+#         {"CUDA_VISIBLE_DEVICES": "0,1"},
+#         {"CUDA_VISIBLE_DEVICES": "2,3"},
+#     ]
+# ):
+#     runner = ll.Runner(run)
+#     _ = runner.session(
+#         [configs[i]],
+#         snapshot=True,
+#         env={
+#             **env,
+#             "LL_DISABLE_TYPECHECKING": "1",
+#         },
+#     )
 
-# %%
-runner = ll.Runner(run)
-_ = runner.session(
-    configs,
-    snapshot=True,
-    env={
-        "CUDA_VISIBLE_DEVICES": "0,1,2,3",
-        "LL_DISABLE_TYPECHECKING": "1",
-    },
-)
+# # %%
+# runner = ll.Runner(run)
+# _ = runner.session(
+#     configs,
+#     snapshot=True,
+#     env={
+#         "CUDA_VISIBLE_DEVICES": "0,1,2,3",
+#         "LL_DISABLE_TYPECHECKING": "1",
+#     },
+# )
 
 # %%
 import datetime
@@ -309,7 +309,7 @@ _ = runner.submit_lsf(
     project="MAT273",
     queue="debug",
     walltime=datetime.timedelta(hours=2),
-    lsf_kwargs={
+    lsf_options={
         "summit": True,
     },
     env={
