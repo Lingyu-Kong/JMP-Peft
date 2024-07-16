@@ -1,7 +1,7 @@
 [project]
 name = "jmp-peft"
 version = "0.0.1"
-dependencies = ["torch-geometric"]
+dependencies = []
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

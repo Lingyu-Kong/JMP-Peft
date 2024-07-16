@@ -1,12 +1,16 @@
 export HF_DATASETS_CACHE="/global/cfs/cdirs/m3641/Nima/hf-datasets-cache" # in ~/.bashrc
 
-mamba create -n jmp-310 python=3.10
-conda activate jmp-310
+mamba create -n jmp-310-pytorch230 python=3.10
+conda activate jmp-310-pytorch230
 
-# Install base dependencies
-mamba install -y -c conda-forge -c pytorch -c nvidia -c pyg \
-    pytorch torchvision torchaudio pytorch-cuda=12.1 \
-    pyg pyg pytorch-scatter pytorch-sparse pytorch-cluster \
+# Install PyTorch
+mamba install -c pytorch -c nvidia "pytorch==2.2.*" torchvision torchaudio pytorch-cuda=12.1
+
+# Install PyG
+mamba install -c pyg pyg pytorch-scatter pytorch-sparse pytorch-cluster
+
+# Install other packages
+mamba install -c conda-forge \
     "numpy<2" matplotlib seaborn sympy pandas numba scikit-learn plotly nbformat ipykernel ipywidgets tqdm pyyaml networkx \
     pytorch-lightning torchmetrics lightning \
     einops wandb \

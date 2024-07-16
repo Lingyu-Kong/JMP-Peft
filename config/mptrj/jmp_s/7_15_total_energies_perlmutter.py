@@ -1,4 +1,5 @@
 # %%
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,7 @@ from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
     parameter_specific_optimizer_config,
 )
+from networkx import constraint
 
 base_dir = Path("/global/cfs/cdirs/m3641/Nima/")
 assert base_dir.exists() and base_dir.is_dir(), f"Base directory not found: {base_dir}"
@@ -154,11 +156,12 @@ def pos_aug_(config: base.FinetuneConfigBase):
     config.name_parts.append("posaug")
 
 
-def create_config():
+def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
     config = M.MatbenchDiscoveryConfig.draft()
     config.project = "jmp_mptrj"
     config.name = "mptrj"
-    jmp_l_(config)
+    # jmp_l_(config)
+    config_fn(config)
     ln_(config)
     config.backbone.qint_tags = [0, 1, 2]
 
@@ -194,7 +197,7 @@ def create_config():
     )
 
     # Set data config
-    config.num_workers = 2
+    config.num_workers = 4
 
     # Balanced batch sampler
     config.use_balanced_batch_sampler = True
@@ -210,7 +213,7 @@ def create_config():
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
 # region direct, energy+force+stress
-config = create_config()
+config = create_config(jmp_l_)
 ln_(config)
 direct_(config)
 # Energy head
@@ -250,6 +253,9 @@ config.lr_scheduler.max_epochs = 128
 
 parameter_specific_optimizers_jmp_l_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
+
+config.runner.submit.auto_requeue_signals = ["SIGUSR1", "SIGTERM"]
+
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 # endregion
@@ -268,34 +274,34 @@ def run(
 
 # %%
 runner = ll.Runner(run)
-runner.fast_dev_run(configs)
+runner.fast_dev_run_session(configs, n_batches=128)
 
 # %%
 from datetime import timedelta
 
 
-def nodes_to_max_walltime(nodes: int) -> timedelta:
-    if 1 <= nodes <= 91:
-        return timedelta(hours=2.0)
-    elif 92 <= nodes <= 183:
-        return timedelta(hours=6.0)
-    else:
-        return timedelta(hours=12.0)
+def compute_cpus_per_task(
+    configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]],
+):
+    # Max `num_workers` + 1 for the main process
+    max_num_workers = max(config.num_workers for config, _ in configs)
+    return max_num_workers + 1
 
 
-nodes = 4
-walltime = nodes_to_max_walltime(nodes)
+nodes = 1
+walltime = timedelta(hours=0.25)
 
 runner = ll.Runner(run)
 _ = runner.submit_slurm(
     configs,
     snapshot=True,
-    account="mat265",
-    partition="batch",
-    qos="debug",
+    account="m3641_g",
+    qos="debug_preempt",
     nodes=nodes,
     walltime=walltime,
-    tasks_per_node=8,
+    tasks_per_node=4,
+    cpus_per_task=compute_cpus_per_task(configs),
+    constraint="gpu&hbm40g",
     env={
         "LL_DISABLE_TYPECHECKING": "1",
         "HF_DATASETS_CACHE": "/global/cfs/cdirs/m3641/Nima/hf-datasets-cache",
