@@ -250,6 +250,11 @@ config.lr_scheduler.max_epochs = 128
 
 parameter_specific_optimizers_jmp_l_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
+
+config.runner.submit.auto_requeue_signals = ["SIGUSR1"]
+if (wandb_config := config.trainer.logging.wandb) is not None:
+    wandb_config.offline = True
+
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 # endregion

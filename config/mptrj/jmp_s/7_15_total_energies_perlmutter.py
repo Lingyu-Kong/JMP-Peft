@@ -14,7 +14,6 @@ from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
     parameter_specific_optimizer_config,
 )
-from networkx import constraint
 
 base_dir = Path("/global/cfs/cdirs/m3641/Nima/")
 assert base_dir.exists() and base_dir.is_dir(), f"Base directory not found: {base_dir}"
