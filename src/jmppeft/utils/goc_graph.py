@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import ParamSpec, TypedDict, cast
 
+import ll
 import numpy as np
 import torch
 from jmppeft.modules.torch_scatter_polyfill import segment_coo
@@ -35,8 +36,7 @@ class Graph(TypedDict):
     id_swap_edge_index: NotRequired[torch.Tensor]  # e
 
 
-@dataclass(kw_only=True)
-class Cutoffs:
+class Cutoffs(ll.TypedConfig):
     main: float
     aeaint: float
     qint: float
@@ -47,8 +47,7 @@ class Cutoffs:
         return cls(main=value, aeaint=value, qint=value, aint=value)
 
 
-@dataclass(kw_only=True)
-class MaxNeighbors:
+class MaxNeighbors(ll.TypedConfig):
     main: int
     aeaint: int
     qint: int

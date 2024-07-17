@@ -7,13 +7,10 @@ from .energy_forces_base import EnergyForcesConfigBase, EnergyForcesModelBase
 
 
 class MatbenchDiscoveryConfig(EnergyForcesConfigBase):
-    conditional_max_neighbors: bool = False
-    """
-    If True, the number of neighbors will be set based on the number of atoms in the system.
-
-    This is necessary when running the model on GPUs with limited memory, as the number of neighbors
-    is a major factor in the memory consumption of the model.
-    """
+    max_neighbors: MaxNeighbors = MaxNeighbors.from_goc_base_proportions(30).model_copy(
+        update={"main": 20}
+    )
+    cutoffs: Cutoffs = Cutoffs.from_constant(12.0)
 
 
 class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
