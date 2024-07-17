@@ -166,7 +166,9 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
 
     def dataset_fn(split: Literal["train", "val", "test"]):
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
-            split=split, energy_column="corrected_total_energy"
+            split=split,
+            energy_column="corrected_total_energy",
+            relaxed_energy_column="corrected_total_energy_relaxed",
         )
 
     config.train_dataset = dataset_fn("train")
@@ -253,7 +255,7 @@ config.lr_scheduler.max_epochs = 128
 parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
 
-config.runner.submit.auto_requeue_signals = ["SIGUSR1"]
+# config.runner.submit.auto_requeue_signals = ["SIGUSR1"]
 if (wandb_config := config.trainer.logging.wandb) is not None:
     wandb_config.offline = True
 
