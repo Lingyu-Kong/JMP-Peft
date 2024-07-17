@@ -2,7 +2,7 @@ import torch
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
-from ...utils.goc_graph import Cutoffs, MaxNeighbors, recompute_distances
+from ...utils.goc_graph import Cutoffs, MaxNeighbors
 from .energy_forces_base import EnergyForcesConfigBase, EnergyForcesModelBase
 
 

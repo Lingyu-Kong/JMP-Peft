@@ -5,9 +5,19 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
-from typing_extensions import override
+from typing_extensions import TypeAlias, override
 
 from ..modules.dataset.common import CommonDatasetConfig
+
+EnergyColumn: TypeAlias = Literal[
+    "energy",
+    "corrected_total_energy",
+    "corrected_total_energy_relaxed",
+    "e_per_atom_relaxed",
+    "energy_per_atom",
+    "ef_per_atom_relaxed",
+    "ef_per_atom",
+]
 
 
 class FinetuneMPTrjHuggingfaceDatasetConfig(CommonDatasetConfig):
@@ -16,14 +26,8 @@ class FinetuneMPTrjHuggingfaceDatasetConfig(CommonDatasetConfig):
     split: Literal["train", "val", "test"]
 
     # See: https://github.com/janosh/matbench-discovery/issues/103#issuecomment-2070941629
-    energy_column: Literal[
-        "energy",
-        "corrected_total_energy",
-        "e_per_atom_relaxed",
-        "energy_per_atom",
-        "ef_per_atom_relaxed",
-        "ef_per_atom",
-    ]
+    energy_column: EnergyColumn
+    relaxed_energy_column: EnergyColumn | None = None
 
     filter_small_systems: bool = True
 
@@ -58,19 +62,20 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
     @override
     def __getitem__(self, idx: int) -> Data:
         data_dict = self.dataset[idx]
-        data = Data.from_dict(
-            {
-                "idx": idx,
-                "atomic_numbers": data_dict["numbers"],
-                "pos": data_dict["positions"],
-                "tags": torch.zeros_like(data_dict["numbers"]),
-                "fixed": torch.zeros_like(data_dict["numbers"], dtype=torch.bool),
-                "force": data_dict["forces"],
-                "cell": data_dict["cell"].unsqueeze(dim=0),
-                "stress": data_dict["stress"].unsqueeze(dim=0),
-                "y": data_dict[self.config.energy_column],
-                "natoms": data_dict["num_atoms"],
-            }
-        )
+        dict_ = {
+            "idx": idx,
+            "atomic_numbers": data_dict["numbers"],
+            "pos": data_dict["positions"],
+            "tags": torch.zeros_like(data_dict["numbers"]),
+            "fixed": torch.zeros_like(data_dict["numbers"], dtype=torch.bool),
+            "force": data_dict["forces"],
+            "cell": data_dict["cell"].unsqueeze(dim=0),
+            "stress": data_dict["stress"].unsqueeze(dim=0),
+            "y": data_dict[self.config.energy_column],
+            "natoms": data_dict["num_atoms"],
+        }
+        if self.config.relaxed_energy_column is not None:
+            dict_["y_relaxed"] = data_dict[self.config.relaxed_energy_column]
+        data = Data.from_dict(dict_)
 
         return data
