@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import wraps
 from typing import ParamSpec, TypedDict, cast
 
@@ -19,8 +18,7 @@ from ..models.gemnet.utils import (
     mask_neighbors,
     repeat_blocks,
 )
-from .ocp import get_pbc_distances
-from .radius_graph import radius_graph_pbc
+from .radius_graph import get_pbc_distances, radius_graph_pbc
 
 
 class Graph(TypedDict):
