@@ -16,8 +16,12 @@ from jmppeft.utils.param_specific_util import (
     parameter_specific_optimizer_config,
 )
 
-project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
-ckpt_dir = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
+# project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
+# ckpt_dir = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
+
+ckpt_dir = Path("/mnt/shared/checkpoints/")
+project_root = Path("/mnt/datasets/experiment-data/jmp-peft/")
+project_root.mkdir(exist_ok=True, parents=True)
 
 
 def jmp_s_(config: base.FinetuneConfigBase):
@@ -89,30 +93,55 @@ def parameter_specific_optimizers_energy_references_(
     if not config.parameter_specific_optimizers:
         config.parameter_specific_optimizers = []
 
-    if not (
-        energy_ref_heads := [
-            t
-            for t in config.graph_targets
-            if isinstance(t, output_head.ReferencedScalarTargetConfig)
-        ]
-    ):
-        raise ValueError("Referenced energy head not found")
-
-    config.parameter_specific_optimizers.extend(
-        parameter_specific_optimizer_config(
-            config,
-            [
-                {
-                    "name": f"{energy_ref_head.name}.ref",
-                    "lr_multiplier": lr_multiplier,
-                    "parameter_patterns": [
-                        f"graph_outputs._module_dict.ft_mlp_{energy_ref_head.name}.references.*"
-                    ],
-                }
-                for energy_ref_head in energy_ref_heads
-            ],
+    if energy_ref_heads := [
+        t
+        for t in config.graph_targets
+        if isinstance(t, output_head.ReferencedScalarTargetConfig)
+    ]:
+        config.parameter_specific_optimizers.extend(
+            parameter_specific_optimizer_config(
+                config,
+                [
+                    {
+                        "name": f"{energy_ref_head.name}.ref",
+                        "lr_multiplier": lr_multiplier,
+                        "parameter_patterns": [
+                            f"graph_outputs._module_dict.ft_mlp_{energy_ref_head.name}.references.*"
+                        ],
+                    }
+                    for energy_ref_head in energy_ref_heads
+                ],
+            )
         )
-    )
+
+    elif allegro_heads := [
+        t
+        for t in config.graph_targets
+        if isinstance(t, output_head.AllegroScalarTargetConfig)
+    ]:
+        config.parameter_specific_optimizers.extend(
+            parameter_specific_optimizer_config(
+                config,
+                [
+                    {
+                        "name": f"{h.name}.scales",
+                        "lr_multiplier": lr_multiplier,
+                        "parameter_patterns": [
+                            f"graph_outputs._module_dict.ft_mlp_{h.name}.per_atom_scales.*",
+                            f"graph_outputs._module_dict.ft_mlp_{h.name}.per_atom_shifts.*",
+                            *(
+                                [
+                                    f"graph_outputs._module_dict.ft_mlp_{h.name}.pairwise_scales.*"
+                                ]
+                                if h.edge_level_energies
+                                else []
+                            ),
+                        ],
+                    }
+                    for h in allegro_heads
+                ],
+            )
+        )
 
 
 def direct_(config: base.FinetuneConfigBase):
@@ -157,8 +186,14 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
     def dataset_fn(split: Literal["train", "val", "test"]):
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
             split=split,
-            energy_column="corrected_total_energy",
-            relaxed_energy_column="corrected_total_energy_relaxed",
+            # energy_column="corrected_total_energy",
+            # relaxed_energy_column="corrected_total_energy_relaxed",
+            energy_column_mapping={
+                # "y": "corrected_total_energy_referenced",
+                # "y_relaxed": "corrected_total_energy_relaxed_referenced",
+                "y": "corrected_total_energy",
+                "y_relaxed": "corrected_total_energy_relaxed",
+            },
         )
 
     config.train_dataset = dataset_fn("train")
@@ -209,28 +244,28 @@ ln_(config)
 direct_(config)
 # Energy head
 config.graph_targets.append(
-    output_head.ReferencedScalarTargetConfig(
+    output_head.AllegroScalarTargetConfig(
         name="y",
         loss_coefficient=1.0,
         loss=loss.MACEHuberEnergyLossConfig(delta=0.01),
         reduction="sum",
         max_atomic_number=config.backbone.num_elements,
-        initialization=output_head.MPElementalReferenceInitializationConfig(),
-        trainable_references=True,
+        edge_level_energies=True,
     )
 )
-# Relaxed Energy head
-config.graph_targets.append(
-    output_head.ReferencedScalarTargetConfig(
-        name="y_relaxed",
-        loss_coefficient=1.0,
-        loss=loss.MACEHuberEnergyLossConfig(delta=0.01),
-        reduction="sum",
-        max_atomic_number=config.backbone.num_elements,
-        initialization=output_head.MPElementalReferenceInitializationConfig(),
-        trainable_references=True,
+if False:
+    # Relaxed Energy head
+    config.graph_targets.append(
+        output_head.AllegroScalarTargetConfig(
+            name="y_relaxed",
+            loss_coefficient=1.0,
+            loss=loss.MACEHuberEnergyLossConfig(delta=0.01),
+            reduction="sum",
+            max_atomic_number=config.backbone.num_elements,
+            initialization=output_head.ZerosReferenceInitializationConfig(),
+            trainable_references=True,
+        )
     )
-)
 # Stress head
 config.graph_targets.append(
     output_head.DirectStressTargetConfig(
@@ -249,7 +284,7 @@ config.node_targets.append(
         reduction="sum",
     )
 )
-config.batch_size = 100
+config.batch_size = 32
 config.name_parts.append(f"bsz{config.batch_size}")
 config.lr_scheduler.warmup_epochs = 1
 config.lr_scheduler.max_epochs = 128
@@ -282,9 +317,11 @@ runner.fast_dev_run(configs, n_batches=128)
 runner = ll.Runner(run)
 _ = runner.session(
     configs,
-    snapshot=True,
+    snapshot=False,
     env={
         "CUDA_VISIBLE_DEVICES": "0",
         "LL_DISABLE_TYPECHECKING": "1",
     },
 )
+
+# %%

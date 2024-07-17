@@ -3,6 +3,8 @@ from typing import Annotated, TypeAlias
 import ll
 
 from ._base import BaseTargetConfig as BaseTargetConfig
+from .allegro_scalar import AllegroScalarOutputHead as AllegroScalarOutputHead
+from .allegro_scalar import AllegroScalarTargetConfig as AllegroScalarTargetConfig
 from .direct_graph import (
     GraphBinaryClassificationOutputHead as GraphBinaryClassificationOutputHead,
 )
@@ -51,7 +53,8 @@ GraphTargetConfig: TypeAlias = Annotated[
     | GraphMulticlassClassificationTargetConfig
     | GradientStressTargetConfig
     | DirectStressTargetConfig
-    | ReferencedScalarTargetConfig,
+    | ReferencedScalarTargetConfig
+    | AllegroScalarTargetConfig,
     ll.Field(discriminator="kind"),
 ]
 

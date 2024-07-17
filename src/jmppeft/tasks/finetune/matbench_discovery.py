@@ -7,8 +7,11 @@ from .energy_forces_base import EnergyForcesConfigBase, EnergyForcesModelBase
 
 
 class MatbenchDiscoveryConfig(EnergyForcesConfigBase):
-    max_neighbors: MaxNeighbors = MaxNeighbors.from_goc_base_proportions(30).model_copy(
-        update={"main": 20}
+    max_neighbors: MaxNeighbors = MaxNeighbors(
+        main=20,
+        aeaint=20,
+        aint=1000,
+        qint=8,
     )
     cutoffs: Cutoffs = Cutoffs.from_constant(12.0)
 
@@ -26,23 +29,10 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
     @override
     def generate_graphs_transform(self, data: BaseData):
         # Generate graphs
-        max_neighbors = 15
-        # if self.config.conditional_max_neighbors:
-        #     if (data.natoms > 300).any():
-        #         max_neighbors = 5
-        #     elif (data.natoms > 200).any():
-        #         max_neighbors = 10
-        #     elif (data.natoms > 100).any():
-        #         max_neighbors = 20
-        #     else:
-        #         max_neighbors = 30
-
-        cutoffs = Cutoffs.from_constant(8.0)
-        max_neighbors = MaxNeighbors.from_goc_base_proportions(max_neighbors)
         data = self.generate_graphs(
             data,
-            cutoffs=cutoffs,
-            max_neighbors=max_neighbors,
+            cutoffs=self.config.cutoffs,
+            max_neighbors=self.config.max_neighbors,
             pbc=True,
         )
         return data

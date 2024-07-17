@@ -224,8 +224,8 @@ def _generate_graph(
             cutoff,
             max_neighbors,
             data.pos,
-            data.cell,
             data.natoms,
+            data.cell,
         )
 
         out = get_pbc_distances(

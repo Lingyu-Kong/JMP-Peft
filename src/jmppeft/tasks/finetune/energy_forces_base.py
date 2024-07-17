@@ -20,6 +20,9 @@ class EnergyForcesConfigBase(FinetuneConfigBase):
     graph_targets: list[output_head.GraphTargetConfig] = []
     node_targets: list[output_head.NodeTargetConfig] = []
 
+    ignore_graph_generation_errors: bool = True
+    """If True, ignore errors that occur during graph generation and skip the batch."""
+
     def energy_config_(self):
         self.graph_targets = [
             output_head.GraphScalarTargetConfig(name="y", loss_coefficient=1.0),
@@ -213,16 +216,19 @@ class EnergyForcesModelBase(FinetuneModelBase[TConfig], ABC, Generic[TConfig]):
                 stack.enter_context(target.model_forward_context(data))
 
             # Generate graphs on the GPU
-            try:
-                data = self.generate_graphs_transform(data)
-            except Exception as e:
-                # If this is a CUDA error, rethrow it
-                if "CUDA" in str(data):
-                    raise
+            if self.config.ignore_graph_generation_errors:
+                try:
+                    data = self.generate_graphs_transform(data)
+                except Exception as e:
+                    # If this is a CUDA error, rethrow it
+                    if "CUDA" in str(data):
+                        raise
 
-                # Otherwise, log the error and skip the batch
-                log.error(f"Error generating graphs: {e}")
-                raise SkipBatch()
+                    # Otherwise, log the error and skip the batch
+                    log.error(f"Error generating graphs: {e}", exc_info=True)
+                    raise SkipBatch()
+            else:
+                data = self.generate_graphs_transform(data)
 
             # Run the backbone
             atomic_numbers = data.atomic_numbers - 1

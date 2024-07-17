@@ -372,6 +372,8 @@ def radius_graph_pbc(
     if pbc is None:
         pbc = [True, True, True]
     device = pos.device
+    if natoms.ndim == 0:
+        natoms = natoms.unsqueeze(0)
     batch_size = len(natoms)
 
     # position of the atoms
