@@ -16,12 +16,16 @@ from jmppeft.utils.param_specific_util import (
     parameter_specific_optimizer_config,
 )
 
-# project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
-# ckpt_dir = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
+base_dir = Path("/gpfs/alpine2/proj-shared/mat273/nimashoghi/")
+assert base_dir.exists() and base_dir.is_dir(), f"Base directory not found: {base_dir}"
 
-ckpt_dir = Path("/mnt/shared/checkpoints/")
-project_root = Path("/mnt/datasets/experiment-data/jmp-peft/")
+project_root = base_dir / "experiment-data"
 project_root.mkdir(exist_ok=True, parents=True)
+
+ckpt_dir = base_dir / "checkpoints"
+assert (
+    ckpt_dir.exists() and ckpt_dir.is_dir()
+), f"Checkpoints directory not found: {ckpt_dir}"
 
 
 def jmp_s_(config: base.FinetuneConfigBase):
