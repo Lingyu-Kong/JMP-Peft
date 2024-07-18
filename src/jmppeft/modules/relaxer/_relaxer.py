@@ -7,7 +7,7 @@ import contextlib
 import io
 import pickle
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from functools import cached_property
 from typing import Any, Literal, Protocol, TypeAlias, cast, runtime_checkable
 
@@ -35,12 +35,7 @@ Graph: TypeAlias = Batch
 
 @runtime_checkable
 class Potential(Protocol):
-    def __call__(
-        self, graph: Graph
-    ) -> (
-        tuple[torch.Tensor, torch.Tensor]
-        | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-    ): ...
+    def __call__(self, graph: Graph) -> dict[str, torch.Tensor]: ...
 
 
 @runtime_checkable
@@ -122,13 +117,15 @@ class Calculator(ASECalculator):
         graph = self.graph_converter(atoms)
         results = self.potential(graph)
         self.results.update(
-            energy=results[0].numpy().ravel()[0],
-            free_energy=results[0].numpy().ravel()[0],
-            forces=results[1].numpy(),
+            energy=results["energy"].numpy().ravel()[0],
+            free_energy=results["energy"].numpy().ravel()[0],
+            forces=results["forces"].numpy(),
         )
+        # if (relaxed_energy := results.get("relaxed_energy")) is not None:
+        #     self.results.update(relaxed_energy=relaxed_energy.numpy().ravel()[0])
         if self.compute_stress:
-            assert len(results) == 3, "Stress must be calculated"
-            self.results.update(stress=results[2].numpy()[0] * self.stress_weight)
+            assert (stress := results.get("stress")) is not None, "Stress not found"
+            self.results.update(stress=stress.numpy()[0] * self.stress_weight)
 
 
 class TrajectoryObserver:

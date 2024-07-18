@@ -238,16 +238,17 @@ class Relaxer:
         model_out = self.model(graph, initial_graph)
         energy = model_out["energy"]
         forces = model_out["forces"]
+
+        d: dict[str, torch.Tensor] = {}
+
         stress = model_out.get("stress")
-        energy = energy.detach().cpu()
-        forces = forces.detach().cpu()
+        d["energy"] = energy.detach().cpu()
+        d["forces"] = forces.detach().cpu()
 
         if self.config.compute_stress:
             assert stress is not None, "Stress key must be set in the relaxer config."
-            stress = stress.detach().cpu()
-            return energy, forces, stress
-        else:
-            return energy, forces
+            d["stress"] = stress.detach().cpu()
+        return d
 
     def relax(self, graph: Batch, verbose: bool = True):
         """
