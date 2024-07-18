@@ -359,7 +359,8 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
         name="matbench_discovery/force_mae", mode="min"
     )
 
-    config.with_project_root_(project_root)
+    if project_root:
+        config.with_project_root_(project_root)
     return config
 
 
