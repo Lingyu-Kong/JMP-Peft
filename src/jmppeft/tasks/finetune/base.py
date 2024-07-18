@@ -1482,6 +1482,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                     requires_grad_only=requires_grad_only,
                 )
             ]
+            log.info(f"Matched parameters for patterns {patterns}: {len(matching)}")
 
             parameters.append(matching)
 

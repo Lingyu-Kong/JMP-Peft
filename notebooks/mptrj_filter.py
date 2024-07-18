@@ -4,7 +4,6 @@ import ll
 ll.pretty()
 # %%
 import datasets
-import numpy as np
 
 datasets.disable_caching()
 
@@ -15,6 +14,8 @@ dataset
 
 # %%
 import json
+
+import numpy as np
 
 with open("data/mptrj_ids.json", "r") as f:
     ids = frozenset[str](json.load(f))
