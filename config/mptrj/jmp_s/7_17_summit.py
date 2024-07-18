@@ -442,7 +442,7 @@ runner = ll.Runner(run)
 _ = runner.submit_lsf(
     configs,
     snapshot=True,
-    nodes=4,
+    nodes=2,
     tasks_per_node=6,
     project="MAT273",
     queue="batch-hm",
