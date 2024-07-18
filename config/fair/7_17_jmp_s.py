@@ -373,7 +373,7 @@ for linref, lr, pos_aug in itertools.product(
 ):
     config = create_config(jmp_s_)
     config.parameter_specific_optimizers = []
-    data_config_(config, reference=True, batch_size=32)
+    data_config_(config, reference=linref, batch_size=32)
     optimization_config_(config, lr=lr)
     ln_(config, lr_multiplier=1.5)
     direct_(config=config)
