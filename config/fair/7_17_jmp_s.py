@@ -311,7 +311,7 @@ def run(
 
 # %%
 runner = ll.Runner(run)
-# runner.fast_dev_run(configs, n_batches=128)
+runner.fast_dev_run(configs, n_batches=128)
 
 # %%
 runner = ll.Runner(run)
@@ -319,7 +319,7 @@ _ = runner.session(
     configs,
     snapshot=False,
     env={
-        "CUDA_VISIBLE_DEVICES": "0,1",
+        "CUDA_VISIBLE_DEVICES": "0",
         "LL_DISABLE_TYPECHECKING": "1",
     },
 )
