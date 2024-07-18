@@ -206,7 +206,7 @@ def pos_aug_(config: base.FinetuneConfigBase, *, std: float):
         atom_corrupt_prob=0.5,
         noise_std=std,
     )
-    config.name_parts.append("posaug_std{std}")
+    config.name_parts.append(f"posaug_std{std}")
 
 
 def data_config_(

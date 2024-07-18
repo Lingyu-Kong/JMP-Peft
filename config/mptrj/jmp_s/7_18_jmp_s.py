@@ -211,7 +211,7 @@ def pos_aug_(config: base.FinetuneConfigBase, *, std: float):
         atom_corrupt_prob=0.5,
         noise_std=std,
     )
-    config.name_parts.append("posaug_std{std}")
+    config.name_parts.append(f"posaug_std{std}")
 
 
 def data_config_(
@@ -263,6 +263,7 @@ def output_heads_config_(
     energy_coefficient: float,
     force_coefficient: float,
     stress_coefficient: float,
+    relaxed_energy_coefficient: float = 1.0,
 ):
     energy_loss = loss.HuberLossConfig(delta=0.01)
     if mace_energy_loss:
@@ -290,7 +291,7 @@ def output_heads_config_(
         config.graph_targets.append(
             output_head.AllegroScalarTargetConfig(
                 name="y_relaxed",
-                loss_coefficient=1.0,
+                loss_coefficient=relaxed_energy_coefficient,
                 loss=energy_loss.model_copy(),
                 reduction="sum",
                 max_atomic_number=config.backbone.num_elements,
@@ -373,13 +374,16 @@ configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] 
 
 config = create_config(jmp_s_)
 config.parameter_specific_optimizers = []
-data_config_(config, reference=True, batch_size=32)
+config.max_neighbors = M.MaxNeighbors(main=20, aeaint=20, aint=1000, qint=8)
+config.cutoffs = M.Cutoffs.from_constant(12.0)
+data_config_(config, reference=True, batch_size=64)
 optimization_config_(config, lr=8.0e-5)
 ln_(config, lr_multiplier=1.5)
 direct_(config=config)
 output_heads_config_(
     config,
     relaxed_energy=True,
+    relaxed_energy_coefficient=0.1,
     mace_energy_loss=True,
     mace_force_loss=True,
     energy_coefficient=2.0,
@@ -419,3 +423,5 @@ _ = runner.session(
         "LL_DISABLE_TYPECHECKING": "1",
     },
 )
+
+# %%
