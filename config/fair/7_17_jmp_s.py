@@ -411,13 +411,15 @@ runner.fast_dev_run(configs, n_batches=128)
 
 # %%
 runner = ll.Runner(run)
-_ = runner.session(
+_ = runner.submit_slurm(
     configs,
-    snapshot=False,
+    snapshot=True,
     env={
-        "CUDA_VISIBLE_DEVICES": "0",
         "LL_DISABLE_TYPECHECKING": "1",
     },
+    partition="learnaccel",
+    nodes=4,
+    tasks_per_node=8,  # Change this to limit # of GPUs
+    gpus_per_task=1,
+    cpus_per_task=configs[0][0].num_workers + 1,
 )
-
-# %%
