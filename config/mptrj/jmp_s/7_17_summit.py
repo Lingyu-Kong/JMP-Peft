@@ -367,7 +367,7 @@ configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] 
 # region direct, energy+force+stress
 config = create_config(jmp_s_)
 config.parameter_specific_optimizers = []
-data_config_(config, reference=True, batch_size=16)
+data_config_(config, reference=True, batch_size=32)
 optimization_config_(config, lr=2.0e-5)
 ln_(config, lr_multiplier=1.5)
 direct_(config=config)
