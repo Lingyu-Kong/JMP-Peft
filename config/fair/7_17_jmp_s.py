@@ -1,4 +1,5 @@
 # %%
+import itertools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -16,16 +17,16 @@ from jmppeft.utils.param_specific_util import (
     parameter_specific_optimizer_config,
 )
 
-# project_root = Path("/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/")
-# ckpt_dir = Path("/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/")
+jmp_s_ckpt_path = Path("/mnt/shared/checkpoints/jmp-s.pt")
+jmp_l_ckpt_path = Path("/mnt/shared/checkpoints/jmp-l.pt")
 
-ckpt_dir = Path("/mnt/shared/checkpoints/")
-project_root = Path("/mnt/datasets/experiment-data/jmp-peft/")
+# Set this to None if you want the run logs to be saved in the current directory
+project_root: Path | None = Path("/mnt/datasets/experiment-data/jmp-peft/")
 project_root.mkdir(exist_ok=True, parents=True)
 
 
 def jmp_s_(config: base.FinetuneConfigBase):
-    ckpt_path = ckpt_dir / "jmp-s.pt"
+    ckpt_path = jmp_s_ckpt_path
     assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
 
     jmp_s_ft_config_(config)
@@ -38,7 +39,7 @@ def jmp_s_(config: base.FinetuneConfigBase):
 
 
 def jmp_l_(config: base.FinetuneConfigBase):
-    ckpt_path = ckpt_dir / "jmp-l.pt"
+    ckpt_path = jmp_l_ckpt_path
     assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
 
     jmp_l_ft_config_(config)
@@ -166,9 +167,13 @@ def grad_(config: base.FinetuneConfigBase):
     config.name_parts.append("grad")
 
 
-def ln_(config: base.FinetuneConfigBase, *, lr_multiplier: float | None):
+def ln_(
+    config: base.FinetuneConfigBase,
+    *,
+    lr_multiplier: float | None,
+):
     config.backbone.ln_per_layer = True
-    config.backbone.scale_factor_to_ln = False
+    config.backbone.scale_factor_to_ln = True
 
     if lr_multiplier is not None:
         if config.parameter_specific_optimizers is None:
@@ -308,9 +313,9 @@ def output_heads_config_(
         )
     )
 
-    config.name_parts.append(f"e{energy_coefficient}")
-    config.name_parts.append(f"f{force_coefficient}")
-    config.name_parts.append(f"s{stress_coefficient}")
+    config.name_parts.append(f"ec{energy_coefficient}")
+    config.name_parts.append(f"fc{force_coefficient}")
+    config.name_parts.append(f"sc{stress_coefficient}")
 
 
 def optimization_config_(
@@ -360,31 +365,33 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
 
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
-# region direct, energy+force+stress
-config = create_config(jmp_s_)
-config.parameter_specific_optimizers = []
-data_config_(config, reference=True, batch_size=32)
-optimization_config_(config, lr=2.0e-5)
-ln_(config, lr_multiplier=1.5)
-direct_(config=config)
-output_heads_config_(
-    config,
-    relaxed_energy=True,
-    mace_energy_loss=True,
-    mace_force_loss=True,
-    energy_coefficient=1.0,
-    force_coefficient=10.0,
-    stress_coefficient=100.0,
-)
-parameter_specific_optimizers_(config)
-parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
+for linref, lr, pos_aug in itertools.product(
+    (True, False),
+    (5.0e-6, 1.0e-5, 8.0e-5),
+    (False,),
+):
+    config = create_config(jmp_s_)
+    config.parameter_specific_optimizers = []
+    data_config_(config, reference=True, batch_size=32)
+    optimization_config_(config, lr=lr)
+    ln_(config, lr_multiplier=1.5)
+    direct_(config=config)
+    output_heads_config_(
+        config,
+        relaxed_energy=True,
+        mace_energy_loss=True,
+        mace_force_loss=True,
+        energy_coefficient=1.0,
+        force_coefficient=10.0,
+        stress_coefficient=100.0,
+    )
+    parameter_specific_optimizers_(config)
+    parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
+    if pos_aug:
+        pos_aug_(config, std=pos_aug)
 
-pos_aug_(config, std=0.01)
-
-
-config = config.finalize()
-configs.append((config, M.MatbenchDiscoveryModel))
-# endregion
+    config = config.finalize()
+    configs.append((config, M.MatbenchDiscoveryModel))
 
 rich.print(configs)
 
