@@ -366,6 +366,10 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
 
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
+batch_size = 32
+lr = 8.0e-5
+linref = True
+
 for linref, lr, pos_aug in itertools.product(
     (True, False),
     (5.0e-6, 1.0e-5, 8.0e-5),
@@ -373,7 +377,7 @@ for linref, lr, pos_aug in itertools.product(
 ):
     config = create_config(jmp_s_)
     config.parameter_specific_optimizers = []
-    data_config_(config, reference=linref, batch_size=32)
+    data_config_(config, reference=linref, batch_size=batch_size)
     optimization_config_(config, lr=lr)
     ln_(config, lr_multiplier=1.5)
     direct_(config=config)
