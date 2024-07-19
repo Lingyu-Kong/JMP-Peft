@@ -390,6 +390,7 @@ for linref, lr, pos_aug in itertools.product(
     parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
     if pos_aug:
         pos_aug_(config, std=pos_aug)
+    config.per_graph_radius_graph = True
 
     config = config.finalize()
     configs.append((config, M.MatbenchDiscoveryModel))
