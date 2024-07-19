@@ -417,7 +417,7 @@ for coefficients in (
     # @brandon Add more coefficients here
 ):
     config = make_config(
-        jmp_l_,
+        jmp_s_,
         linref=linref,
         batch_size=batch_size,
         lr=lr,
@@ -431,7 +431,7 @@ for coefficients in (
 
 for linref in (False, True):
     config = make_config(
-        jmp_l_,
+        jmp_s_,
         linref=linref,
         batch_size=batch_size,
         lr=lr,
