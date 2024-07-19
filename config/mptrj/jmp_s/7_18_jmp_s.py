@@ -376,7 +376,7 @@ config = create_config(jmp_s_)
 config.parameter_specific_optimizers = []
 config.max_neighbors = M.MaxNeighbors(main=20, aeaint=20, aint=1000, qint=8)
 config.cutoffs = M.Cutoffs.from_constant(12.0)
-data_config_(config, reference=True, batch_size=30)
+data_config_(config, reference=True, batch_size=16)
 optimization_config_(config, lr=8.0e-5)
 ln_(config, lr_multiplier=1.5)
 direct_(config=config)
