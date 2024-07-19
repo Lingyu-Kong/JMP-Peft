@@ -406,10 +406,11 @@ configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] 
 batch_size = 32
 lr = 8.0e-5
 linref = True
-coefficients = (1.0, 10.0, 100.0)
+coefficients = (20.0, 20.0, 10.0)
 pos_aug = None
 
 for coefficients in (
+    (20.0, 20.0, 10.0),
     (1.0, 10.0, 100.0),
     (10.0, 1.0, 100.0),
     (1.0, 1.0, 100.0),
