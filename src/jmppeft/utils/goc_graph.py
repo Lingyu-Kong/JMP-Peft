@@ -260,7 +260,7 @@ def _radius_graph_pbc(
 
     edge_index = torch.cat(edge_index, dim=1)
     cell_offsets = torch.cat(cell_offsets, dim=0)
-    neighbors = torch.cat(neighbors, dim=1)
+    neighbors = torch.cat(neighbors, dim=0)
 
     return edge_index, cell_offsets, neighbors
 

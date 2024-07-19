@@ -394,6 +394,8 @@ parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
 pos_aug_(config, std=0.01)
 config.per_graph_radius_graph = True
+config.ignore_graph_generation_errors = False
+config.batch_size = 64
 
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
