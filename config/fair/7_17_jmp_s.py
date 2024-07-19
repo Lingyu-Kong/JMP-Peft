@@ -1,11 +1,9 @@
 # %%
-import itertools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
 import ll
-import rich
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
 from jmppeft.modules import loss
@@ -35,6 +33,7 @@ def jmp_s_(config: base.FinetuneConfigBase):
     )
 
     config.meta["jmp_kind"] = "s"
+    config.tags.append("jmps")
     config.name_parts.append("jmps")
 
 
@@ -48,6 +47,7 @@ def jmp_l_(config: base.FinetuneConfigBase):
     )
 
     config.meta["jmp_kind"] = "l"
+    config.tags.append("jmpl")
     config.name_parts.append("jmpl")
 
 
@@ -154,7 +154,7 @@ def direct_(config: base.FinetuneConfigBase):
     config.backbone.regress_forces = True
     config.backbone.direct_forces = True
     config.backbone.regress_energy = True
-    config.name_parts.append("direct")
+    config.tags.append("direct")
 
 
 def grad_(config: base.FinetuneConfigBase):
@@ -164,7 +164,7 @@ def grad_(config: base.FinetuneConfigBase):
 
     config.trainer.inference_mode = False
 
-    config.name_parts.append("grad")
+    config.tags.append("grad")
 
 
 def ln_(
@@ -197,7 +197,7 @@ def ln_(
             *config.parameter_specific_optimizers,
         ]
 
-    config.name_parts.append("ln")
+    config.tags.append("ln")
 
 
 def pos_aug_(config: base.FinetuneConfigBase, *, std: float):
@@ -206,7 +206,7 @@ def pos_aug_(config: base.FinetuneConfigBase, *, std: float):
         atom_corrupt_prob=0.5,
         noise_std=std,
     )
-    config.name_parts.append(f"posaug_std{std}")
+    config.tags.append(f"posaug_std{std}")
 
 
 def data_config_(
@@ -216,7 +216,7 @@ def data_config_(
     reference: bool,
 ):
     config.batch_size = batch_size
-    config.name_parts.append(f"bsz{batch_size}")
+    config.tags.append(f"bsz{batch_size}")
 
     def dataset_fn(split: Literal["train", "val", "test"]):
         return base.FinetuneMPTrjHuggingfaceDatasetConfig(
@@ -237,9 +237,9 @@ def data_config_(
     config.test_dataset = dataset_fn("test")
 
     if reference:
-        config.name_parts.append("linrefenergy")
+        config.tags.append("linrefenergy")
     else:
-        config.name_parts.append("totalenergy")
+        config.tags.append("totalenergy")
 
     # Set data config
     config.num_workers = 7
@@ -262,18 +262,18 @@ def output_heads_config_(
     energy_loss = loss.HuberLossConfig(delta=0.01)
     if mace_energy_loss:
         energy_loss = loss.MACEHuberEnergyLossConfig(delta=0.01)
-        config.name_parts.append("maceenergy")
+        config.tags.append("maceenergy")
 
     force_loss = loss.HuberLossConfig(delta=0.01)
     if mace_force_loss:
         force_loss = loss.MACEHuberLossConfig(delta=0.01)
-        config.name_parts.append("maceforce")
+        config.tags.append("maceforce")
 
     # Energy head
     config.graph_targets.append(
         output_head.AllegroScalarTargetConfig(
             name="y",
-            loss_coefficient=1.0,
+            loss_coefficient=energy_coefficient,
             loss=energy_loss.model_copy(),
             reduction="sum",
             max_atomic_number=config.backbone.num_elements,
@@ -285,7 +285,7 @@ def output_heads_config_(
         config.graph_targets.append(
             output_head.AllegroScalarTargetConfig(
                 name="y_relaxed",
-                loss_coefficient=1.0,
+                loss_coefficient=energy_coefficient / 2,
                 loss=energy_loss.model_copy(),
                 reduction="sum",
                 max_atomic_number=config.backbone.num_elements,
@@ -293,12 +293,12 @@ def output_heads_config_(
             )
         )
 
-        config.name_parts.append("rele")
+        config.tags.append("rele")
     # Stress head
     config.graph_targets.append(
         output_head.DirectStressTargetConfig(
             name="stress",
-            loss_coefficient=100.0,
+            loss_coefficient=stress_coefficient,
             loss=loss.HuberLossConfig(delta=0.01),
             reduction="mean",
         )
@@ -307,15 +307,15 @@ def output_heads_config_(
     config.node_targets.append(
         output_head.NodeVectorTargetConfig(
             name="force",
-            loss_coefficient=10.0,
+            loss_coefficient=force_coefficient,
             loss=force_loss,
             reduction="sum",
         )
     )
 
-    config.name_parts.append(f"ec{energy_coefficient}")
-    config.name_parts.append(f"fc{force_coefficient}")
-    config.name_parts.append(f"sc{stress_coefficient}")
+    config.tags.append(f"ec{energy_coefficient}")
+    config.tags.append(f"fc{force_coefficient}")
+    config.tags.append(f"sc{stress_coefficient}")
 
 
 def optimization_config_(
@@ -341,12 +341,13 @@ def optimization_config_(
         algorithm="value",
     )
 
-    config.name_parts.append(f"lr{lr}")
+    config.tags.append(f"lr{lr}")
 
 
-def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
-    config = M.MatbenchDiscoveryConfig.draft()
-
+def base_config_(
+    config: M.MatbenchDiscoveryConfig,
+    config_fn: Callable[[M.MatbenchDiscoveryConfig], None],
+):
     config.trainer.precision = "16-mixed-auto"
     config.trainer.set_float32_matmul_precision = "medium"
 
@@ -361,34 +362,34 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
 
     if project_root:
         config.with_project_root_(project_root)
-    return config
 
 
-configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
-
-batch_size = 32
-lr = 8.0e-5
-linref = True
-
-for linref, lr, pos_aug in itertools.product(
-    (True, False),
-    (5.0e-6, 1.0e-5, 8.0e-5),
-    (False,),
+def make_config(
+    model_fn: Callable[[base.FinetuneConfigBase], None],
+    *,
+    linref: bool,
+    batch_size: int,
+    lr: float,
+    coefficients: tuple[float, float, float],
+    pos_aug: float | None,
 ):
-    config = create_config(jmp_s_)
+    config = M.MatbenchDiscoveryConfig.draft()
+
+    base_config_(config, model_fn)
     config.parameter_specific_optimizers = []
     data_config_(config, reference=linref, batch_size=batch_size)
     optimization_config_(config, lr=lr)
     ln_(config, lr_multiplier=1.5)
     direct_(config=config)
+    energy, force, stress = coefficients
     output_heads_config_(
         config,
         relaxed_energy=True,
         mace_energy_loss=True,
         mace_force_loss=True,
-        energy_coefficient=1.0,
-        force_coefficient=10.0,
-        stress_coefficient=100.0,
+        energy_coefficient=energy,
+        force_coefficient=force,
+        stress_coefficient=stress,
     )
     parameter_specific_optimizers_(config)
     parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
@@ -397,9 +398,107 @@ for linref, lr, pos_aug in itertools.product(
     config.per_graph_radius_graph = True
 
     config = config.finalize()
+    return config
+
+
+configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
+
+batch_size = 32
+lr = 8.0e-5
+linref = True
+coefficients = (1.0, 10.0, 100.0)
+pos_aug = None
+
+for coefficients in (
+    (1.0, 10.0, 100.0),
+    (10.0, 1.0, 100.0),
+    (1.0, 1.0, 100.0),
+    # @brandon Add more coefficients here
+):
+    config = make_config(
+        jmp_l_,
+        linref=linref,
+        batch_size=batch_size,
+        lr=lr,
+        coefficients=coefficients,
+        pos_aug=pos_aug,
+    )
+    config.name_parts.append(
+        f"ec{coefficients[0]}_fc{coefficients[1]}_sc{coefficients[2]}"
+    )
     configs.append((config, M.MatbenchDiscoveryModel))
 
-rich.print(configs)
+for linref in (False, True):
+    config = make_config(
+        jmp_l_,
+        linref=linref,
+        batch_size=batch_size,
+        lr=lr,
+        coefficients=coefficients,
+        pos_aug=pos_aug,
+    )
+    if linref:
+        config.name_parts.append("linref")
+    else:
+        config.name_parts.append("totalenergy")
+    configs.append((config, M.MatbenchDiscoveryModel))
+
+for pos_aug in (None, 0.05, 0.01):
+    config = make_config(
+        jmp_s_,
+        linref=linref,
+        batch_size=batch_size,
+        lr=lr,
+        coefficients=coefficients,
+        pos_aug=pos_aug,
+    )
+    if pos_aug:
+        config.name_parts.append(f"posaug{pos_aug}")
+    else:
+        config.name_parts.append("noposaug")
+    configs.append((config, M.MatbenchDiscoveryModel))
+
+for lr in (1.0e-5, 8.0e-5, 2.0e-4):
+    config = make_config(
+        jmp_s_,
+        linref=linref,
+        batch_size=batch_size,
+        lr=lr,
+        coefficients=coefficients,
+        pos_aug=pos_aug,
+    )
+    config.name_parts.append(f"lr{lr}")
+    configs.append((config, M.MatbenchDiscoveryModel))
+
+print(f"{len(configs)} configs")
+
+
+# Remove duplicate configs
+def _remove_duplicate_configs(
+    configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]],
+):
+    seen_configs: set[str] = set()
+    unique_configs: list[
+        tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]
+    ] = []
+
+    for config, model_cls in configs:
+        config_json = config.model_dump_json(
+            exclude={"id", "name", "name_parts", "tags"}
+        )
+        if config_json in seen_configs:
+            print(f"Duplicate config found: {config.run_name}")
+            continue
+
+        seen_configs.add(config_json)
+        unique_configs.append((config, model_cls))
+
+    return unique_configs
+
+
+og_size = len(configs)
+configs = _remove_duplicate_configs(configs)
+print(f"{len(configs)} unique configs ({og_size - len(configs)} duplicates removed)")
 
 
 # %%
