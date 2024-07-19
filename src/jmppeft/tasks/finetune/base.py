@@ -474,6 +474,9 @@ class FinetuneConfigBase(BaseConfig):
     pos_noise_augmentation: PositionNoiseAugmentationConfig | None = None
     """Configuration for adding noise to atomic coordinates"""
 
+    per_graph_radius_graph: bool = False
+    """Whether to use per-graph radius graph"""
+
     @override
     def __post_init__(self):
         super().__post_init__()
@@ -1724,7 +1727,11 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         pbc: bool,
     ):
         aint_graph = generate_graph(
-            data, cutoff=cutoffs.aint, max_neighbors=max_neighbors.aint, pbc=pbc
+            data,
+            cutoff=cutoffs.aint,
+            max_neighbors=max_neighbors.aint,
+            pbc=pbc,
+            per_graph=self.config.per_graph_radius_graph,
         )
         aint_graph = self.process_aint_graph(aint_graph)
         subselect = partial(

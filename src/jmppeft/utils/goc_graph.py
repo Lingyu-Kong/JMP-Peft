@@ -212,20 +212,73 @@ def tag_mask(data: BaseData, graph: Graph, *, tags: list[int]):
     return graph
 
 
+def _radius_graph_pbc(
+    radius,
+    max_num_neighbors_threshold,
+    data: BaseData,
+    enforce_max_neighbors_strictly: bool = False,
+    pbc=None,
+    per_graph: bool = False,
+):
+    if not per_graph:
+        return radius_graph_pbc(
+            radius,
+            max_num_neighbors_threshold,
+            data.pos,
+            data.natoms,
+            data.cell,
+            enforce_max_neighbors_strictly=enforce_max_neighbors_strictly,
+            pbc=pbc,
+        )
+
+    assert (
+        ptr := getattr(data, "ptr", None)
+    ) is not None, "`data.ptr` is required for per-graph radius graph"
+    pos: torch.Tensor = data.pos  # n 3
+    cell: torch.Tensor = data.cell  # b 3 3
+    natoms: torch.Tensor = data.natoms  # b
+
+    edge_index, cell_offsets, neighbors = [], [], []
+    atom_index_offset = 0
+    for i in range(ptr.size(0) - 1):
+        pos_i = pos[ptr[i] : ptr[i + 1]]
+        natoms_i = natoms[i]
+        cell_i = cell[i]
+        edge_index_i, cell_offsets_i, neighbors_i = radius_graph_pbc(
+            radius,
+            max_num_neighbors_threshold,
+            pos_i,
+            natoms_i[None],
+            cell_i[None],
+            enforce_max_neighbors_strictly=enforce_max_neighbors_strictly,
+            pbc=pbc,
+        )
+        edge_index.append(edge_index_i + atom_index_offset)
+        cell_offsets.append(cell_offsets_i)
+        neighbors.append(neighbors_i)
+        atom_index_offset += pos_i.shape[0]
+
+    edge_index = torch.cat(edge_index, dim=1)
+    cell_offsets = torch.cat(cell_offsets, dim=0)
+    neighbors = torch.cat(neighbors, dim=1)
+
+    return edge_index, cell_offsets, neighbors
+
+
 def _generate_graph(
     data: BaseData,
     *,
     cutoff: float,
     max_neighbors: int,
     pbc: bool,
+    per_graph: bool = False,
 ):
     if pbc:
-        edge_index, cell_offsets, neighbors = radius_graph_pbc(
+        edge_index, cell_offsets, neighbors = _radius_graph_pbc(
             cutoff,
             max_neighbors,
-            data.pos,
-            data.natoms,
-            data.cell,
+            data,
+            per_graph=per_graph,
         )
 
         out = get_pbc_distances(
@@ -277,6 +330,7 @@ def generate_graph(
     symmetrize: bool = False,
     filter_tags: list[int] | None = None,
     sort_edges: bool = False,
+    per_graph: bool = False,
 ):
     (
         edge_index,
@@ -290,6 +344,7 @@ def generate_graph(
         cutoff=cutoff,
         max_neighbors=max_neighbors,
         pbc=pbc,
+        per_graph=per_graph,
     )
     # These vectors actually point in the opposite direction.
     # But we want to use col as idx_t for efficient aggregation.

@@ -393,6 +393,7 @@ output_heads_config_(
 parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
 pos_aug_(config, std=0.01)
+config.per_graph_radius_graph = True
 
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
