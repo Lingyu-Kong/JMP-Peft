@@ -386,16 +386,15 @@ output_heads_config_(
     relaxed_energy_coefficient=0.1,
     mace_energy_loss=True,
     mace_force_loss=True,
-    energy_coefficient=2.0,
-    force_coefficient=10.0,
-    stress_coefficient=100.0,
+    energy_coefficient=20.0,
+    force_coefficient=20.0,
+    stress_coefficient=20.0,
 )
 parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
 pos_aug_(config, std=0.01)
 config.per_graph_radius_graph = True
 config.ignore_graph_generation_errors = False
-config.batch_size = 64
 
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
