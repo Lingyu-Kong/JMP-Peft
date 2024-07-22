@@ -368,6 +368,14 @@ class BatchDumpConfig(ll.TypedConfig):
     """Only dump the batch if rank is zero"""
 
 
+class CompositionBasedLossMultiplierConfig(ll.TypedConfig):
+    enabled: bool = False
+    """Whether to enable composition-based loss multiplier"""
+
+    multiplier: float = 1.0
+    """The multiplier to apply to the loss"""
+
+
 class FinetuneConfigBase(BaseConfig):
     gradient_checkpointing: GradientCheckpointingConfig | None = None
     """Gradient checkpointing configuration"""
@@ -476,6 +484,11 @@ class FinetuneConfigBase(BaseConfig):
 
     per_graph_radius_graph: bool = False
     """Whether to use per-graph radius graph"""
+
+    composition_based_loss_multiplier: CompositionBasedLossMultiplierConfig | None = (
+        None
+    )
+    """Configuration for composition-based loss multiplier"""
 
     @override
     def __post_init__(self):

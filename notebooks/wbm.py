@@ -55,6 +55,4 @@ dataset = datasets.Dataset.from_generator(generator)
 dataset
 
 # %%
-dataset.push_to_hub("nimashoghi/wbm", split="all")
-
-# %%
+dataset.push_to_hub("nimashoghi/wbm")
