@@ -83,19 +83,6 @@ class HuberLossConfig(LossConfigBase):
 class MACEHuberLossConfig(LossConfigBase):
     name: Literal["mace_huber"] = "mace_huber"
 
-    # steps: list[tuple[tuple[float, float], float]]
-
-    # @classmethod
-    # def mace_force_loss(cls, delta: float = 0.01):
-    #     return cls(
-    #         steps=[
-    #             ((0.0, 100.0), delta),
-    #             ((100.0, 200.0), 0.7 * delta),
-    #             ((200.0, 300.0), 0.4 * delta),
-    #             ((300.0, float("inf")), 0.1 * delta),
-    #         ]
-    #     )
-
     delta: float
 
     @override
@@ -141,6 +128,98 @@ class MACEHuberLossConfig(LossConfigBase):
                 assert_never(reduction)
 
 
+def _apply_focal_loss_per_atom(
+    *,
+    loss: tc.Float[torch.Tensor, "natoms"],
+    freq_ratios: tc.Float[torch.Tensor, "atom_type"],
+    atomic_numbers: tc.Int[torch.Tensor, "natoms"],
+    gamma: float,
+):
+    # Apply the frequency factor to each sample & compute the mean frequency factor for each graph
+    freq_factor = freq_ratios[atomic_numbers]
+    tc.tassert(tc.Float[torch.Tensor, "natoms"], freq_factor)
+
+    # Compute difficulty factor
+    # We'll use the Huber loss value instead of MAE for the difficulty
+    normalized_loss = loss / loss.max()
+    difficulty = (1 - torch.exp(-normalized_loss)) ** gamma
+    tc.tassert(tc.Float[torch.Tensor, "natoms"], difficulty)
+
+    # Combine factors
+    loss = loss * freq_factor * difficulty
+
+    return loss
+
+
+class MACEHuberForceFocalLossConfig(LossConfigBase):
+    name: Literal["mace_huber_force_focal"] = "mace_huber_force_focal"
+
+    delta: float  # Huber loss delta
+
+    freq_ratios_path: Path
+    gamma: float = 2.0  # Focal loss gamma
+
+    @cached_property
+    def freq_ratios(self) -> tc.Float[torch.Tensor, "atom_type"]:
+        freq_ratios = np.load(self.freq_ratios_path)
+        return torch.from_numpy(freq_ratios).float()
+
+    @override
+    def compute_impl(
+        self,
+        data: BaseData,
+        y_pred: torch.Tensor,
+        y_true: torch.Tensor,
+        reduction: Reduction = "mean",
+    ) -> torch.Tensor:
+        # Define the multiplication factors for each condition
+        factors = self.delta * np.array([1.0, 0.7, 0.4, 0.1])
+
+        # Apply multiplication factors based on conditions
+        c1 = torch.norm(y_true, dim=-1) < 100
+        c2 = (torch.norm(y_true, dim=-1) >= 100) & (torch.norm(y_true, dim=-1) < 200)
+        c3 = (torch.norm(y_true, dim=-1) >= 200) & (torch.norm(y_true, dim=-1) < 300)
+        c4 = ~(c1 | c2 | c3)
+
+        se = torch.zeros_like(y_pred)
+
+        se[c1] = F.huber_loss(
+            y_true[c1], y_pred[c1], reduction="none", delta=factors[0]
+        )
+        se[c2] = F.huber_loss(
+            y_true[c2], y_pred[c2], reduction="none", delta=factors[1]
+        )
+        se[c3] = F.huber_loss(
+            y_true[c3], y_pred[c3], reduction="none", delta=factors[2]
+        )
+        se[c4] = F.huber_loss(
+            y_true[c4], y_pred[c4], reduction="none", delta=factors[3]
+        )
+
+        # Reduce over the 3 force components
+        loss = se.mean(dim=-1)
+        tc.tassert(tc.Float[torch.Tensor, "natoms"], loss)
+
+        # Compute frequency factor for each sample based on its atom type
+        loss = _apply_focal_loss_per_atom(
+            loss=loss,
+            freq_ratios=self.freq_ratios.to(loss.device),
+            atomic_numbers=data.atomic_numbers,
+            gamma=self.gamma,
+        )
+        tc.tassert(tc.Float[torch.Tensor, "natoms"], loss)
+
+        match reduction:
+            case "mean":
+                return loss.mean()
+            case "sum":
+                return loss.sum()
+            case "none":
+                return loss
+            case _:
+                assert_never(reduction)
+
+
 class MACEHuberEnergyLossConfig(LossConfigBase):
     name: Literal["mace_huber_energy"] = "mace_huber_energy"
 
@@ -176,17 +255,9 @@ def _apply_focal_loss_per_graph(
     batch: tc.Int[torch.Tensor, "natoms"],
     gamma: float,
 ):
-    # Compute frequency factor for each sample based on its atom type
-    freq_ratios = freq_ratios.to(loss.device)
-    tc.tassert(tc.Float[torch.Tensor, "atom_type"], freq_ratios)
-
-    # Apply the frequency factor to each sample
-    freq_factor = freq_ratios[atomic_numbers]
-    tc.tassert(tc.Float[torch.Tensor, "natoms"], freq_ratios)
-
-    # Compute the mean frequency factor for each graph
+    # Apply the frequency factor to each sample & compute the mean frequency factor for each graph
     freq_factor = scatter(
-        freq_factor,
+        freq_ratios[atomic_numbers],
         batch,
         dim=0,
         dim_size=loss.shape[0],
@@ -196,7 +267,8 @@ def _apply_focal_loss_per_graph(
 
     # Compute difficulty factor
     # We'll use the Huber loss value instead of MAE for the difficulty
-    difficulty = (1 - torch.exp(-loss)) ** gamma
+    normalized_loss = loss / loss.max()
+    difficulty = (1 - torch.exp(-normalized_loss)) ** gamma
     tc.tassert(tc.Float[torch.Tensor, "bsz"], difficulty)
 
     # Combine factors
@@ -239,32 +311,74 @@ class MACEHuberEnergyFocalLossConfig(LossConfigBase):
         tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
 
         # Compute frequency factor for each sample based on its atom type
-        freq_ratios = self.freq_ratios.to(y_pred.device)
-        tc.tassert(tc.Float[torch.Tensor, "atom_type"], freq_ratios)
-
-        # Apply the frequency factor to each sample
-        freq_factor = freq_ratios[data.atomic_numbers]
-        tc.tassert(tc.Float[torch.Tensor, "natoms"], freq_ratios)
-
-        # Compute the mean frequency factor for each graph
-        freq_factor = scatter(
-            freq_factor,
-            data.batch,
-            dim=0,
-            dim_size=y_pred.shape[0],
-            reduce="mean",
+        loss = _apply_focal_loss_per_graph(
+            loss=loss,
+            freq_ratios=self.freq_ratios.to(loss.device),
+            atomic_numbers=data.atomic_numbers,
+            batch=data.batch,
+            gamma=self.gamma,
         )
-        tc.tassert(tc.Float[torch.Tensor, "bsz"], freq_factor)
+        tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
 
-        # Compute difficulty factor
-        # We'll use the Huber loss value instead of MAE for the difficulty
-        difficulty = (1 - torch.exp(-loss)) ** self.gamma
-        tc.tassert(tc.Float[torch.Tensor, "bsz"], difficulty)
+        match reduction:
+            case "mean":
+                return loss.mean()
+            case "sum":
+                return loss.sum()
+            case "none":
+                return loss
+            case _:
+                assert_never(reduction)
 
-        # Combine factors
-        loss = loss * freq_factor * difficulty
 
-        return loss
+class HuberStressFocalLossConfig(LossConfigBase):
+    name: Literal["huber_stress_focal"] = "huber_stress_focal"
+
+    delta: float  # Huber loss delta
+
+    freq_ratios_path: Path
+    gamma: float = 2.0  # Focal loss gamma
+
+    @cached_property
+    def freq_ratios(self) -> tc.Float[torch.Tensor, "atom_type"]:
+        freq_ratios = np.load(self.freq_ratios_path)
+        return torch.from_numpy(freq_ratios).float()
+
+    @override
+    def compute_impl(
+        self,
+        data: BaseData,
+        y_pred: torch.Tensor,
+        y_true: torch.Tensor,
+        reduction: Reduction = "mean",
+    ) -> torch.Tensor:
+        # Compute the loss
+        loss = F.huber_loss(y_pred, y_true, reduction="none", delta=self.delta)
+        tc.tassert(tc.Float[torch.Tensor, "bsz 3 3"], loss)
+
+        # Reduce over the 3x3 stress tensor
+        loss = loss.mean(dim=(-2, -1))
+        tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
+
+        # Compute frequency factor for each sample based on its atom type
+        loss = _apply_focal_loss_per_graph(
+            loss=loss,
+            freq_ratios=self.freq_ratios.to(loss.device),
+            atomic_numbers=data.atomic_numbers,
+            batch=data.batch,
+            gamma=self.gamma,
+        )
+        tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
+
+        match reduction:
+            case "mean":
+                return loss.mean()
+            case "sum":
+                return loss.sum()
+            case "none":
+                return loss
+            case _:
+                assert_never(reduction)
 
 
 class L2MAELossConfig(LossConfigBase):
@@ -299,6 +413,9 @@ LossConfig: TypeAlias = Annotated[
     | HuberLossConfig
     | MACEHuberLossConfig
     | MACEHuberEnergyLossConfig
+    | MACEHuberForceFocalLossConfig
+    | MACEHuberEnergyFocalLossConfig
+    | HuberStressFocalLossConfig
     | L2MAELossConfig,
     ll.Field(discriminator="name"),
 ]
