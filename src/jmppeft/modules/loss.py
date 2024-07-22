@@ -12,8 +12,18 @@ Reduction: TypeAlias = Literal["mean", "sum", "none"]
 
 
 class LossConfigBase(ll.TypedConfig, ABC):
-    @abstractmethod
     def compute(
+        self,
+        data: BaseData,
+        y_pred: torch.Tensor,
+        y_true: torch.Tensor,
+        reduction: Reduction = "mean",
+    ) -> torch.Tensor:
+        loss = self.compute_impl(data, y_pred, y_true, reduction)
+        return loss
+
+    @abstractmethod
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
@@ -26,7 +36,7 @@ class MAELossConfig(LossConfigBase):
     name: Literal["mae"] = "mae"
 
     @override
-    def compute(
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
@@ -40,7 +50,7 @@ class MSELossConfig(LossConfigBase):
     name: Literal["mse"] = "mse"
 
     @override
-    def compute(
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
@@ -56,7 +66,7 @@ class HuberLossConfig(LossConfigBase):
     delta: float
 
     @override
-    def compute(
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
@@ -85,7 +95,7 @@ class MACEHuberLossConfig(LossConfigBase):
     delta: float
 
     @override
-    def compute(
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
@@ -133,7 +143,7 @@ class MACEHuberEnergyLossConfig(LossConfigBase):
     delta: float
 
     @override
-    def compute(
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
@@ -160,7 +170,7 @@ class L2MAELossConfig(LossConfigBase):
     p: int | float = 2
 
     @override
-    def compute(
+    def compute_impl(
         self,
         data: BaseData,
         y_pred: torch.Tensor,
