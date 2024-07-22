@@ -263,7 +263,6 @@ def output_heads_config_(
     energy_coefficient: float,
     force_coefficient: float,
     stress_coefficient: float,
-    relaxed_energy_coefficient: float = 1.0,
 ):
     energy_loss = loss.HuberLossConfig(delta=0.01)
     if mace_energy_loss:
@@ -279,7 +278,7 @@ def output_heads_config_(
     config.graph_targets.append(
         output_head.AllegroScalarTargetConfig(
             name="y",
-            loss_coefficient=1.0,
+            loss_coefficient=energy_coefficient,
             loss=energy_loss.model_copy(),
             reduction="sum",
             max_atomic_number=config.backbone.num_elements,
@@ -291,7 +290,7 @@ def output_heads_config_(
         config.graph_targets.append(
             output_head.AllegroScalarTargetConfig(
                 name="y_relaxed",
-                loss_coefficient=relaxed_energy_coefficient,
+                loss_coefficient=energy_coefficient / 2.0,
                 loss=energy_loss.model_copy(),
                 reduction="sum",
                 max_atomic_number=config.backbone.num_elements,
@@ -304,7 +303,7 @@ def output_heads_config_(
     config.graph_targets.append(
         output_head.DirectStressTargetConfig(
             name="stress",
-            loss_coefficient=100.0,
+            loss_coefficient=stress_coefficient,
             loss=loss.HuberLossConfig(delta=0.01),
             reduction="mean",
         )
@@ -313,7 +312,7 @@ def output_heads_config_(
     config.node_targets.append(
         output_head.NodeVectorTargetConfig(
             name="force",
-            loss_coefficient=10.0,
+            loss_coefficient=force_coefficient,
             loss=force_loss,
             reduction="sum",
         )
@@ -383,12 +382,11 @@ direct_(config=config)
 output_heads_config_(
     config,
     relaxed_energy=True,
-    relaxed_energy_coefficient=0.1,
     mace_energy_loss=True,
     mace_force_loss=True,
     energy_coefficient=20.0,
     force_coefficient=20.0,
-    stress_coefficient=20.0,
+    stress_coefficient=10.0,
 )
 parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
