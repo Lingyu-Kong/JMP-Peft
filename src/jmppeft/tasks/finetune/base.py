@@ -59,7 +59,6 @@ from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
 from ...modules import transforms as T
-from ...modules.atom_type_based_loss_mult import AtomTypeBasedLossMultiplierConfig
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import CommonDatasetConfig, wrap_common_dataset
 from ...modules.dist_lora import AdapterLayer, DLoraConfig
@@ -477,9 +476,6 @@ class FinetuneConfigBase(BaseConfig):
 
     per_graph_radius_graph: bool = False
     """Whether to use per-graph radius graph"""
-
-    atom_type_based_loss_multiplier: AtomTypeBasedLossMultiplierConfig | None = None
-    """Configuration for atom-type-based loss multiplier"""
 
     @override
     def __post_init__(self):

@@ -1,11 +1,15 @@
 from abc import ABC, abstractmethod
+from functools import cached_property
+from pathlib import Path
 from typing import Annotated, Literal, TypeAlias
 
 import ll
+import ll.typecheck as tc
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_geometric.data.data import BaseData
+from torch_scatter import scatter
 from typing_extensions import assert_never, override
 
 Reduction: TypeAlias = Literal["mean", "sum", "none"]
@@ -160,6 +164,105 @@ class MACEHuberEnergyLossConfig(LossConfigBase):
 
         # Compute the loss
         loss = F.huber_loss(y_pred, y_true, reduction=reduction, delta=self.delta)
+
+        return loss
+
+
+def _apply_focal_loss_per_graph(
+    *,
+    loss: tc.Float[torch.Tensor, "bsz"],
+    freq_ratios: tc.Float[torch.Tensor, "atom_type"],
+    atomic_numbers: tc.Int[torch.Tensor, "natoms"],
+    batch: tc.Int[torch.Tensor, "natoms"],
+    gamma: float,
+):
+    # Compute frequency factor for each sample based on its atom type
+    freq_ratios = freq_ratios.to(loss.device)
+    tc.tassert(tc.Float[torch.Tensor, "atom_type"], freq_ratios)
+
+    # Apply the frequency factor to each sample
+    freq_factor = freq_ratios[atomic_numbers]
+    tc.tassert(tc.Float[torch.Tensor, "natoms"], freq_ratios)
+
+    # Compute the mean frequency factor for each graph
+    freq_factor = scatter(
+        freq_factor,
+        batch,
+        dim=0,
+        dim_size=loss.shape[0],
+        reduce="mean",
+    )
+    tc.tassert(tc.Float[torch.Tensor, "bsz"], freq_factor)
+
+    # Compute difficulty factor
+    # We'll use the Huber loss value instead of MAE for the difficulty
+    difficulty = (1 - torch.exp(-loss)) ** gamma
+    tc.tassert(tc.Float[torch.Tensor, "bsz"], difficulty)
+
+    # Combine factors
+    loss = loss * freq_factor * difficulty
+
+    return loss
+
+
+class MACEHuberEnergyFocalLossConfig(LossConfigBase):
+    name: Literal["mace_huber_energy_focal"] = "mace_huber_energy_focal"
+
+    delta: float  # Huber loss delta
+
+    freq_ratios_path: Path
+    gamma: float = 2.0  # Focal loss gamma
+
+    @cached_property
+    def freq_ratios(self) -> tc.Float[torch.Tensor, "atom_type"]:
+        freq_ratios = np.load(self.freq_ratios_path)
+        return torch.from_numpy(freq_ratios).float()
+
+    @override
+    def compute_impl(
+        self,
+        data: BaseData,
+        y_pred: tc.Float[torch.Tensor, "bsz"],
+        y_true: tc.Float[torch.Tensor, "bsz"],
+        reduction: Reduction = "mean",
+    ) -> tc.Float[torch.Tensor, ""] | tc.Float[torch.Tensor, "bsz"]:
+        assert (
+            natoms := getattr(data, "natoms", None)
+        ) is not None, "natoms is required"
+
+        # First, divide the energy by the number of atoms
+        y_pred = y_pred / natoms
+        y_true = y_true / natoms
+
+        # Compute the loss
+        loss = F.huber_loss(y_pred, y_true, reduction="none", delta=self.delta)
+        tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
+
+        # Compute frequency factor for each sample based on its atom type
+        freq_ratios = self.freq_ratios.to(y_pred.device)
+        tc.tassert(tc.Float[torch.Tensor, "atom_type"], freq_ratios)
+
+        # Apply the frequency factor to each sample
+        freq_factor = freq_ratios[data.atomic_numbers]
+        tc.tassert(tc.Float[torch.Tensor, "natoms"], freq_ratios)
+
+        # Compute the mean frequency factor for each graph
+        freq_factor = scatter(
+            freq_factor,
+            data.batch,
+            dim=0,
+            dim_size=y_pred.shape[0],
+            reduce="mean",
+        )
+        tc.tassert(tc.Float[torch.Tensor, "bsz"], freq_factor)
+
+        # Compute difficulty factor
+        # We'll use the Huber loss value instead of MAE for the difficulty
+        difficulty = (1 - torch.exp(-loss)) ** self.gamma
+        tc.tassert(tc.Float[torch.Tensor, "bsz"], difficulty)
+
+        # Combine factors
+        loss = loss * freq_factor * difficulty
 
         return loss
 
