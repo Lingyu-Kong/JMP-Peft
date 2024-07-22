@@ -369,11 +369,7 @@ class BatchDumpConfig(ll.TypedConfig):
 
 
 class CompositionBasedLossMultiplierConfig(ll.TypedConfig):
-    enabled: bool = False
-    """Whether to enable composition-based loss multiplier"""
-
-    multiplier: float = 1.0
-    """The multiplier to apply to the loss"""
+    pass
 
 
 class FinetuneConfigBase(BaseConfig):
