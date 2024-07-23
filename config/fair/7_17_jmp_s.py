@@ -20,12 +20,11 @@ jmp_l_ckpt_path = Path("/mnt/shared/checkpoints/jmp-l.pt")
 
 # Set this to None if you want the run logs to be saved in the current directory
 project_root: Path | None = Path("/mnt/datasets/experiment-data/jmp-peft/")
-project_root.mkdir(exist_ok=True, parents=True)
 
 
 def jmp_s_(config: base.FinetuneConfigBase):
     ckpt_path = jmp_s_ckpt_path
-    assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
+    # assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
 
     jmp_s_ft_config_(config)
     config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
@@ -39,7 +38,7 @@ def jmp_s_(config: base.FinetuneConfigBase):
 
 def jmp_l_(config: base.FinetuneConfigBase):
     ckpt_path = jmp_l_ckpt_path
-    assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
+    # assert ckpt_path.exists(), f"Checkpoint not found: {ckpt_path}"
 
     jmp_l_ft_config_(config)
     config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
@@ -258,6 +257,7 @@ def output_heads_config_(
     energy_coefficient: float,
     force_coefficient: float,
     stress_coefficient: float,
+    energy_loss_ratio: float = 0.75,
 ):
     energy_loss = loss.HuberLossConfig(delta=0.01)
     if mace_energy_loss:
@@ -270,6 +270,11 @@ def output_heads_config_(
         config.tags.append("maceforce")
 
     # Energy head
+    energy_loss_coefficient = energy_coefficient
+    relaxed_energy_loss_coefficient = energy_coefficient
+    if relaxed_energy:
+        energy_loss_coefficient *= energy_loss_ratio
+        relaxed_energy_loss_coefficient *= 1 - energy_loss_ratio
     config.graph_targets.append(
         output_head.AllegroScalarTargetConfig(
             name="y",
@@ -322,11 +327,13 @@ def optimization_config_(
     config: M.MatbenchDiscoveryConfig,
     *,
     lr: float,
+    wd: float,
 ):
     config.optimizer = AdamWConfig(
         lr=lr,
         amsgrad=False,
         betas=(0.9, 0.95),
+        weight_decay=wd,
     )
     config.lr_scheduler = base.WarmupCosRLPConfig(
         warmup_epochs=1,
@@ -342,6 +349,7 @@ def optimization_config_(
     )
 
     config.tags.append(f"lr{lr}")
+    config.tags.append(f"wd{wd}")
 
 
 def base_config_(
@@ -372,19 +380,21 @@ def make_config(
     lr: float,
     coefficients: tuple[float, float, float],
     pos_aug: float | None,
+    relaxed_energy: bool,
+    wd: float = 0.01,
 ):
     config = M.MatbenchDiscoveryConfig.draft()
 
     base_config_(config, model_fn)
     config.parameter_specific_optimizers = []
     data_config_(config, reference=linref, batch_size=batch_size)
-    optimization_config_(config, lr=lr)
+    optimization_config_(config, lr=lr, wd=wd)
     ln_(config, lr_multiplier=1.5)
     direct_(config=config)
     energy, force, stress = coefficients
     output_heads_config_(
         config,
-        relaxed_energy=True,
+        relaxed_energy=relaxed_energy,
         mace_energy_loss=True,
         mace_force_loss=True,
         energy_coefficient=energy,
@@ -403,33 +413,54 @@ def make_config(
 
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
+# Base settings
 batch_size = 32
 lr = 8.0e-5
+wd = 0.01
 linref = True
 coefficients = (20.0, 20.0, 10.0)
 pos_aug = None
+relaxed_energy = True
 
-for coefficients in (
-    (20.0, 20.0, 10.0),
-    (1.0, 10.0, 100.0),
-    (10.0, 1.0, 100.0),
-    (1.0, 1.0, 100.0),
-    # @brandon Add more coefficients here
+for relaxed_energy_ in (False, True):
+    config = make_config(
+        jmp_s_,
+        linref=linref,
+        batch_size=batch_size,
+        lr=lr,
+        coefficients=coefficients,
+        pos_aug=pos_aug,
+        relaxed_energy=relaxed_energy_,
+    )
+    if relaxed_energy_:
+        config.name_parts.append("s2ef_s2re")
+    else:
+        config.name_parts.append("s2efonly")
+    configs.append((config, M.MatbenchDiscoveryModel))
+
+
+for coefficients_ in (
+    (20.0, 20.0, 10.0),  # Luis' original coefficients
+    (2.0, 10.0, 100.0),  # Current best coefficients
+    (100.0, 100.0, 1.0),  # SevenNet coefficients
+    (1.0, 100.0, 1.0),  # Force preferred
+    (100.0, 1.0, 1.0),  # Energy preferred
 ):
     config = make_config(
         jmp_s_,
         linref=linref,
         batch_size=batch_size,
         lr=lr,
-        coefficients=coefficients,
+        coefficients=coefficients_,
         pos_aug=pos_aug,
+        relaxed_energy=relaxed_energy,
     )
     config.name_parts.append(
         f"ec{coefficients[0]}_fc{coefficients[1]}_sc{coefficients[2]}"
     )
     configs.append((config, M.MatbenchDiscoveryModel))
 
-for linref in (False, True):
+for wd in (0.01, 0.1):
     config = make_config(
         jmp_s_,
         linref=linref,
@@ -437,40 +468,11 @@ for linref in (False, True):
         lr=lr,
         coefficients=coefficients,
         pos_aug=pos_aug,
+        relaxed_energy=relaxed_energy,
+        wd=wd,
     )
-    if linref:
-        config.name_parts.append("linref")
-    else:
-        config.name_parts.append("totalenergy")
+    config.name_parts.append(f"wd{wd}")
     configs.append((config, M.MatbenchDiscoveryModel))
-
-for pos_aug in (None, 0.05, 0.01):
-    config = make_config(
-        jmp_s_,
-        linref=linref,
-        batch_size=batch_size,
-        lr=lr,
-        coefficients=coefficients,
-        pos_aug=pos_aug,
-    )
-    if pos_aug:
-        config.name_parts.append(f"posaug{pos_aug}")
-    else:
-        config.name_parts.append("noposaug")
-    configs.append((config, M.MatbenchDiscoveryModel))
-
-for lr in (1.0e-5, 8.0e-5, 2.0e-4):
-    config = make_config(
-        jmp_s_,
-        linref=linref,
-        batch_size=batch_size,
-        lr=lr,
-        coefficients=coefficients,
-        pos_aug=pos_aug,
-    )
-    config.name_parts.append(f"lr{lr}")
-    configs.append((config, M.MatbenchDiscoveryModel))
-
 print(f"{len(configs)} configs")
 
 
@@ -500,6 +502,8 @@ def _remove_duplicate_configs(
 og_size = len(configs)
 configs = _remove_duplicate_configs(configs)
 print(f"{len(configs)} unique configs ({og_size - len(configs)} duplicates removed)")
+
+print([c.run_name for c, _ in configs])
 
 
 # %%
