@@ -506,8 +506,9 @@ print(f"{len(configs)} unique configs ({og_size - len(configs)} duplicates remov
 print([c.run_name for c, _ in configs])
 
 # %%
-for c, _ in configs:
-    print(f"- {c.run_name}")
+import rich
+
+rich.print({c.run_name: c.tags for c, _ in configs})
 
 
 # %%
