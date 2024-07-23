@@ -456,11 +456,11 @@ for coefficients_ in (
         relaxed_energy=relaxed_energy,
     )
     config.name_parts.append(
-        f"ec{coefficients[0]}_fc{coefficients[1]}_sc{coefficients[2]}"
+        f"ec{coefficients_[0]}_fc{coefficients_[1]}_sc{coefficients_[2]}"
     )
     configs.append((config, M.MatbenchDiscoveryModel))
 
-for wd in (0.01, 0.1):
+for wd_ in (0.01, 0.1):
     config = make_config(
         jmp_s_,
         linref=linref,
@@ -469,9 +469,9 @@ for wd in (0.01, 0.1):
         coefficients=coefficients,
         pos_aug=pos_aug,
         relaxed_energy=relaxed_energy,
-        wd=wd,
+        wd=wd_,
     )
-    config.name_parts.append(f"wd{wd}")
+    config.name_parts.append(f"wd{wd_}")
     configs.append((config, M.MatbenchDiscoveryModel))
 print(f"{len(configs)} configs")
 
@@ -504,6 +504,10 @@ configs = _remove_duplicate_configs(configs)
 print(f"{len(configs)} unique configs ({og_size - len(configs)} duplicates removed)")
 
 print([c.run_name for c, _ in configs])
+
+# %%
+for c, _ in configs:
+    print(f"- {c.run_name}")
 
 
 # %%
