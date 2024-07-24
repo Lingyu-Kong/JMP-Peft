@@ -1,19 +1,15 @@
 import os
 import signal
 
-import rich
 
-
-def print_env():
-    print("Environment:")
-    rich.print(list(os.environ.keys()))
-    os.system("which python")
+def doit():
+    os.system("brequeue -h")
 
 
 def main():
     # Print current pid
 
-    print_env()
+    doit()
 
     print("PID: ", os.getpid())
 
@@ -30,7 +26,7 @@ def usr1_handler(signum, frame):
     print(f"Received SIGUSR1 signal. signum: {signum}, frame: {frame}")
     print()
     print()
-    print_env()
+    doit()
     print()
     print()
 
