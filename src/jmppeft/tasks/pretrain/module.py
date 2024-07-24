@@ -5,8 +5,10 @@ from functools import cache, partial
 from logging import getLogger
 from typing import Annotated, Any, Literal, TypeAlias, cast
 
-import ll
-import ll.typecheck as tc
+import nshconfig as C
+import nshtrainer as nt
+import nshtrainer.ll as ll
+import nshutils.typecheck as tc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,11 +20,8 @@ from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
     OptimizerLRSchedulerConfig,
 )
-from ll import AllowMissing, Base, BaseConfig, Field, LightningModuleBase, TypedConfig
-from ll.data.balanced_batch_sampler import BalancedBatchSampler
-from ll.model.config import LightningTrainerKwargs
-from ll.nn import MLP
-from ll.util.typed import TypedModuleDict, TypedModuleList
+from nshtrainer.data.balanced_batch_sampler import BalancedBatchSampler
+from nshtrainer.model.config import LightningTrainerKwargs
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
@@ -70,7 +69,7 @@ from ..config import (
 log = getLogger(__name__)
 
 
-class LinearWarmupCosineAnnealingSchedulerConfig(TypedConfig):
+class LinearWarmupCosineAnnealingSchedulerConfig(C.Config):
     name: Literal["linear_warmup_cosine_annealing"] = "linear_warmup_cosine_annealing"
 
     warmup_steps: int = 0
@@ -82,7 +81,7 @@ class LinearWarmupCosineAnnealingSchedulerConfig(TypedConfig):
 
 
 LRSchedulerConfig: TypeAlias = Annotated[
-    LinearWarmupCosineAnnealingSchedulerConfig, Field(discriminator="name")
+    LinearWarmupCosineAnnealingSchedulerConfig, C.Field(discriminator="name")
 ]
 
 
@@ -90,7 +89,7 @@ class PretrainDatasetConfig(PretrainDatasetConfigBase, CommonDatasetConfig):
     pass
 
 
-class TaskConfig(TypedConfig):
+class TaskConfig(C.Config):
     name: str
     """Name of the task."""
 
@@ -121,11 +120,11 @@ class TaskConfig(TypedConfig):
 
 BackboneConfig: TypeAlias = Annotated[
     GOCBackboneConfig | Graphormer3DConfig | TorchMDNetBackboneConfig,
-    Field(discriminator="name"),
+    C.Field(discriminator="name"),
 ]
 
 
-class FSDPConfig(TypedConfig):
+class FSDPConfig(C.Config):
     gradient_checkpointing: bool
     """Whether to use gradient checkpointing."""
 
@@ -138,7 +137,7 @@ class FSDPConfig(TypedConfig):
     """Sharding strategy to use."""
 
 
-class PretrainConfig(BaseConfig):
+class PretrainConfig(nt.BaseConfig):
     optimizer: OptimizerConfig
     """Optimizer to use."""
     lr_scheduler: LRSchedulerConfig | None = None
@@ -149,7 +148,7 @@ class PretrainConfig(BaseConfig):
     edge_dropout: float | None = None
     """The percentage of edges to drop. If None, no edges are dropped."""
 
-    embedding: AllowMissing[EmbeddingConfig] = TypedConfig.MISSING
+    embedding: C.AllowMissing[EmbeddingConfig] = C.Config.MISSING
     """Configuration for the embedding layer."""
     backbone: BackboneConfig
     """Configuration for the backbone."""
@@ -347,7 +346,7 @@ class PretrainConfig(BaseConfig):
 Data: TypeAlias = Any
 
 
-class Embedding(Base[PretrainConfig], nn.Module):
+class Embedding(nt.Base[PretrainConfig], nn.Module):
     @override
     def __init__(self, hparams: PretrainConfig):
         super().__init__(hparams)
@@ -364,7 +363,7 @@ class Embedding(Base[PretrainConfig], nn.Module):
         return x
 
 
-class Output(Base[PretrainConfig], nn.Module):
+class Output(nt.Base[PretrainConfig], nn.Module):
     @override
     def __init__(self, hparams: PretrainConfig):
         super().__init__(hparams)
@@ -377,18 +376,18 @@ class Output(Base[PretrainConfig], nn.Module):
         ):
             return ([emb_size] * num_mlps) + [num_targets]
 
-        self.out_energy = TypedModuleList(
+        self.out_energy = nt.nn.TypedModuleList(
             [
-                MLP(
+                nt.nn.MLP(
                     dims(self.config.backbone.emb_size_atom),
                     activation=self.config.activation_cls,
                 )
                 for _ in self.config.tasks
             ]
         )
-        self.out_forces = TypedModuleList(
+        self.out_forces = nt.nn.TypedModuleList(
             [
-                MLP(
+                nt.nn.MLP(
                     dims(self.config.backbone.emb_size_edge),
                     activation=self.config.activation_cls,
                 )
@@ -477,7 +476,7 @@ def foreach(
 GOCOutput = Output
 
 
-class PretrainModel(LightningModuleBase[PretrainConfig]):
+class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
     def _ckpt_layers(self) -> set[type[nn.Module]]:
         layers = set[type[nn.Module]]()
         match self.config.backbone:
@@ -671,7 +670,7 @@ class PretrainModel(LightningModuleBase[PretrainConfig]):
                 metric = SumMetric()
                 metric.persistent(True)
                 task_steps[task.name] = metric
-            self.task_steps = TypedModuleDict(task_steps)
+            self.task_steps = nt.nn.TypedModuleDict(task_steps)
 
         if self.config.multi_head_loss_trick:
             self.automatic_optimization = False

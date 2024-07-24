@@ -1,7 +1,7 @@
 from collections.abc import Callable, Sequence
 from typing import TypeAlias, TypedDict, cast
 
-import ll.typecheck as tc
+import nshutils.typecheck as tc
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data.batch import Batch as TorchGeoBatch

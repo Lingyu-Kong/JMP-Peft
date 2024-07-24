@@ -2,11 +2,11 @@ import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
+import nshconfig as C
 import torch.utils.checkpoint
-from ll import TypedConfig
 
 
-class GradientCheckpointingConfig(TypedConfig):
+class GradientCheckpointingConfig(C.Config):
     preserve_rng_state: bool = False
     """
     Whether to preserve the RNG state when checkpointing.

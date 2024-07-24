@@ -1,7 +1,7 @@
 import contextlib
 from typing import Literal
 
-import ll.typecheck as tc
+import nshutils.typecheck as tc
 import torch
 import torch.nn as nn
 from einops import rearrange

@@ -1,9 +1,9 @@
 import math
 from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
-import ll.nn
+import nshtrainer.ll as ll
 import torch.nn as nn
-from ll import Field, TypedConfig
+from nshtrainer.ll import Field, TypedConfig
 
 if TYPE_CHECKING:
     from ...tasks.finetune.base import FinetuneConfigBase

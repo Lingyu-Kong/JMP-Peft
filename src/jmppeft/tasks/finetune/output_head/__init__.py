@@ -1,6 +1,6 @@
 from typing import Annotated, TypeAlias
 
-import ll
+import nshtrainer.ll as ll
 
 from ._base import BaseTargetConfig as BaseTargetConfig
 from .allegro_scalar import AllegroScalarOutputHead as AllegroScalarOutputHead

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 import torch.nn as nn
 from torch_geometric.data.data import BaseData
 

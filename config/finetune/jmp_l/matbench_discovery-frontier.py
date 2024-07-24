@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 
-import ll
+import nshtrainer.ll as ll
 from jmppeft.configs.finetune.jmp_ import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig

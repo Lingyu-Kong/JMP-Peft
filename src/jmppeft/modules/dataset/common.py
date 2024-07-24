@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sized
 
 import numpy as np
 import torch
-from ll import TypedConfig
+from nshtrainer.ll import TypedConfig
 from typing_extensions import assert_never
 
 from . import dataset_transform as DT

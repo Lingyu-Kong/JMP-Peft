@@ -4,7 +4,7 @@ from typing import cast
 
 import numpy as np
 import torch
-from ll import TypedConfig
+from nshtrainer.ll import TypedConfig
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar
 

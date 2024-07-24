@@ -3,8 +3,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Annotated, Literal, TypeAlias
 
-import ll
-import ll.typecheck as tc
+import nshtrainer.ll as ll
+import nshutils.typecheck as tc
 import numpy as np
 import torch
 import torch.nn.functional as F

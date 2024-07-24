@@ -3,7 +3,7 @@ from contextlib import ExitStack
 from logging import getLogger
 from typing import Generic, Literal, cast
 
-import ll
+import nshtrainer.ll as ll
 import torch
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypeVar, override

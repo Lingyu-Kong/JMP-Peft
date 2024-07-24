@@ -3,8 +3,8 @@ from collections.abc import Callable
 from logging import getLogger
 from typing import TYPE_CHECKING, Literal
 
-import ll
-import ll.typecheck as tc
+import nshtrainer.ll as ll
+import nshutils.typecheck as tc
 import torch
 from einops import pack
 from torch import nn

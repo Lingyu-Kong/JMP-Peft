@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 import numpy as np
 import torch
 from einops import pack
-from ll import TypedConfig
+from nshtrainer.ll import TypedConfig
 from torch.utils.data import Dataset
 from torch_geometric.data.data import BaseData, Data
 from typing_extensions import override

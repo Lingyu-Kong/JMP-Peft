@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from ll import GradientClippingConfig
-from ll.model import EarlyStoppingConfig
+from nshtrainer.ll import GradientClippingConfig
+from nshtrainer.ll.model import EarlyStoppingConfig
 
 from ...models.gemnet.config import BackboneConfig
 from ...tasks.config import AdamWConfig

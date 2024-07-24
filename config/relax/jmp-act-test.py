@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 
-import ll
+import nshtrainer.ll as ll
 import rich
 import torch
 from jmppeft.tasks.finetune import base

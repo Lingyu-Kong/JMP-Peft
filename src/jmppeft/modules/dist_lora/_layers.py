@@ -5,7 +5,7 @@ from typing import TypeAlias, cast
 import torch
 import torch.func
 import torch.nn as nn
-from ll.typecheck import Float
+from nshtrainer.ll.typecheck import Float
 
 MLP: TypeAlias = nn.Module
 

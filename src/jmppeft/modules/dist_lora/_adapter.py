@@ -3,11 +3,11 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 import torch
 import torch.nn as nn
 from einops import einsum, pack, reduce
-from ll.typecheck import Bool, Float, tassert
+from nshtrainer.ll.typecheck import Bool, Float, tassert
 from typing_extensions import override
 
 from ._config import AdapterLayerConfig, DLoraConfig

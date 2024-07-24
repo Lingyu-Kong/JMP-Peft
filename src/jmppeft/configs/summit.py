@@ -1,4 +1,4 @@
-from ll import BaseConfig
+from nshtrainer.ll import BaseConfig
 
 
 def summit_config_(config: BaseConfig):

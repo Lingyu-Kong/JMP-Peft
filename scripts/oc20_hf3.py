@@ -102,7 +102,7 @@ dataset = dataset.cast_column("cell", datasets.Array2D((3, 3), dtype="float32"))
 dataset
 
 # %%
-import ll
+import nshtrainer.ll as ll
 
 ll.pretty()
 dataset.with_format("torch")[0]

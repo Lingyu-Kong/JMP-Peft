@@ -2,7 +2,7 @@ from functools import partial
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict
 
-from ll import PrivateAttr, TypedConfig
+from nshtrainer.ll import PrivateAttr, TypedConfig
 from typing_extensions import override
 
 log = getLogger(__name__)

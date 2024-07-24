@@ -15,7 +15,7 @@ from typing import Any
 import lmdb
 import numpy as np
 import torch
-from ll import TypedConfig
+from nshtrainer.ll import TypedConfig
 from torch.utils.data import Dataset
 from torch_geometric.data.data import BaseData
 from typing_extensions import override

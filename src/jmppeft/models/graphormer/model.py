@@ -4,8 +4,8 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING, TypedDict
 
-import ll
-import ll.typecheck as tc
+import nshtrainer.ll as ll
+import nshutils.typecheck as tc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

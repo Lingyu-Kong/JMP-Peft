@@ -7,7 +7,7 @@ import lightning.pytorch as pl
 import torch
 from lightning.pytorch import Callback
 from lightning.pytorch.utilities.exceptions import MisconfigurationException
-from ll import TypedConfig
+from nshtrainer.ll import TypedConfig
 from typing_extensions import override
 
 

@@ -5,7 +5,7 @@ from typing import Literal
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
-import ll
+import nshtrainer.ll as ll
 import rich
 from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
 from jmppeft.modules import loss

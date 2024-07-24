@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from ll.typecheck import Float, tassert
+from nshtrainer.ll.typecheck import Float, tassert
 from typing_extensions import override
 
 from ....modules.lora import LoraConfig, LoRALayer

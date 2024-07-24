@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 
-import ll
+import nshtrainer.ll as ll
 import torch
 from jmppeft.modules.dataset.common import DatasetSampleNConfig
 from jmppeft.tasks.finetune import base

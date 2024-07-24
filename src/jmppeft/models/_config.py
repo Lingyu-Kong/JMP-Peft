@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import TypedDict
 
-import ll
+import nshtrainer.ll as ll
 
 
 class AtomEmbeddingTableInfo(TypedDict):

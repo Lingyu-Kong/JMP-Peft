@@ -1,6 +1,6 @@
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 import numpy as np
 import torch
 from torch_geometric.data import Data

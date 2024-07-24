@@ -7,12 +7,12 @@ LICENSE file in the root directory of this source tree.
 from functools import partial
 from typing import Any, TypedDict, cast
 
-import ll
-import ll.typecheck as tc
+import nshtrainer.ll as ll
+import nshutils.typecheck as tc
 import torch
 import torch.nn as nn
 from jmppeft.modules.torch_scatter_polyfill import segment_coo
-from ll.typecheck import Float, tassert
+from nshtrainer.ll.typecheck import Float, tassert
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 

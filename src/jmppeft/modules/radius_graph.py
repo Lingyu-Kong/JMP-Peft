@@ -5,7 +5,7 @@ from typing import (
 )
 
 import torch
-from ll import TypedConfig
+from nshtrainer.ll import TypedConfig
 from torch_geometric.data.data import BaseData
 from torch_geometric.nn import radius_graph
 

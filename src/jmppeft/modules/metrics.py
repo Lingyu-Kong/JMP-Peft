@@ -2,13 +2,12 @@ from collections.abc import Callable
 from functools import partial
 from typing import TypedDict
 
+import nshtrainer as nt
 import torch
 import torch.nn as nn
 import torchmetrics
 from torch_geometric.data import Batch
 from typing_extensions import NotRequired, override
-
-from ll.util.typed import TypedModuleList
 
 from .transforms.normalize import denormalize_batch
 from .transforms.units import VALID_UNITS, Unit, _determine_factor
@@ -49,10 +48,10 @@ class FMTaskMetrics(nn.Module):
                     raise ValueError(
                         f"Invalid unit: {unit}. Valid units: {VALID_UNITS}"
                     )
-            self.energy_mae_additional = TypedModuleList(
+            self.energy_mae_additional = nt.nn.TypedModuleList(
                 [torchmetrics.MeanAbsoluteError() for _ in units]
             )
-            self.forces_mae_additional = TypedModuleList(
+            self.forces_mae_additional = nt.nn.TypedModuleList(
                 [torchmetrics.MeanAbsoluteError() for _ in units]
             )
 
@@ -146,7 +145,7 @@ class FMMetrics(nn.Module):
         super().__init__()
 
         self.denormalize = denormalize
-        self.task_metrics = TypedModuleList(
+        self.task_metrics = nt.nn.TypedModuleList(
             [
                 FMTaskMetrics(
                     name, config, num_tasks=len(tasks), free_atoms_only=free_atoms_only

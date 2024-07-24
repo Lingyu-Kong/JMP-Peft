@@ -5,7 +5,7 @@ os.environ["LL_DISABLE_TYPECHECKING"] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
-import ll
+import nshtrainer.ll as ll
 import rich
 import torch
 

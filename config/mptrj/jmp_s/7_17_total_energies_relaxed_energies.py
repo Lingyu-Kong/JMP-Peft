@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 import rich
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
@@ -311,7 +311,7 @@ def run(
 
 # %%
 runner = ll.Runner(run)
-# runner.fast_dev_run(configs, n_batches=128)
+runner.fast_dev_run(configs, n_batches=128)
 
 # %%
 runner = ll.Runner(run)

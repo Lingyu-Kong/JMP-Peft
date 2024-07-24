@@ -2,7 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import ParamSpec, TypedDict, cast
 
-import ll
+import nshtrainer.ll as ll
 import numpy as np
 import torch
 from jmppeft.modules.torch_scatter_polyfill import segment_coo

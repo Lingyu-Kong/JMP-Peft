@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 
-import ll
+import nshtrainer.ll as ll
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.matbench_discovery import jmp_matbench_discovery_config_
 from jmppeft.tasks.config import AdamWConfig
@@ -173,7 +173,7 @@ from jmppeft.utils.finetune_state_dict import (
     filter_state_dict,
     retreive_state_dict_for_finetuning,
 )
-from ll import Runner, Trainer
+from nshtrainer import Runner, Trainer
 
 
 def run(config: FinetuneConfigBase, model_cls: type[FinetuneModelBase]) -> None:

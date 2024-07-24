@@ -1,4 +1,4 @@
-from ll import GradientClippingConfig
+from nshtrainer.ll import GradientClippingConfig
 
 from ...modules.dataset.concat_dataset import MTDatasetConfig
 from ...modules.ema import EMAConfig

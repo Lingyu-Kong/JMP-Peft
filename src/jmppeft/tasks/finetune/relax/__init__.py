@@ -5,7 +5,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import Any, Generic, cast
 
-import ll
+import nshtrainer.ll as ll
 import numpy as np
 import torch
 from lightning import LightningModule, Trainer

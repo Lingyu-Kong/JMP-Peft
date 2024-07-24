@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ll.model import PrimaryMetricConfig
+from nshtrainer.ll.model import PrimaryMetricConfig
 
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.finetune import MatbenchDiscoveryConfig

@@ -46,7 +46,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from ll.typecheck import Float, Int
+from nshutils.typecheck import Float, Int
 
 out_base_path = Path("/mnt/datasets/matbench-discovery-traj/megnet-133k-npz")
 out_base_path.mkdir(exist_ok=True)

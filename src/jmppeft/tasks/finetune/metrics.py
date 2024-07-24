@@ -4,13 +4,13 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
+import nshtrainer as nt
 import torch
 import torch.nn as nn
 import torchmetrics
 import torchmetrics.classification
 from frozendict import frozendict
-from ll import TypedConfig
-from ll.util.typed import TypedModuleDict
+from nshtrainer.ll import TypedConfig
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
@@ -83,14 +83,14 @@ class ConflictingMetrics(nn.Module):
         self.targets = graph_targets + node_targets
 
         self.structures = structures
-        self.conflicting_maes = TypedModuleDict(
+        self.conflicting_maes = nt.nn.TypedModuleDict(
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.targets
                 if not target.is_classification()
             }
         )
-        self.non_conflicting_maes = TypedModuleDict(
+        self.non_conflicting_maes = nt.nn.TypedModuleDict(
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.targets
@@ -253,7 +253,7 @@ class FinetuneMetrics(nn.Module):
         self.graph_targets = graph_targets
         self.node_targets = node_targets
 
-        self.maes = TypedModuleDict(
+        self.maes = nt.nn.TypedModuleDict(
             {
                 target.name: torchmetrics.MeanAbsoluteError()
                 for target in self.graph_targets + self.node_targets
@@ -262,7 +262,7 @@ class FinetuneMetrics(nn.Module):
             key_prefix="mae_",
         )
         if self.config.report_rmse:
-            self.rmses = TypedModuleDict(
+            self.rmses = nt.nn.TypedModuleDict(
                 {
                     target.name: torchmetrics.MeanSquaredError(squared=False)
                     for target in self.graph_targets + self.node_targets
@@ -270,7 +270,7 @@ class FinetuneMetrics(nn.Module):
                 },
                 key_prefix="rmse_",
             )
-        self.cls_metrics = TypedModuleDict(
+        self.cls_metrics = nt.nn.TypedModuleDict(
             {
                 target.name: (
                     BinaryClassificationMetrics(target.num_classes)
@@ -304,7 +304,7 @@ class FinetuneMetrics(nn.Module):
                     structures=all_structures,
                     provider=self.provider,
                 )
-            self.conflicting = TypedModuleDict(metrics_dict)
+            self.conflicting = nt.nn.TypedModuleDict(metrics_dict)
 
     @override
     def forward(self, batch: BaseData, preds: dict[str, torch.Tensor]):

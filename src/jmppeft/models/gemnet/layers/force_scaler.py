@@ -6,7 +6,7 @@ LICENSE file in the root directory of this source tree.
 
 import logging
 
-import ll.typecheck as tc
+import nshutils.typecheck as tc
 import torch
 import torch.nn as nn
 from einops import rearrange

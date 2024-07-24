@@ -3,7 +3,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-import ll
+import nshtrainer.ll as ll
 import torch
 from ase import Atoms
 from torch_geometric.data import Batch, Data

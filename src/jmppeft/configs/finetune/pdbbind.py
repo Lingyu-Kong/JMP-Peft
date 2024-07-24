@@ -1,4 +1,4 @@
-from ll.model import PrimaryMetricConfig
+from nshtrainer.ll.model import PrimaryMetricConfig
 
 from ...tasks.config import AdamWConfig
 from ...tasks.finetune import PDBBindConfig

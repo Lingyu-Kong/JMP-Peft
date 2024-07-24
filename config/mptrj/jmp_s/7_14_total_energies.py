@@ -2,7 +2,7 @@
 from pathlib import Path
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 import rich
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.modules import loss

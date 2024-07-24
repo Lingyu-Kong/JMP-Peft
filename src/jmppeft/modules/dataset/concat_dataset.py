@@ -6,11 +6,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from einops import rearrange
+from nshtrainer.ll import TypedConfig
 from torch.utils.data import ConcatDataset, Dataset
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
-
-from ll import TypedConfig
 
 from ..metadata import post_create_dataset
 from . import dataset_transform as DT
@@ -236,10 +235,13 @@ class MTSampledDataset(_MTConcatDataset[TDataset], Generic[TDataset]):
                 f"`sample_type` is None and `balanced` is {config.balanced}."
             )
 
-        assert sample_type in {
-            "uniform",
-            "temperature",
-        }, f"{config.sample_type=} must be one of 'balanced', 'uniform', or 'temperature'."
+        assert (
+            sample_type
+            in {
+                "uniform",
+                "temperature",
+            }
+        ), f"{config.sample_type=} must be one of 'balanced', 'uniform', or 'temperature'."
 
         if ignore_balancing:
             log.critical(

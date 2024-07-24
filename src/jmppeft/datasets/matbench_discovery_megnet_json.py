@@ -6,7 +6,7 @@ from typing import TypedDict
 
 import numpy as np
 import torch
-from ll.typecheck import Float, Int
+from nshtrainer.ll.typecheck import Float, Int
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from typing_extensions import override

@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 
-import ll.typecheck as tc
 import matplotlib.pyplot as plt
+import nshutils.typecheck as tc
 import numpy as np
 import seaborn as sns
 

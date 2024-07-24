@@ -3,7 +3,7 @@ import itertools
 from pathlib import Path
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 from jmppeft.configs.pretrain.tasks import (
     tasks_config_frontier_,
     tasks_config_perlmutter_,

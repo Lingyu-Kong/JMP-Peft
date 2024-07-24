@@ -2,7 +2,7 @@
 from pathlib import Path
 from typing import Literal
 
-import ll
+import nshtrainer.ll as ll
 from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base

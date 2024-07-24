@@ -6,20 +6,19 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias, cast
 
 import torch.nn as nn
 import torch.optim as optim
-
-from ll import Field, TypedConfig
+from nshconfig import Config, Field
 
 log = getLogger(__name__)
 
 
-class OutputConfig(TypedConfig):
+class OutputConfig(Config):
     num_mlps: int = 5
     """Number of MLPs in the output layer."""
     output_init: Literal["HeOrthogonal", "zeros", "grid", "loggrid"] = "HeOrthogonal"
     """Initialization method for the output layer."""
 
 
-class AdamWConfig(TypedConfig):
+class AdamWConfig(Config):
     name: Literal["adamw"] = "adamw"
 
     lr: float
@@ -52,7 +51,7 @@ class _OptimizerParamGroupConfig:
 OptimizerConfig: TypeAlias = Annotated[AdamWConfig, Field(discriminator="name")]
 
 
-class EmbeddingConfig(TypedConfig):
+class EmbeddingConfig(Config):
     num_elements: int
     embedding_size: int
 

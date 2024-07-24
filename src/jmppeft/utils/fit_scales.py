@@ -5,12 +5,11 @@ from pathlib import Path
 from typing import Literal
 
 import torch
-from typing_extensions import TypeVar
-
 from jmppeft.models.gemnet.backbone import GemNetOCBackbone
 from jmppeft.modules.scaling import ScaleFactor
-from ll import BaseConfig as Config
-from ll import LightningModuleBase, Trainer
+from nshtrainer import BaseConfig as Config
+from nshtrainer import LightningModuleBase, Trainer
+from typing_extensions import TypeVar
 
 log = getLogger(__name__)
 

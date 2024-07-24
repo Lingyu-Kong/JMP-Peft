@@ -1,5 +1,5 @@
 # %%
-import ll
+import nshtrainer.ll as ll
 
 ll.pretty()
 # %%

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ll.model import EarlyStoppingConfig, PrimaryMetricConfig
+from nshtrainer.ll.model import EarlyStoppingConfig, PrimaryMetricConfig
 
 from ...modules.transforms.normalize import NormalizationConfig as NC
 from ...tasks.config import AdamWConfig

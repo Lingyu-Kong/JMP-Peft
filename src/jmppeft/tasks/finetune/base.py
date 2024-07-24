@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeAlias, cast
 
 import datasets
-import ll
+import nshtrainer.ll as ll
 import numpy as np
 import rich
 import rich.console
@@ -27,14 +27,17 @@ from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
     OptimizerLRScheduler,
 )
-from ll import (
+from nshtrainer.data.balanced_batch_sampler import (
+    BalancedBatchSampler,
+    DatasetWithSizes,
+)
+from nshtrainer.ll import (
     ActSave,
     AllowMissing,
     BaseConfig,
     Field,
     LightningModuleBase,
 )
-from ll.data.balanced_batch_sampler import BalancedBatchSampler, DatasetWithSizes
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, DistributedSampler
 from torch_geometric.data.batch import Batch
