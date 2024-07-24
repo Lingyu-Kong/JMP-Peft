@@ -44,6 +44,14 @@ class Cutoffs(ll.TypedConfig):
     def from_constant(cls, value: float):
         return cls(main=value, aeaint=value, qint=value, aint=value)
 
+    def __mul__(self, other: float):
+        return self.__class__(
+            main=self.main * other,
+            aeaint=self.aeaint * other,
+            qint=self.qint * other,
+            aint=self.aint * other,
+        )
+
 
 class MaxNeighbors(ll.TypedConfig):
     main: int
@@ -65,6 +73,14 @@ class MaxNeighbors(ll.TypedConfig):
             aeaint=int(max_neighbors * 20 / 30),
             qint=int(max_neighbors * 8 / 30),
             aint=int(max_neighbors * 1000 / 30),
+        )
+
+    def __mul__(self, other: int):
+        return self.__class__(
+            main=self.main * other,
+            aeaint=self.aeaint * other,
+            qint=self.qint * other,
+            aint=self.aint * other,
         )
 
 
