@@ -441,15 +441,15 @@ import datetime
 runner = ll.Runner(run)
 _ = runner.submit_lsf(
     configs,
-    snapshot=True,
-    nodes=2,
-    tasks_per_node=6,
-    project="MAT273",
-    queue="batch-hm",
-    walltime=datetime.timedelta(hours=24.0),
-    lsf_options={
+    {
         "summit": True,
+        "project": "MAT273",
+        "queue": "debug",
+        "nodes": 1,
+        "rs_per_node": 6,
+        "walltime": datetime.timedelta(hours=1),
     },
+    snapshot=True,
     env={
         "LL_DISABLE_TYPECHECKING": "1",
     },
