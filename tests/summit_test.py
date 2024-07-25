@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import signal
-import sys
+import time
 from pathlib import Path
 
 import nshrunner as nr
@@ -55,6 +55,8 @@ def requeue():
     os.chmod(exit_script_path, 0o755)
 
     log.info(f"Requeue script written to {exit_script_path}")
+    time.sleep(5)
+    exit(1)
 
 
 def run_fn():
@@ -74,7 +76,7 @@ def run_fn():
     print("PID: ", os.getpid())
 
     signal.signal(signal.SIGURG, _handler)
-    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+    signal.signal(signal.SIGTERM, lambda signum, frame: exit(0))
 
     while True:
         pass
