@@ -2,6 +2,7 @@
 import datetime
 import os
 import signal
+import sys
 
 import nshrunner as nr
 
@@ -23,9 +24,10 @@ def run_fn():
     print("PID: ", os.getpid())
 
     signal.signal(signal.SIGURG, _handler)
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 
-    print("Press any key to exit.")
-    input()
+    while True:
+        pass
 
 
 runner = nr.Runner(run_fn)
