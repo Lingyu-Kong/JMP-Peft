@@ -1,4 +1,5 @@
 # %%
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -400,7 +401,7 @@ config.trainer.logging.wandb.disable_()
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 
-rich.print(configs)
+rich.print(configs, file=sys.stderr)
 
 
 # %%
