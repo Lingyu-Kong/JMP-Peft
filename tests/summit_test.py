@@ -37,7 +37,7 @@ runner.submit_lsf(
         "queue": "debug",
         "nodes": 1,
         "rs_per_node": 1,
-        "walltime": datetime.timedelta(minutes=5),
+        "walltime": datetime.timedelta(minutes=10),
     },
     snapshot=True,
     env={
