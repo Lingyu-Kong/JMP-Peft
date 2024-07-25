@@ -91,7 +91,8 @@ runner.submit_lsf(
         "queue": "debug",
         "nodes": 1,
         "rs_per_node": 1,
-        "walltime": datetime.timedelta(minutes=10),
+        "walltime": datetime.timedelta(minutes=2),
+        "timeout_signal_time": datetime.timedelta(minutes=1),
     },
     snapshot=True,
     env={
