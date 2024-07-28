@@ -435,3 +435,26 @@ ax.legend()
 ax.set_title("Speedup for 1 Epoch of 2M Dataset, Graphormer Base")
 
 plt.show()
+
+# %%
+print(
+    "Frontier 64 -> 512",
+    df_plot.loc[2, "samples_per_sec"] / df_plot.loc[1, "samples_per_sec"],
+)
+print(
+    "Perlmutter 32 -> 64",
+    df_plot2.loc[3, "samples_per_sec"] / df_plot2.loc[2, "samples_per_sec"],
+)
+print(
+    "Ext. Perlmutter 32 -> 64",
+    (df_plot2.loc[3, "samples_per_sec"] / df_plot2.loc[2, "samples_per_sec"]) * 4,
+)
+#
+print(
+    "Ext2. Frontier 64 -> 512",
+    (df_plot.loc[2, "samples_per_sec"] / df_plot.loc[1, "samples_per_sec"]) / 2,
+)
+print(
+    "Ext2. Perlmutter 32 -> 64",
+    (df_plot2.loc[3, "samples_per_sec"] / df_plot2.loc[2, "samples_per_sec"]) * 2,
+)
