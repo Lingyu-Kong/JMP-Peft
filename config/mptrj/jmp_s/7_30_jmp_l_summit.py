@@ -416,8 +416,8 @@ def run(
 
 
 # %%
-runner = nt.Runner(run)
-runner.fast_dev_run(configs)
+# runner = nt.Runner(run)
+# runner.fast_dev_run(configs)
 
 # %%
 import datetime
