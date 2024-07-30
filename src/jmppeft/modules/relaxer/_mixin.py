@@ -1,11 +1,13 @@
+import copy
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
-import nshtrainer.ll as ll
+import ll
 import torch
 from ase import Atoms
+from lightning.fabric.utilities.apply_func import move_data_to_device
 from torch_geometric.data import Batch, Data
 from torch_geometric.data.data import BaseData
 from typing_extensions import NotRequired, assert_never
@@ -149,10 +151,7 @@ class Relaxer:
             atoms.numbers,
             dtype=initial_graph.atomic_numbers.dtype,
         )
-        pos = torch.tensor(
-            atoms.positions,
-            dtype=initial_graph.pos.dtype,
-        )
+        pos = torch.tensor(atoms.positions, dtype=initial_graph.pos.dtype)
         cell = torch.tensor(atoms.cell.array, dtype=initial_graph.cell.dtype).view(
             1, 3, 3
         )
@@ -287,3 +286,36 @@ class Relaxer:
             verbose=verbose,
             **self.config.optimizer_kwargs,
         )
+
+    def relax_and_return_structure(
+        self,
+        graph: Batch,
+        device: str | torch.device | None = None,
+        verbose: bool = True,
+    ):
+        out_graph = copy.deepcopy(graph)
+        output = self.relax(graph, verbose=verbose)
+
+        atoms = output.atoms
+        # Convert the relaxed structure to a graph
+        out_graph.pos = torch.tensor(
+            atoms.positions,
+            dtype=out_graph.pos.dtype,
+            device=out_graph.pos.device,
+        )
+        out_graph.cell = torch.tensor(
+            atoms.cell.array,
+            dtype=out_graph.cell.dtype,
+            device=out_graph.cell.device,
+        ).reshape_as(out_graph.cell)
+
+        out_graph.y_prediction = torch.tensor(
+            atoms.get_total_energy(),
+            dtype=torch.float,
+            device=out_graph.pos.device,
+        ).view(-1)
+
+        if device is not None:
+            out_graph = cast(Batch, move_data_to_device(out_graph, device))
+
+        return out_graph, output
