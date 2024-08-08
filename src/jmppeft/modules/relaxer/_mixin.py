@@ -4,7 +4,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
-import ll
+import nshtrainer.ll as ll
 import torch
 from ase import Atoms
 from lightning.fabric.utilities.apply_func import move_data_to_device
