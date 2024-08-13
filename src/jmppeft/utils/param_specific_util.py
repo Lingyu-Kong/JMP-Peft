@@ -160,6 +160,7 @@ def make_parameter_specific_optimizer_config(
 class ParameterGroupConfig(TypedDict):
     parameter_patterns: Iterable[str]
     lr_multiplier: float
+    weight_decay: NotRequired[float]
     name: NotRequired[str]
 
 
@@ -181,6 +182,9 @@ def parameter_specific_optimizer_config(
     for group in parameter_groups:
         optimizer = copy.deepcopy(config.optimizer)
         optimizer.lr = base_lr * group["lr_multiplier"]
+
+        if (wd := group.get("weight_decay")) is not None:
+            optimizer.weight_decay = wd
 
         lrs = None
         match config.lr_scheduler:

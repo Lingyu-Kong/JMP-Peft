@@ -99,9 +99,13 @@ def parameter_specific_optimizers_(config: base.FinetuneConfigBase):
 def parameter_specific_optimizers_energy_references_(
     config: base.FinetuneConfigBase,
     lr_multiplier: float = 0.1,
+    wd: float | None = None,
 ):
     if not config.parameter_specific_optimizers:
         config.parameter_specific_optimizers = []
+
+    if wd is None:
+        wd = config.optimizer.weight_decay
 
     if energy_ref_heads := [
         t
@@ -115,6 +119,7 @@ def parameter_specific_optimizers_energy_references_(
                     {
                         "name": f"{energy_ref_head.name}.ref",
                         "lr_multiplier": lr_multiplier,
+                        "weight_decay": wd,
                         "parameter_patterns": [
                             f"graph_outputs._module_dict.ft_mlp_{energy_ref_head.name}.references.*"
                         ],
@@ -277,21 +282,25 @@ def output_heads_config_(
 
     # Energy head
     config.graph_targets.append(
-        output_head.GraphScalarTargetConfig(
+        output_head.ReferencedScalarTargetConfig(
             name="y",
             loss_coefficient=energy_coefficient,
             loss=energy_loss.model_copy(),
             reduction="sum",
+            max_atomic_number=config.backbone.num_elements,
+            initialization=output_head.ZerosReferenceInitializationConfig(),
         )
     )
     if relaxed_energy:
         # Relaxed Energy head
         config.graph_targets.append(
-            output_head.GraphScalarTargetConfig(
+            output_head.ReferencedScalarTargetConfig(
                 name="y_relaxed",
                 loss_coefficient=energy_coefficient / 10.0,
                 loss=energy_loss.model_copy(),
                 reduction="sum",
+                max_atomic_number=config.backbone.num_elements,
+                initialization=output_head.ZerosReferenceInitializationConfig(),
             )
         )
 
@@ -387,10 +396,12 @@ output_heads_config_(
     stress_coefficient=100.0,
 )
 parameter_specific_optimizers_(config)
-parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
+parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1, wd=0.2)
 # pos_aug_(config, std=0.01)
 config.per_graph_radius_graph = True
 config.ignore_graph_generation_errors = True
+
+config.trainer.hf_hub.enable_()
 
 
 config = config.finalize()

@@ -1250,7 +1250,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
     def _on_validation_epoch_end_cos_rlp(self, config: WarmupCosRLPConfig):
         rlp_monitor = self._rlp_metric(config.rlp)
-        log.info(f"LR scheduler metrics: {rlp_monitor}")
+        log.debug(f"LR scheduler metrics: {rlp_monitor}")
 
         metric_value: torch.Tensor | None = None
         for scheduler in self._cos_rlp_schedulers():
@@ -1258,7 +1258,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
                 if metric_value is None:
                     metric_value = rlp_monitor.compute()
 
-                log.info(f"LR scheduler is in RLP mode. RLP metric: {metric_value}")
+                log.debug(f"LR scheduler is in RLP mode. RLP metric: {metric_value}")
                 scheduler.rlp_step(metric_value)
 
     def _on_train_batch_start_cos_rlp(self):
