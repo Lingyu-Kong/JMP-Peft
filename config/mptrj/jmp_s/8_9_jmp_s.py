@@ -277,25 +277,21 @@ def output_heads_config_(
 
     # Energy head
     config.graph_targets.append(
-        output_head.AllegroScalarTargetConfig(
+        output_head.GraphScalarTargetConfig(
             name="y",
             loss_coefficient=energy_coefficient,
             loss=energy_loss.model_copy(),
             reduction="sum",
-            max_atomic_number=config.backbone.num_elements,
-            edge_level_energies=True,
         )
     )
     if relaxed_energy:
         # Relaxed Energy head
         config.graph_targets.append(
-            output_head.AllegroScalarTargetConfig(
+            output_head.GraphScalarTargetConfig(
                 name="y_relaxed",
                 loss_coefficient=energy_coefficient / 10.0,
                 loss=energy_loss.model_copy(),
                 reduction="sum",
-                max_atomic_number=config.backbone.num_elements,
-                edge_level_energies=True,
             )
         )
 
@@ -373,11 +369,11 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
 
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
-config = create_config(jmp_l_)
+config = create_config(jmp_s_)
 config.parameter_specific_optimizers = []
 config.max_neighbors = M.MaxNeighbors(main=25, aeaint=20, aint=1000, qint=8)
 config.cutoffs = M.Cutoffs.from_constant(12.0)
-data_config_(config, reference=True, batch_size=16)
+data_config_(config, reference=False, batch_size=40)
 optimization_config_(config, lr=8.0e-5)
 ln_(config, lr_multiplier=1.5)
 direct_(config=config)
@@ -397,13 +393,6 @@ config.per_graph_radius_graph = True
 config.ignore_graph_generation_errors = True
 
 
-def resume_config_(config: M.MatbenchDiscoveryConfig):
-    config.trainer.ckpt_path = Path(
-        "/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/nshtrainer/lw3vo3y5/checkpoint/best_matbench_discovery_force_mae/epoch0-step12936-matbench_discovery_force_mae0.049151014536619186.ckpt"
-    )
-
-
-resume_config_(config)
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 
