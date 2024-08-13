@@ -224,3 +224,5 @@ core
 
 # Singularity containers
 *.sif
+
+/.quarto/

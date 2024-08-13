@@ -1,0 +1,4 @@
+project:
+  title: "jmppeft"
+  render:
+    - "./slides.ipynb"

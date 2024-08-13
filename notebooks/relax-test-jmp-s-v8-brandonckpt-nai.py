@@ -20,8 +20,9 @@ def worker(args: argparse.Namespace):
         setup.relax_config.compute_stress = True
         setup.relax_config.stress_weight = 0.1
         setup.relax_config.optimizer = "FIRE"
-        setup.relax_config.fmax = 0.05
+        setup.relax_config.fmax = args.fmax
         setup.relax_config.ase_filter = "exp"
+        setup.energy_key = args.energy_key
         setup.linref = np.load(
             "/workspaces/repositories/jmp-peft/notebooks/mptrj_linref.npy"
         )
@@ -59,6 +60,14 @@ def main():
         "--num-items", type=int, required=True, help="Number of items in dataset"
     )
     parser.add_argument("--device-id", type=int, default=0, help="CUDA device ID")
+    parser.add_argument("--fmax", type=float, default=0.05, help="FIRE fmax")
+    parser.add_argument(
+        "--energy-key",
+        type=str,
+        choices=["s2e_energy", "s2re_energy"],
+        default="s2e_energy",
+        help="Energy key",
+    )
     args = parser.parse_args()
 
     if not args.ckpt.exists():
