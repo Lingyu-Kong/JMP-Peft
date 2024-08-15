@@ -4,3 +4,14 @@ project:
   output-dir: docs
   render:
     - "./public-notebooks/**/*.ipynb"
+
+format:
+  html:
+    theme: default
+    page-layout: full
+    toc: true
+    code-fold: true
+    code-summary: "Show code"
+
+website:
+  reader-mode: true
