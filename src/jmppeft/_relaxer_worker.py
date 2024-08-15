@@ -6,16 +6,34 @@ from typing import Any, Literal
 import nshconfig as C
 
 
+class HuggingfaceCkpt(C.Config):
+    repo_id: str
+    filename: str
+
+
+def _hf_ckpt_to_io(ckpt: HuggingfaceCkpt):
+    import huggingface_hub as hfhub
+
+    path = hfhub.HfApi().hf_hub_download(ckpt.repo_id, ckpt.filename)
+    logging.critical(f"Downloaded {ckpt=} to {path}")
+    return path
+
+
 class Config(C.Config):
-    ckpt: Path
+    ckpt: Path | HuggingfaceCkpt
     dest: Path
     num_items: int
     fmax: float = 0.05
     energy_key: Literal["s2e_energy", "s2re_energy"] = "s2e_energy"
+    linref: bool = True
     device_id: int | None = None
 
 
 def run(config: Config):
+    if config.dest.exists():
+        logging.warning(f"Skipping {config.dest} as it already exists")
+        return
+
     try:
         import os
 
@@ -37,8 +55,10 @@ def run(config: Config):
             setup.relax_config.fmax = config.fmax
             setup.relax_config.ase_filter = "exp"
             setup.energy_key = config.energy_key
-            setup.linref = np.load(
-                "/workspaces/repositories/jmp-peft/notebooks/mptrj_linref.npy"
+            setup.linref = (
+                np.load("/workspaces/repositories/jmp-peft/notebooks/mptrj_linref.npy")
+                if config.linref
+                else None
             )
 
             def update_hparams(hparams: dict[str, Any]):
@@ -50,9 +70,10 @@ def run(config: Config):
                 hparams.pop("ckpt_load", None)
                 return hparams
 
-            model = wbm_relax.load_ckpt(
-                ckpt_path=config.ckpt, setup=setup, update_hparams=update_hparams
-            )
+            if isinstance(ckpt := config.ckpt, HuggingfaceCkpt):
+                ckpt = _hf_ckpt_to_io(ckpt)
+
+            model = wbm_relax.load_ckpt(ckpt, setup, update_hparams)
 
             dl = wbm_relax.setup_dataset_and_loader(
                 num_items=config.num_items, model=model, setup=setup

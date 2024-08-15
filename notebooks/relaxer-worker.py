@@ -63,6 +63,9 @@ def _make_configs(config_draft: Config, ckptdir: Path, destdir: Path):
 
 
 # %%
+import nshutils as nu
+
+
 def _create_draft_config():
     draft_config = Config.draft()
     draft_config.num_items = 1024 * 8
@@ -84,7 +87,7 @@ for energy_key in ("s2e_energy", "s2re_energy"):
         config = config.finalize()
         all_configs.append(config)
 
-[c.model_dump() for c in all_configs]
+nu.display(all_configs)
 
 
 # %%

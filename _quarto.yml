@@ -1,4 +1,7 @@
 project:
   title: "jmppeft"
+  type: website
+  output-dir: docs
   render:
     - "./slides.ipynb"
+    - "./notebooks/relax-eval-all-16k.ipynb"

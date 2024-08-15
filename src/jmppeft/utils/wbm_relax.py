@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterable, Sized
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import IO, Any, Literal, cast
 
 import numpy as np
 import torch
@@ -47,17 +47,17 @@ class RelaxSetup:
 
 
 def load_ckpt(
-    ckpt_path: Path,
+    ckpt: str | Path | IO,
     setup: RelaxSetup,
     update_hparams: Callable[[dict[str, Any]], dict[str, Any]] | None,
 ):
     hparams = None
     if update_hparams:
-        hparams = torch.load(ckpt_path, map_location="cpu")["hyper_parameters"]
+        hparams = torch.load(ckpt, map_location="cpu")["hyper_parameters"]
         hparams = update_hparams(hparams)
 
     model = M.MatbenchDiscoveryModel.load_checkpoint(
-        ckpt_path,
+        ckpt,
         map_location=setup.device,
         hparams=hparams,
     )
