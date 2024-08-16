@@ -40,5 +40,3 @@ import nshrunner as nr
 
 runner = nr.Runner(run)
 runner.session(configs, snapshot=False)
-
-# %%

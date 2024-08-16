@@ -224,7 +224,7 @@ def relax_loop(
         if setup.save_traj:
             trajs.append(relax_out.trajectory)
             with open(setup.save_traj / f"{i}.dill", "wb") as f:
-                dill.dump(relax_out.trajectory, f)
+                dill.dump(relax_out, f)
 
         e_form_true = data.y_formation.item()
         e_form_pred = relax_out.atoms.get_total_energy()
