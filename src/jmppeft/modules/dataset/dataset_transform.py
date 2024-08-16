@@ -416,7 +416,14 @@ def with_split(
         if not split_path.exists() or not split_path.is_file():
             raise ValueError(f"Split file {split_path} does not exist.")
 
-        loaded_split = np.loadtxt(split_path, dtype=int, comments=None)
+        if split_path.suffix == ".npy":
+            loaded_split = np.load(split_path)
+        elif split_path.suffix == ".txt":
+            loaded_split = np.loadtxt(split_path, dtype=int, comments=None)
+        elif split_path.suffix == ".csv":
+            loaded_split = np.loadtxt(split_path, delimiter=",", dtype=int)
+        else:
+            raise ValueError(f"Unsupported split file format {split_path.suffix}.")
     else:
         loaded_split = np.array(split)
 

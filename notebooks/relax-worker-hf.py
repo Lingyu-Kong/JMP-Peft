@@ -12,7 +12,7 @@ config.num_items = 1024
 config.fmax = 0.05
 config.ckpt = HuggingfaceCkpt(
     repo_id="nimashoghi/jmp-mptrj-mptrj-total-lr8e-05-ln-maceenergy-maceforce-withrel-ec1-0-fc10-0-sc100-0-6lijquot",
-    filename="checkpoints/last/epoch30-step128340.ckpt",
+    filename="checkpoints/last/epoch32-step136620.ckpt",
 )
 config.dest = dest_dir / config.ckpt.filename.rsplit("/", 1)[1].replace(
     ".ckpt", ".dill"

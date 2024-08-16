@@ -7,6 +7,7 @@ from functools import partial
 from pathlib import Path
 from typing import IO, Any, Literal, cast
 
+import dill
 import numpy as np
 import torch
 import torch.utils._pytree as tree
@@ -18,6 +19,7 @@ from torch_geometric.data import Batch, Data
 from tqdm.auto import tqdm
 
 from ..modules.dataset import dataset_transform as DT
+from ..modules.relaxer._relaxer import RelaxationTrajectory
 from ..tasks.finetune import matbench_discovery as M
 from ..tasks.finetune.base import (
     FinetuneMatBenchDiscoveryIS2REDatasetConfig,
@@ -43,6 +45,8 @@ class RelaxSetup:
     dtype: torch.dtype = torch.float32
     relax_config: RelaxerConfig = field(default_factory=lambda: RelaxerConfig())
     linref: np.ndarray | None = None
+    idx_subset: Path | None = None
+    save_traj: Path | None = None
     energy_key: Literal["s2e_energy", "s2re_energy"] = "s2e_energy"
 
 
@@ -78,17 +82,23 @@ def data_transform(data: Data, *, model: M.MatbenchDiscoveryModel, setup: RelaxS
     return data
 
 
-def setup_dataset(
+def setup_dataset(num_items: int, idx_subset: Path | None = None):
+    dataset_config = FinetuneMatBenchDiscoveryIS2REDatasetConfig()
+    dataset = dataset_config.create_dataset()
+    dataset = DT.sample_n_transform(dataset, n=num_items, seed=42)
+    if idx_subset is not None:
+        dataset = DT.with_split(dataset, idx_subset)
+    return dataset
+
+
+def setup_dataset_and_transform(
     num_items: int,
     *,
     model: M.MatbenchDiscoveryModel,
     setup: RelaxSetup,
 ):
-    dataset_config = FinetuneMatBenchDiscoveryIS2REDatasetConfig()
-    dataset = dataset_config.create_dataset()
-
+    dataset = setup_dataset(num_items, idx_subset=setup.idx_subset)
     dataset = DT.transform(dataset, partial(data_transform, model=model, setup=setup))
-    dataset = DT.sample_n_transform(dataset, n=num_items, seed=42)
 
     return dataset
 
@@ -114,7 +124,7 @@ def setup_dataset_and_loader(
     model: M.MatbenchDiscoveryModel,
     setup: RelaxSetup,
 ):
-    dataset = setup_dataset(num_items, model=model, setup=setup)
+    dataset = setup_dataset_and_transform(num_items, model=model, setup=setup)
     loader = setup_dataloader(dataset, model=model)
     return loader
 
@@ -196,10 +206,13 @@ def relax_loop(
     )
 
     preds_targets = defaultdict[str, list[tuple[float, float]]](lambda: [])
+    trajs: list[RelaxationTrajectory] = []
     mae_error = 0.0
     mae_count = 0
 
-    for data in tqdm(dl, total=len(dl) if isinstance(dl, Sized) else None):
+    for i, data in enumerate(
+        tqdm(dl, total=len(dl) if isinstance(dl, Sized) else None)
+    ):
         data = cast(Batch, data)
         data = move_data_to_device(data, model.device)
         data.y_prediction = data.y_formation
@@ -208,6 +221,10 @@ def relax_loop(
             device=setup.device,
             verbose=False,
         )
+        if setup.save_traj:
+            trajs.append(relax_out.trajectory)
+            with open(setup.save_traj / f"{i}.dill", "wb") as f:
+                dill.dump(relax_out.trajectory, f)
 
         e_form_true = data.y_formation.item()
         e_form_pred = relax_out.atoms.get_total_energy()
@@ -228,4 +245,7 @@ def relax_loop(
             f"# Steps: {nsteps}; e_form: P={e_form_pred:.4f}, GT={e_form_true:.4f}, Δ={error:.4f}, MAE={mae_running:.4f}"
         )
 
-    return preds_targets
+    return {
+        "preds_targets": preds_targets,
+        "trajectories": trajs if setup.save_traj else None,
+    }

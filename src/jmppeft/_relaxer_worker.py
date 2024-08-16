@@ -22,11 +22,13 @@ def _hf_ckpt_to_io(ckpt: HuggingfaceCkpt):
 class Config(C.Config):
     ckpt: Path | HuggingfaceCkpt
     dest: Path
+    idx_subset: Path | None = None
     num_items: int
     fmax: float = 0.05
     energy_key: Literal["s2e_energy", "s2re_energy"] = "s2e_energy"
     linref: bool = True
     device_id: int | None = None
+    save_traj: Path | None = None
 
 
 def run(config: Config):
@@ -55,6 +57,8 @@ def run(config: Config):
             setup.relax_config.fmax = config.fmax
             setup.relax_config.ase_filter = "exp"
             setup.energy_key = config.energy_key
+            setup.idx_subset = config.idx_subset
+            setup.save_traj = config.save_traj
             setup.linref = (
                 np.load("/workspaces/repositories/jmp-peft/notebooks/mptrj_linref.npy")
                 if config.linref
