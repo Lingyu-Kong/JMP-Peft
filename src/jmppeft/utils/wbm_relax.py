@@ -144,16 +144,17 @@ def model_fn(
 
     # energy = model_out["y_relaxed"] if use_y_relaxed else model_out["y"]
     energy = model_out["y"]
-    relaxed_energy = model_out["y_relaxed"]
+    relaxed_energy = model_out.get("y_relaxed", None)
     forces = model_out["force"]
     stress = model_out["stress"]
 
     # Undo the linref
     if setup.linref is not None:
         energy = energy + setup.linref[data.atomic_numbers.cpu().numpy()].sum()
-        relaxed_energy = (
-            relaxed_energy + setup.linref[data.atomic_numbers.cpu().numpy()].sum()
-        )
+        if relaxed_energy is not None:
+            relaxed_energy = (
+                relaxed_energy + setup.linref[data.atomic_numbers.cpu().numpy()].sum()
+            )
 
     # JMP-S v2 energy is corrected_energy, i.e., DFT total energy
     # This energy is now DFT total energy, we need to convert it to formation energy per atom
@@ -163,24 +164,28 @@ def model_fn(
             "energy": energy,
         }
     )
-    relaxed_energy = get_e_form_per_atom(
-        {
-            "composition": _composition(data),
-            "energy": relaxed_energy,
-        }
-    )
     assert isinstance(energy, torch.Tensor)
-    assert isinstance(relaxed_energy, torch.Tensor)
+    if relaxed_energy is not None:
+        relaxed_energy = get_e_form_per_atom(
+            {
+                "composition": _composition(data),
+                "energy": relaxed_energy,
+            }
+        )
+        assert isinstance(relaxed_energy, torch.Tensor)
 
     # energy, relaxed_energy = tree.tree_map(
     #     lambda energy: energy.view(1), (energy, relaxed_energy)
     # )
     energy = energy.view(1)
-    relaxed_energy = relaxed_energy.view(1)
+    if relaxed_energy is not None:
+        relaxed_energy = relaxed_energy.view(1)
     forces = forces.view(-1, 3)
     stress = stress.view(1, 3, 3) if stress.numel() == 9 else stress.view(1, 6)
 
-    energy_dict = {"s2e_energy": energy, "s2re_energy": relaxed_energy}
+    energy_dict = {"s2e_energy": energy}
+    if relaxed_energy is not None:
+        energy_dict["s2re_energy"] = relaxed_energy
     return cast(
         ModelOutput,
         {
