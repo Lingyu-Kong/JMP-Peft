@@ -1750,6 +1750,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
         cutoffs: Cutoffs,
         max_neighbors: MaxNeighbors,
         pbc: bool,
+        training: bool,
     ):
         aint_graph = generate_graph(
             data,
@@ -1758,7 +1759,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             pbc=pbc,
             per_graph=self.config.per_graph_radius_graph,
         )
-        aint_graph = self.process_aint_graph(aint_graph, training=self.training)
+        aint_graph = self.process_aint_graph(aint_graph, training=training)
         subselect = partial(
             subselect_graph,
             data,

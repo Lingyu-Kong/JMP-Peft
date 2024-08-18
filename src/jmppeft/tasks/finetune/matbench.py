@@ -66,8 +66,9 @@ class MatbenchModel(FinetuneModelBase[MatbenchConfig]):
         return f"matbench/{self.config.dataset}"
 
     @override
-    def process_aint_graph(self, aint_graph: Graph):
-        return aint_graph
+    def process_aint_graph(self, graph: Graph, *, training: bool):
+        graph = super().process_aint_graph(graph, training=training)
+        return graph
 
     @override
     def forward(self, data: BaseData):
@@ -86,6 +87,7 @@ class MatbenchModel(FinetuneModelBase[MatbenchConfig]):
             cutoffs=Cutoffs.from_constant(12.0),
             max_neighbors=MaxNeighbors.from_goc_base_proportions(max_neighbors),
             pbc=True,
+            training=self.training,
         )
 
         return super().forward(data)

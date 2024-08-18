@@ -218,7 +218,7 @@ class EnergyForcesModelBase(FinetuneModelBase[TConfig], ABC, Generic[TConfig]):
             # Generate graphs on the GPU
             if self.config.ignore_graph_generation_errors:
                 try:
-                    data = self.generate_graphs_transform(data)
+                    data = self.generate_graphs_transform(data, training=self.training)
                 except Exception as e:
                     # If this is a CUDA error, rethrow it
                     if "CUDA" in str(data):
@@ -228,7 +228,7 @@ class EnergyForcesModelBase(FinetuneModelBase[TConfig], ABC, Generic[TConfig]):
                     log.error(f"Error generating graphs: {e}", exc_info=True)
                     raise SkipBatch()
             else:
-                data = self.generate_graphs_transform(data)
+                data = self.generate_graphs_transform(data, training=self.training)
 
             # Run the backbone
             atomic_numbers = data.atomic_numbers - 1
@@ -254,4 +254,4 @@ class EnergyForcesModelBase(FinetuneModelBase[TConfig], ABC, Generic[TConfig]):
         return preds
 
     @abstractmethod
-    def generate_graphs_transform(self, data: BaseData) -> BaseData: ...
+    def generate_graphs_transform(self, data: BaseData, training: bool) -> BaseData: ...

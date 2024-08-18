@@ -2,7 +2,7 @@ import torch
 from torch_geometric.data.data import BaseData
 from typing_extensions import override
 
-from ...utils.goc_graph import Cutoffs, MaxNeighbors
+from ...utils.goc_graph import Cutoffs, Graph, MaxNeighbors
 from .energy_forces_base import EnergyForcesConfigBase, EnergyForcesModelBase
 
 
@@ -27,13 +27,19 @@ class MatbenchDiscoveryModel(EnergyForcesModelBase[MatbenchDiscoveryConfig]):
         return "matbench_discovery"
 
     @override
-    def generate_graphs_transform(self, data: BaseData):
+    def process_aint_graph(self, graph: Graph, *, training: bool):
+        graph = super().process_aint_graph(graph, training=training)
+        return graph
+
+    @override
+    def generate_graphs_transform(self, data: BaseData, training: bool):
         # Generate graphs
         data = self.generate_graphs(
             data,
             cutoffs=self.config.cutoffs,
             max_neighbors=self.config.max_neighbors,
             pbc=True,
+            training=training,
         )
         return data
 

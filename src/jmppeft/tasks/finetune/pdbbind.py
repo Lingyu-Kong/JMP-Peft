@@ -117,13 +117,15 @@ class PDBBindModel(FinetuneModelBase[PDBBindConfig]):
                 self.config.max_neighbors
             ),
             pbc=self.config.pbc,
+            training=self.training,
         )
 
         return super().forward(data)
 
     @override
-    def process_aint_graph(self, aint_graph: Graph):
-        return aint_graph
+    def process_aint_graph(self, graph: Graph, *, training: bool):
+        graph = super().process_aint_graph(graph, training=training)
+        return graph
 
     @override
     def data_transform(self, data: BaseData):

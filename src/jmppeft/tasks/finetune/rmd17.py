@@ -40,7 +40,7 @@ class RMD17Model(EnergyForcesModelBase[RMD17Config]):
         return f"md17/{self.config.molecule}"
 
     @override
-    def generate_graphs_transform(self, data: BaseData):
+    def generate_graphs_transform(self, data: BaseData, training: bool):
         return self.generate_graphs(
             data,
             cutoffs=Cutoffs.from_constant(self.config.cutoff),
@@ -48,11 +48,13 @@ class RMD17Model(EnergyForcesModelBase[RMD17Config]):
                 self.config.max_neighbors
             ),
             pbc=False,
+            training=training,
         )
 
     @override
-    def process_aint_graph(self, aint_graph: Graph):
-        return aint_graph
+    def process_aint_graph(self, graph: Graph, *, training: bool):
+        graph = super().process_aint_graph(graph, training=training)
+        return graph
 
     @override
     def data_transform(self, data: BaseData):

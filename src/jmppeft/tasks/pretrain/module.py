@@ -40,7 +40,6 @@ from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
 from ...modules.dataset.common import (
     CommonDatasetConfig,
-    DatasetSampleNConfig,
     DatasetSampleRatioConfig,
     wrap_common_dataset,
 )
@@ -481,13 +480,7 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
         layers = set[type[nn.Module]]()
         match self.config.backbone:
             case Graphormer3DConfig():
-                from ...models.graphormer.model import (
-                    Graphormer3D,
-                    Graphormer3DEncoderLayer,
-                )
-                from ...models.graphormer.model import (
-                    Output as GraphormerOutput,
-                )
+                from ...models.graphormer.model import Graphormer3DEncoderLayer
 
                 layers.update(
                     {
@@ -498,17 +491,7 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
                     }
                 )
             case GOCBackboneConfig():
-                from ...models.gemnet.backbone import (
-                    GemNetOCBackbone,
-                    InteractionBlock,
-                    OutputBlock,
-                )
-                from ...models.gemnet.bases import Bases
-                from ...models.gemnet.layers.interaction_block import (
-                    PairInteraction,
-                    QuadrupletInteraction,
-                    TripletInteraction,
-                )
+                from ...models.gemnet.backbone import InteractionBlock, OutputBlock
 
                 layers.update(
                     {
@@ -524,13 +507,10 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
                     }
                 )
             case TorchMDNetBackboneConfig():
-                from ...models.torchmdnet.backbone import (
-                    EquivariantMultiHeadAttention,
-                )
+                from ...models.torchmdnet.backbone import EquivariantMultiHeadAttention
 
                 # NeighborEmbedding,
                 # TorchMD_ET,
-                from ...models.torchmdnet.output import Output as TorchMDOutput
 
                 layers.update(
                     {
