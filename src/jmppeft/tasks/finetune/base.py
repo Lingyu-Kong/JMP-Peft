@@ -42,6 +42,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, DistributedSampler
 from torch_geometric.data.batch import Batch
 from torch_geometric.data.data import BaseData
+from torch_geometric.utils import dropout_edge
 from typing_extensions import TypeVar, assert_never, override
 
 from ...datasets.finetune_lmdb import (
@@ -372,6 +373,11 @@ class BatchDumpConfig(ll.TypedConfig):
 
 
 class FinetuneConfigBase(BaseConfig):
+    edge_dropout: float | None = None
+    """Edge dropout probability"""
+    dropout: float | None = None
+    """Dropout probability"""
+
     gradient_checkpointing: GradientCheckpointingConfig | None = None
     """Gradient checkpointing configuration"""
 
@@ -497,6 +503,9 @@ class FinetuneConfigBase(BaseConfig):
             "At least one target must be specified, "
             f"but none are specified: {self.targets=}"
         )
+
+        self.backbone.dropout = self.dropout
+        self.backbone.edge_dropout = self.edge_dropout
 
 
 TConfig = TypeVar("TConfig", bound=FinetuneConfigBase)
@@ -1719,8 +1728,21 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
 
         return out
 
-    def process_aint_graph(self, aint_graph: Graph):
-        return aint_graph
+    def process_aint_graph(self, graph: Graph, *, training: bool):
+        if self.config.edge_dropout:
+            graph["edge_index"], mask = dropout_edge(
+                graph["edge_index"],
+                p=self.config.edge_dropout,
+                training=training,
+            )
+            graph["distance"] = graph["distance"][mask]
+            graph["vector"] = graph["vector"][mask]
+            graph["cell_offset"] = graph["cell_offset"][mask]
+
+            if "id_swap_edge_index" in graph:
+                graph["id_swap_edge_index"] = graph["id_swap_edge_index"][mask]
+
+        return graph
 
     def generate_graphs(
         self,
@@ -1736,7 +1758,7 @@ class FinetuneModelBase(LightningModuleBase[TConfig], Generic[TConfig]):
             pbc=pbc,
             per_graph=self.config.per_graph_radius_graph,
         )
-        aint_graph = self.process_aint_graph(aint_graph)
+        aint_graph = self.process_aint_graph(aint_graph, training=self.training)
         subselect = partial(
             subselect_graph,
             data,

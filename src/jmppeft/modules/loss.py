@@ -39,6 +39,9 @@ class LossConfigBase(ll.TypedConfig, ABC):
 class MAELossConfig(LossConfigBase):
     name: Literal["mae"] = "mae"
 
+    divide_by_natoms: bool = False
+    """Whether to divide the target/pred  by the number of atoms."""
+
     @override
     def compute_impl(
         self,
@@ -47,6 +50,13 @@ class MAELossConfig(LossConfigBase):
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
     ) -> torch.Tensor:
+        if self.divide_by_natoms:
+            assert (
+                natoms := getattr(data, "natoms", None)
+            ) is not None, "natoms is required"
+            y_pred = y_pred / natoms
+            y_true = y_true / natoms
+
         return F.l1_loss(y_pred, y_true, reduction=reduction)
 
 

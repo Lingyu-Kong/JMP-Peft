@@ -15,6 +15,7 @@ from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
     parameter_specific_optimizer_config,
 )
+from typing_extensions import assert_never
 
 jmp_s_ckpt_path = Path(
     "/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/jmp-s.pt"
@@ -262,21 +263,51 @@ def output_heads_config_(
     config: M.MatbenchDiscoveryConfig,
     *,
     relaxed_energy: bool,
-    mace_energy_loss: bool,
-    mace_force_loss: bool,
+    energy_loss_type: Literal["huber", "mace", "mae"],
+    force_loss_type: Literal["huber", "mace", "l2mae"],
+    stress_loss_type: Literal["huber", "mace", "mae"],
     energy_coefficient: float,
     force_coefficient: float,
     stress_coefficient: float,
 ):
-    energy_loss = loss.HuberLossConfig(delta=0.01)
-    if mace_energy_loss:
-        energy_loss = loss.MACEHuberEnergyLossConfig(delta=0.01)
-        config.name_parts.append("maceenergy")
+    match energy_loss_type:
+        case "huber":
+            energy_loss = loss.HuberLossConfig(delta=0.01)
+            config.name_parts.append("ehuber")
+        case "mace":
+            energy_loss = loss.MACEHuberEnergyLossConfig(delta=0.01)
+            config.name_parts.append("emace")
+        case "mae":
+            energy_loss = loss.MAELossConfig(divide_by_natoms=True)
+            config.name_parts.append("emae")
+        case _:
+            assert_never(energy_loss_type)
 
-    force_loss = loss.HuberLossConfig(delta=0.01)
-    if mace_force_loss:
-        force_loss = loss.MACEHuberLossConfig(delta=0.01)
-        config.name_parts.append("maceforce")
+    match force_loss_type:
+        case "huber":
+            force_loss = loss.HuberLossConfig(delta=0.01)
+            config.name_parts.append("fhuber")
+        case "mace":
+            force_loss = loss.MACEHuberLossConfig(delta=0.01)
+            config.name_parts.append("fmace")
+        case "l2mae":
+            force_loss = loss.L2MAELossConfig()
+            config.name_parts.append("fl2mae")
+        case _:
+            assert_never(force_loss_type)
+
+    match stress_loss_type:
+        case "huber":
+            stress_loss = loss.HuberLossConfig(delta=0.01)
+            config.name_parts.append("shuber")
+        case "mace":
+            stress_loss = loss.MACEHuberEnergyLossConfig(delta=0.01)
+            config.name_parts.append("smace")
+        case "mae":
+            stress_loss = loss.MAELossConfig(divide_by_natoms=False)
+            config.name_parts.append("smae")
+        case _:
+            assert_never(stress_loss_type)
 
     # Energy head
     config.graph_targets.append(
@@ -308,7 +339,7 @@ def output_heads_config_(
         output_head.DirectStressTargetConfig(
             name="stress",
             loss_coefficient=stress_coefficient,
-            loss=loss.HuberLossConfig(delta=0.01),
+            loss=stress_loss.model_copy(),
             reduction="mean",
         )
     )
@@ -317,7 +348,7 @@ def output_heads_config_(
         output_head.NodeVectorTargetConfig(
             name="force",
             loss_coefficient=force_coefficient,
-            loss=force_loss,
+            loss=force_loss.model_copy(),
             reduction="sum",
         )
     )
@@ -331,12 +362,13 @@ def optimization_config_(
     config: M.MatbenchDiscoveryConfig,
     *,
     lr: float,
+    wd: float,
 ):
     config.optimizer = AdamWConfig(
         lr=lr,
         amsgrad=False,
         betas=(0.9, 0.95),
-        weight_decay=0.1,
+        weight_decay=wd,
     )
     config.lr_scheduler = base.WarmupCosRLPConfig(
         warmup_epochs=1,
@@ -352,6 +384,7 @@ def optimization_config_(
     )
 
     config.name_parts.append(f"lr{lr}")
+    config.name_parts.append(f"wd{wd}")
 
 
 def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
@@ -361,7 +394,7 @@ def create_config(config_fn: Callable[[M.MatbenchDiscoveryConfig], None]):
     config.trainer.set_float32_matmul_precision = "medium"
 
     config.project = "jmp_mptrj"
-    config.name = "mptrj"
+    # config.name = "mptrj"
     config_fn(config)
     config.backbone.qint_tags = [0, 1, 2]
 
@@ -380,27 +413,29 @@ config = create_config(jmp_s_)
 config.parameter_specific_optimizers = []
 config.max_neighbors = M.MaxNeighbors(main=25, aeaint=20, aint=1000, qint=8)
 config.cutoffs = M.Cutoffs.from_constant(12.0)
-data_config_(config, reference=False, batch_size=50)
-optimization_config_(config, lr=8.0e-5)
+data_config_(config, reference=True, batch_size=50)
+optimization_config_(config, lr=8.0e-5, wd=0.1)
 ln_(config, lr_multiplier=1.5)
 direct_(config=config)
 output_heads_config_(
     config,
-    relaxed_energy=True,
-    mace_energy_loss=True,
-    mace_force_loss=True,
+    relaxed_energy=False,
+    energy_loss_type="mae",
+    force_loss_type="l2mae",
+    stress_loss_type="mae",
     energy_coefficient=1.0,
     force_coefficient=10.0,
     stress_coefficient=100.0,
 )
 parameter_specific_optimizers_(config)
 parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1, wd=0.2)
-# pos_aug_(config, std=0.01)
+pos_aug_(config, std=0.01)
+config.dropout = 0.1
+config.edge_dropout = 0.1
 config.per_graph_radius_graph = True
 config.ignore_graph_generation_errors = True
 
 config.trainer.hf_hub.enable_()
-
 
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
