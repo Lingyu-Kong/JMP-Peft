@@ -15,5 +15,3 @@ print(out.size())
 out = segment_coo(src, index, reduce="sum")
 
 print(out.size())
-
-# %%

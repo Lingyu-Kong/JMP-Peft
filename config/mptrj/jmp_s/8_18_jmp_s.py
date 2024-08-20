@@ -437,6 +437,8 @@ config.ignore_graph_generation_errors = True
 
 config.trainer.hf_hub.enable_()
 
+config.trainer.ckpt_path = "/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/nshtrainer/odf6uvbu/checkpoint/last/epoch8-step32598.ckpt"
+
 config = config.finalize()
 configs.append((config, M.MatbenchDiscoveryModel))
 
@@ -462,7 +464,7 @@ _ = runner.session(
     configs,
     snapshot=True,
     env={
-        "CUDA_VISIBLE_DEVICES": "0,1,2,3,4,6,7",
+        "CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7",
         "NSHUTILS_DISABLE_TYPECHECKING": "1",
     },
 )
