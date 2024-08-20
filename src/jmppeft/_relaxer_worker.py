@@ -14,7 +14,9 @@ class HuggingfaceCkpt(C.Config):
 def _hf_ckpt_to_io(ckpt: HuggingfaceCkpt):
     import huggingface_hub as hfhub
 
-    path = hfhub.HfApi().hf_hub_download(ckpt.repo_id, ckpt.filename)
+    path = hfhub.HfApi().hf_hub_download(
+        ckpt.repo_id, ckpt.filename, force_download=True
+    )
     logging.critical(f"Downloaded {ckpt=} to {path}")
     return path
 
@@ -27,12 +29,13 @@ class Config(C.Config):
     fmax: float = 0.05
     energy_key: Literal["s2e_energy", "s2re_energy"] = "s2e_energy"
     linref: bool = True
+    ignore_if_exists: bool = True
     device_id: int | None = None
     save_traj: Path | None = None
 
 
 def run(config: Config):
-    if config.dest.exists():
+    if config.ignore_if_exists and config.dest.exists():
         logging.warning(f"Skipping {config.dest} as it already exists")
         return
 
@@ -72,6 +75,11 @@ def run(config: Config):
                 hparams.pop("runner", None)
                 hparams.pop("directory", None)
                 hparams.pop("ckpt_load", None)
+
+                hparams.pop("pos_noise_augmentation", None)
+                hparams.pop("dropout", None)
+                hparams.pop("edge_dropout", None)
+
                 return hparams
 
             if isinstance(ckpt := config.ckpt, HuggingfaceCkpt):

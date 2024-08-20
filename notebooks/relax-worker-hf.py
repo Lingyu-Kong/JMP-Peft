@@ -15,16 +15,19 @@ config.fmax = 0.05
 #     filename="checkpoints/last/epoch32-step136620.ckpt",
 # )
 config.ckpt = HuggingfaceCkpt(
-    repo_id="nimashoghi/jmp-mptrj-linref-lr8e-05-wd0-1-ln-emae-fl2mae-smae-ec1-0-fc10-0-sc100-0-posaug-std0-01-onjos0cn",
+    repo_id="nimashoghi/jmp-mptrj-linref-lr8e-05-wd0-1-ln-emae-fl2mae-smae-ec1-0-fc10-0-sc100-0-posaug-std0-01-tfedmagm",
     filename="checkpoints/last.ckpt",
 )
-config.dest = dest_dir / config.ckpt.filename.rsplit("/", 1)[1].replace(
-    ".ckpt", ".dill"
+id_ = config.ckpt.repo_id.rsplit("-", 1)[1]
+config.dest = (
+    dest_dir / id_ / config.ckpt.filename.rsplit("/", 1)[1].replace(".ckpt", ".dill")
 )
 config.device_id = 1
 config.energy_key = "s2e_energy"
 config.linref = True
+config.ignore_if_exists = False
 config.dest = config.dest.with_stem(f"{config.dest.stem}_{config.energy_key}")
+config.dest.parent.mkdir(parents=True, exist_ok=True)
 config = config.finalize()
 configs.append((config,))
 
