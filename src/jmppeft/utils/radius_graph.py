@@ -9,8 +9,9 @@ from typing import Literal
 
 import numpy as np
 import torch
-from jmppeft.modules.torch_scatter_polyfill import segment_coo, segment_csr
 from torch_geometric.data.data import BaseData
+
+from jmppeft.modules.torch_scatter_polyfill import segment_coo, segment_csr
 
 
 def radius_graph_torchmdnet(
@@ -450,7 +451,7 @@ def radius_graph_pbc(
     # if the required repetitions are very different between images
     # (which they usually are). Changing this to sparse (scatter) operations
     # might be worth the effort if this function becomes a bottleneck.
-    max_rep = [rep_a1.max(), rep_a2.max(), rep_a3.max()]
+    max_rep = [rep_a1.max().item(), rep_a2.max().item(), rep_a3.max().item()]
 
     # Tensor of unit cells
     cells_per_dim = [

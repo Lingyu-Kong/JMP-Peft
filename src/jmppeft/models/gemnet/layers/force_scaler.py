@@ -94,8 +94,8 @@ class ForceScaler:
             self.scale_factor *= self.growth_factor
             self.finite_force_results = 0
 
-        logging.info(f"finite force step count: {self.finite_force_results}")
-        logging.info(f"scaling factor: {self.scale_factor}")
+        logging.debug(f"finite force step count: {self.finite_force_results}")
+        logging.debug(f"scaling factor: {self.scale_factor}")
 
 
 class ForceStressScaler(nn.Module):
@@ -227,5 +227,5 @@ class ForceStressScaler(nn.Module):
             self.force_stress_scale_factor *= self.growth_factor
             self.finite_force_stress_results = 0
 
-        logging.info(f"finite force step count: {self.finite_force_stress_results}")
-        logging.info(f"scaling factor: {self.force_stress_scale_factor}")
+        logging.debug(f"finite force step count: {self.finite_force_stress_results}")
+        logging.debug(f"scaling factor: {self.force_stress_scale_factor}")
