@@ -17,11 +17,18 @@ from jmppeft.utils.param_specific_util import (
     parameter_specific_optimizer_config,
 )
 
-jmp_s_ckpt_path = Path("/mnt/shared/checkpoints/jmp-s.pt")
-jmp_l_ckpt_path = Path("/mnt/shared/checkpoints/jmp-l.pt")
+jmp_s_ckpt_path = Path(
+    "/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/jmp-s.pt"
+)
+jmp_l_ckpt_path = Path(
+    "/net/csefiles/coc-fung-cluster/nima/shared/checkpoints/jmp-l.pt"
+)
 
 # Set this to None if you want the run logs to be saved in the current directory
-project_root: Path | None = Path("/mnt/datasets/experiment-data/jmp-peft/")
+project_root: Path | None = Path(
+    "/net/csefiles/coc-fung-cluster/nima/shared/experiment-data/"
+)
+project_root.mkdir(exist_ok=True, parents=True)
 
 
 def jmp_s_(config: base.FinetuneConfigBase):
