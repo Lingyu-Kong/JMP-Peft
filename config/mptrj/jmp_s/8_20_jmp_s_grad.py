@@ -3,11 +3,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-import nshutils as nu
-
 import nshtrainer as nt
+import nshutils as nu
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
+from jmppeft.datasets import mptrj_hf
 from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base, output_head
@@ -221,33 +221,26 @@ def data_config_(
     config: M.MatbenchDiscoveryConfig,
     *,
     batch_size: int,
-    reference: bool,
+    reference: mptrj_hf.ReferenceConfig | None,
 ):
     config.batch_size = batch_size
     config.tags.append(f"bsz{batch_size}")
 
     def dataset_fn(split: Literal["train", "val", "test"]):
-        return base.FinetuneMPTrjHuggingfaceDatasetConfig(
+        dataset_config = mptrj_hf.FinetuneMPTrjHuggingfaceDatasetConfig(
             split=split,
             energy_column_mapping={
-                "y": "corrected_total_energy_referenced",
-                "y_relaxed": "corrected_total_energy_relaxed_referenced",
-            }
-            if reference
-            else {
                 "y": "corrected_total_energy",
                 "y_relaxed": "corrected_total_energy_relaxed",
             },
         )
+        if reference:
+            dataset_config.references["y"] = reference
+        return dataset_config
 
     config.train_dataset = dataset_fn("train")
     config.val_dataset = dataset_fn("val")
     config.test_dataset = dataset_fn("test")
-
-    if reference:
-        config.tags.append("linrefenergy")
-    else:
-        config.tags.append("totalenergy")
 
     # Set data config
     config.num_workers = 7
@@ -292,7 +285,10 @@ def output_heads_config_direct_(
         output_head.DirectStressTargetConfig(
             name="stress",
             loss_coefficient=stress_coefficient,
-            loss=loss.HuberLossConfig(delta=0.01),
+            loss=loss.HuberLossConfig(
+                y_mult_coeff=1602.1766208,  # eV/A^3 to kbar
+                delta=0.01,
+            ),
             reduction="mean",
         )
     )
@@ -420,7 +416,7 @@ def base_config_(
 def make_config(
     model_fn: Callable[[base.FinetuneConfigBase], None],
     *,
-    linref: bool,
+    reference: mptrj_hf.ReferenceConfig | None,
     batch_size: int,
     lr: float,
     coefficients: tuple[float, float, float],
@@ -428,17 +424,25 @@ def make_config(
     wd: float = 0.01,
     mace_energy_loss: bool = False,
     mace_force_loss: bool = False,
+    grad: bool = False,
 ):
     config = M.MatbenchDiscoveryConfig.draft()
 
     base_config_(config, model_fn)
     config.parameter_specific_optimizers = []
-    data_config_(config, reference=linref, batch_size=batch_size)
+    data_config_(config, reference=reference, batch_size=batch_size)
     optimization_config_(config, lr=lr, wd=wd)
     ln_(config, lr_multiplier=1.5)
-    grad_(config=config)
+    if grad:
+        grad_(config=config)
+    else:
+        direct_(config=config)
+
     energy, force, stress = coefficients
-    output_heads_config_grad_(
+    output_heads_config_ = (
+        output_heads_config_grad_ if grad else output_heads_config_direct_
+    )
+    output_heads_config_(
         config,
         mace_energy_loss=mace_energy_loss,
         mace_force_loss=mace_force_loss,
@@ -450,7 +454,7 @@ def make_config(
     parameter_specific_optimizers_energy_references_(config, lr_multiplier=0.1)
     if pos_aug:
         pos_noise_aug_(config, std=pos_aug)
-    config.per_graph_radius_graph = False
+    config.per_graph_radius_graph = True
 
     config = config.finalize()
     return config
@@ -459,17 +463,17 @@ def make_config(
 configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
 # Base settings
-batch_size = 4
+batch_size = 50
 lr = 8.0e-5
 wd = 0.01
-linref = True
-coefficients = (2.0, 10.0, 100.0)
+coefficients = (1.0, 1.0, 0.01)
 pos_aug = None
 mace_energy_loss = False
 mace_force_loss = False
+reference = mptrj_hf.RidgeReferenceConfig(alpha=0.1)
 config = make_config(
     jmp_s_,
-    linref=linref,
+    reference=reference,
     batch_size=batch_size,
     lr=lr,
     coefficients=coefficients,
@@ -477,7 +481,10 @@ config = make_config(
     wd=wd,
     mace_energy_loss=mace_energy_loss,
     mace_force_loss=mace_force_loss,
+    grad=False,
 )
+config.cutoffs = M.Cutoffs.from_constant(20.0)
+config.backbone.absolute_rbf_cutoff = 5.0
 configs.append((config, M.MatbenchDiscoveryModel))
 
 
@@ -499,3 +506,11 @@ runner.fast_dev_run(configs, n_batches=128)
 
 # %%
 runner = nt.Runner(run)
+_ = runner.session(
+    configs,
+    snapshot=True,
+    env={
+        "CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7",
+        "NSHUTILS_DISABLE_TYPECHECKING": "1",
+    },
+)

@@ -19,6 +19,17 @@ class LossConfigBase(C.Config, ABC):
     dynamic_loss_coefficient: str | None = None
     """The name of the dynamic loss coefficient to use for the target"""
 
+    y_mult_coeff: float | None = None
+
+    def pre_compute(
+        self, data: BaseData, y_pred: torch.Tensor, y_true: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.y_mult_coeff is not None:
+            y_pred = y_pred * self.y_mult_coeff
+            y_true = y_true * self.y_mult_coeff
+
+        return y_pred, y_true
+
     def compute(
         self,
         data: BaseData,
@@ -26,6 +37,7 @@ class LossConfigBase(C.Config, ABC):
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
     ) -> torch.Tensor:
+        y_pred, y_true = self.pre_compute(data, y_pred, y_true)
         loss = self.compute_impl(data, y_pred, y_true, reduction)
         return loss
 
