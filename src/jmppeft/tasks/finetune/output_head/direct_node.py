@@ -4,9 +4,10 @@ from typing import Literal
 import torch
 import torch.nn as nn
 from jmppeft.modules.torch_scatter_polyfill import scatter
-from nshtrainer.ll.nn import MLP
 from torch_geometric.data.data import BaseData
 from typing_extensions import TypedDict, override
+
+from nshtrainer.ll.nn import MLP
 
 from ....models.gemnet.backbone import GOCBackboneOutput
 from ....modules.loss import L2MAELossConfig, LossConfig

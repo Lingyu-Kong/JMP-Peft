@@ -6,14 +6,14 @@ from jmppeft._relaxer_worker import Config, run
 
 def _latest_ckpts(dir_: Path) -> dict[str, Path]:
     best_ckpts: dict[str, Path] = {}
-    for run in dir_.iterdir():
-        if not run.is_dir():
+    for run_ in dir_.iterdir():
+        if not run_.is_dir():
             continue
 
         # Find all ckpt files and take the latest one
         ckpts = [
             ckpt
-            for ckpt in run.glob("checkpoint/*.ckpt")
+            for ckpt in run_.glob("checkpoint/*.ckpt")
             if "exception" not in ckpt.name
         ]
         if not ckpts:
@@ -32,7 +32,7 @@ def _latest_ckpts(dir_: Path) -> dict[str, Path]:
 
         # Find the latest checkpoint
         best_ckpt = max(ckpts, key=lambda x: x.stat().st_mtime)
-        best_ckpts[run.name] = best_ckpt
+        best_ckpts[run_.name] = best_ckpt
 
     return best_ckpts
 
@@ -68,8 +68,9 @@ import nshutils as nu
 
 def _create_draft_config():
     draft_config = Config.draft()
-    draft_config.num_items = 1024 * 8
-    draft_config.fmax = 0.05
+    draft_config.num_items = 1024
+    draft_config.fmax = 0.01
+    draft_config.stress_weight = 1.0
 
     return draft_config
 
@@ -77,7 +78,7 @@ def _create_draft_config():
 all_configs: list[Config] = []
 
 ckpt_dir = Path("/mnt/datasets/jmp-mptrj-checkpoints/sm_checkpoints/")
-dest_dir = Path("/mnt/datasets/jmp-mptrj-checkpoints/relaxer-results-8k/")
+dest_dir = Path("/mnt/datasets/jmp-mptrj-checkpoints/relaxer-results-1k/")
 
 for energy_key in ("s2e_energy", "s2re_energy"):
     draft_config = _create_draft_config()
@@ -85,7 +86,17 @@ for energy_key in ("s2e_energy", "s2re_energy"):
     for config in _make_configs(draft_config, ckpt_dir, dest_dir):
         config.dest = config.dest.with_stem(f"{config.dest.stem}_{config.energy_key}")
         config = config.finalize()
+
+        if energy_key != "s2e_energy":
+            continue
+        if config.ckpt.parts[-3] != "mptrj-jmps-s2ef_s2re":
+            continue
         all_configs.append(config)
+
+        config = config.model_copy()
+        config.fmax = 0.05
+        all_configs.append(config)
+
 
 nu.display(all_configs)
 
@@ -103,5 +114,7 @@ worker_configs_list = [
 ]
 
 for worker_configs in worker_configs_list:
+    if not worker_configs:
+        continue
     runner = nr.Runner(run)
     runner.session(worker_configs, snapshot=False)

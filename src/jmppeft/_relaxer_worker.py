@@ -4,25 +4,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 import nshconfig as C
-
-
-class HuggingfaceCkpt(C.Config):
-    repo_id: str
-    filename: str
-
-
-def _hf_ckpt_to_io(ckpt: HuggingfaceCkpt):
-    import huggingface_hub as hfhub
-
-    path = hfhub.HfApi().hf_hub_download(
-        ckpt.repo_id, ckpt.filename, force_download=True
-    )
-    logging.critical(f"Downloaded {ckpt=} to {path}")
-    return path
+from nshconfig_extra import HFPath
 
 
 class Config(C.Config):
-    ckpt: Path | HuggingfaceCkpt
+    ckpt: Path | HFPath
     dest: Path
     idx_subset: Path | None = None
     num_items: int
@@ -32,6 +18,7 @@ class Config(C.Config):
     ignore_if_exists: bool = True
     device_id: int | None = None
     save_traj: Path | None = None
+    stress_weight: float = 0.1
 
 
 def run(config: Config):
@@ -55,7 +42,7 @@ def run(config: Config):
             # setup.device = torch.device(f"cuda:{config.device_id}")
             setup.dtype = torch.float32
             setup.relax_config.compute_stress = True
-            setup.relax_config.stress_weight = 0.1
+            setup.relax_config.stress_weight = config.stress_weight
             setup.relax_config.optimizer = "FIRE"
             setup.relax_config.fmax = config.fmax
             setup.relax_config.ase_filter = "exp"
@@ -82,8 +69,8 @@ def run(config: Config):
 
                 return hparams
 
-            if isinstance(ckpt := config.ckpt, HuggingfaceCkpt):
-                ckpt = _hf_ckpt_to_io(ckpt)
+            if isinstance(ckpt := config.ckpt, HFPath):
+                ckpt = ckpt.download()
 
             model = wbm_relax.load_ckpt(ckpt, setup, update_hparams)
 

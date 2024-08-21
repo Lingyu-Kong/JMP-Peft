@@ -3,7 +3,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Annotated, Literal, TypeAlias
 
-import nshtrainer.ll as ll
+import nshconfig as C
 import nshutils.typecheck as tc
 import numpy as np
 import torch
@@ -15,7 +15,10 @@ from typing_extensions import assert_never, override
 Reduction: TypeAlias = Literal["mean", "sum", "none"]
 
 
-class LossConfigBase(ll.TypedConfig, ABC):
+class LossConfigBase(C.Config, ABC):
+    dynamic_loss_coefficient: str | None = None
+    """The name of the dynamic loss coefficient to use for the target"""
+
     def compute(
         self,
         data: BaseData,
@@ -34,6 +37,23 @@ class LossConfigBase(ll.TypedConfig, ABC):
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
     ) -> torch.Tensor: ...
+
+    def reduce(
+        self,
+        loss: torch.Tensor,
+        reduction: Reduction,
+        *,
+        data: BaseData,
+    ) -> torch.Tensor:
+        match reduction:
+            case "mean":
+                return loss.mean()
+            case "sum":
+                return loss.sum()
+            case "none":
+                return loss
+            case _:
+                assert_never(reduction)
 
 
 class MAELossConfig(LossConfigBase):
@@ -57,7 +77,9 @@ class MAELossConfig(LossConfigBase):
             y_pred = y_pred / natoms
             y_true = y_true / natoms
 
-        return F.l1_loss(y_pred, y_true, reduction=reduction)
+        loss = F.l1_loss(y_pred, y_true, reduction="none")
+        loss = self.reduce(loss, reduction, data=data)
+        return loss
 
 
 class MSELossConfig(LossConfigBase):
@@ -71,7 +93,9 @@ class MSELossConfig(LossConfigBase):
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
     ) -> torch.Tensor:
-        return F.mse_loss(y_pred, y_true, reduction=reduction)
+        loss = F.mse_loss(y_pred, y_true, reduction="none")
+        loss = self.reduce(loss, reduction, data=data)
+        return loss
 
 
 class HuberLossConfig(LossConfigBase):
@@ -87,7 +111,9 @@ class HuberLossConfig(LossConfigBase):
         y_true: torch.Tensor,
         reduction: Reduction = "mean",
     ) -> torch.Tensor:
-        return F.huber_loss(y_pred, y_true, delta=self.delta, reduction=reduction)
+        loss = F.huber_loss(y_pred, y_true, delta=self.delta, reduction="none")
+        loss = self.reduce(loss, reduction, data=data)
+        return loss
 
 
 class MACEHuberLossConfig(LossConfigBase):
@@ -127,15 +153,9 @@ class MACEHuberLossConfig(LossConfigBase):
             y_true[c4], y_pred[c4], reduction="none", delta=factors[3]
         )
 
-        match reduction:
-            case "mean":
-                return se.mean()
-            case "sum":
-                return se.sum()
-            case "none":
-                return se
-            case _:
-                assert_never(reduction)
+        # Reduce the loss
+        loss = self.reduce(se, reduction, data=data)
+        return loss
 
 
 def _apply_focal_loss_per_atom(
@@ -219,15 +239,9 @@ class MACEHuberForceFocalLossConfig(LossConfigBase):
         )
         tc.tassert(tc.Float[torch.Tensor, "natoms"], loss)
 
-        match reduction:
-            case "mean":
-                return loss.mean()
-            case "sum":
-                return loss.sum()
-            case "none":
-                return loss
-            case _:
-                assert_never(reduction)
+        # Reduce the loss
+        loss = self.reduce(loss, reduction, data=data)
+        return loss
 
 
 class MACEHuberEnergyLossConfig(LossConfigBase):
@@ -252,9 +266,9 @@ class MACEHuberEnergyLossConfig(LossConfigBase):
         y_true = y_true / natoms
 
         # Compute the loss
-        loss = F.huber_loss(y_pred, y_true, reduction=reduction, delta=self.delta)
+        loss = F.huber_loss(y_pred, y_true, reduction="none", delta=self.delta)
 
-        return loss
+        return self.reduce(loss, reduction, data=data)
 
 
 def _apply_focal_loss_per_graph(
@@ -330,15 +344,8 @@ class MACEHuberEnergyFocalLossConfig(LossConfigBase):
         )
         tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
 
-        match reduction:
-            case "mean":
-                return loss.mean()
-            case "sum":
-                return loss.sum()
-            case "none":
-                return loss
-            case _:
-                assert_never(reduction)
+        loss = self.reduce(loss, reduction, data=data)
+        return loss
 
 
 class HuberStressFocalLossConfig(LossConfigBase):
@@ -380,15 +387,9 @@ class HuberStressFocalLossConfig(LossConfigBase):
         )
         tc.tassert(tc.Float[torch.Tensor, "bsz"], loss)
 
-        match reduction:
-            case "mean":
-                return loss.mean()
-            case "sum":
-                return loss.sum()
-            case "none":
-                return loss
-            case _:
-                assert_never(reduction)
+        # Reduce the loss
+        loss = self.reduce(loss, reduction, data=data)
+        return loss
 
 
 class L2MAELossConfig(LossConfigBase):
@@ -405,16 +406,7 @@ class L2MAELossConfig(LossConfigBase):
         reduction: Reduction = "mean",
     ) -> torch.Tensor:
         loss = F.pairwise_distance(y_pred, y_true, p=self.p)
-
-        match reduction:
-            case "mean":
-                return loss.mean()
-            case "sum":
-                return loss.sum()
-            case "none":
-                return loss
-            case _:
-                assert_never(reduction)
+        return self.reduce(loss, reduction, data=data)
 
 
 LossConfig: TypeAlias = Annotated[
@@ -427,5 +419,5 @@ LossConfig: TypeAlias = Annotated[
     | MACEHuberEnergyFocalLossConfig
     | HuberStressFocalLossConfig
     | L2MAELossConfig,
-    ll.Field(discriminator="name"),
+    C.Field(discriminator="name"),
 ]
