@@ -1,6 +1,0 @@
-Name,gpus,Total FLOPs for 1 Batch,Per-GPU FLOPs for 1 Batch
-graphormer-base-gc-nodes_16,64,18024999985891.79,281640624779.5592
-graphormer-base-gc-nodes_8,32,11800625397465.988,368769543670.81213
-graphormer-base-gc-nodes_4,16,7841684148140.898,490105259258.80615
-graphormer-base-gc-nodes_2,8,5787628246111.95,723453530763.9938
-graphormer-base-gc-nodes_1,4,4353684662134.705,1088421165533.6763

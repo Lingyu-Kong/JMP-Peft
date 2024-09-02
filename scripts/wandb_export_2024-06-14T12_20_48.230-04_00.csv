@@ -1,6 +1,0 @@
-"Name","train/device/batches_per_sec","train/device/flops_per_sec"
-"graphormer-base-gc-nodes_16","0.8131617306230444","346352532556.79675"
-"graphormer-base-gc-nodes_8","0.930479490469881","396322054862.9051"
-"graphormer-base-gc-nodes_4","1.072689336594593","456893941739.6615"
-"graphormer-base-gc-nodes_2","1.3032706118150967","555106149256.6171"
-"graphormer-base-gc-nodes_1","1.5985556919223003","680877851821.8684"

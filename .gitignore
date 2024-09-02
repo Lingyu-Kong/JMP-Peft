@@ -226,3 +226,7 @@ core
 *.sif
 
 /.quarto/
+
+## Exclude all experiment directories
+*/nshrunner/
+*/nshtrainer/

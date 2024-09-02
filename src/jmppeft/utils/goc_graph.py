@@ -241,7 +241,7 @@ def _radius_graph_pbc(
             radius,
             max_num_neighbors_threshold,
             data.pos,
-            data.natoms,
+            torch.tensor(data.natoms),
             data.cell,
             enforce_max_neighbors_strictly=enforce_max_neighbors_strictly,
             pbc=pbc,
