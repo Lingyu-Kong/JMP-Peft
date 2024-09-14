@@ -59,6 +59,8 @@ from ...datasets.mpd_is2re import MatBenchDiscoveryIS2REDataset
 from ...datasets.mptrj_hf import (
     FinetuneMPTrjHuggingfaceDataset,
     FinetuneMPTrjHuggingfaceDatasetConfig,
+    MPTrjDatasetFromXYZ,
+    MPTrjDatasetFromXYZConfig,
 )
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
@@ -354,7 +356,8 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
     | FinetuneMatbenchDiscoveryDatasetConfig
     | FinetuneMatbenchDiscoveryMegNet133kDatasetConfig
     | FinetuneMatBenchDiscoveryIS2REDatasetConfig
-    | FinetuneMPTrjHuggingfaceDatasetConfig,
+    | FinetuneMPTrjHuggingfaceDatasetConfig
+    | MPTrjDatasetFromXYZConfig,
     Field(discriminator="name"),
 ]
 
@@ -518,6 +521,7 @@ DatasetType: TypeAlias = (
     | MatBenchDiscoveryIS2REDataset
     | datasets.Dataset
     | FinetuneMPTrjHuggingfaceDataset
+    | MPTrjDatasetFromXYZ
 )
 
 

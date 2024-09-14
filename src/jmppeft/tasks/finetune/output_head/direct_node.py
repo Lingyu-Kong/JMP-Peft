@@ -91,3 +91,54 @@ class NodeVectorOutputHead(nn.Module):
             reduce=self.target_config.reduction,
         )
         return output
+    
+    
+class DirectNodeFeatureTargetConfig(BaseTargetConfig):
+    kind: Literal["feature"] = "feature"
+
+    reduction: Literal["sum", "mean"] = "sum"
+    """
+    The reduction method for the target. This refers to how the target is computed.
+    For example, for graph scalar targets, this refers to how the scalar targets are
+    computed from each node's scalar prediction.
+    """
+
+    loss: LossConfig = L2MAELossConfig()
+    """The loss function to use for the target"""
+
+    @override
+    def is_classification(self) -> bool:
+        return False
+
+    @override
+    def construct_output_head(
+        self,
+        output_config,
+        d_model_node,
+        d_model_edge,
+        activation_cls,
+    ):
+        return DirectNodeFeatureOutputHead(
+            self,
+        )
+
+
+class DirectNodeFeatureOutputHeadInput(TypedDict):
+    data: BaseData
+    backbone_output: GOCBackboneOutput
+
+
+class DirectNodeFeatureOutputHead(nn.Module):
+    @override
+    def __init__(
+        self,
+        target_config: DirectNodeFeatureTargetConfig,
+    ):
+        super().__init__()
+        self.target_config = target_config
+
+    @override
+    def forward(self, input: NodeVectorOutputHeadInput) -> torch.Tensor:
+        backbone_output = input["backbone_output"]
+        node_features = backbone_output["h"]
+        return node_features

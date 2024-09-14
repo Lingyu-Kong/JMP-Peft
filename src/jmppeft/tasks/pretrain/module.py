@@ -701,6 +701,24 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
             out = self.backbone(batch)
 
         return self.output(batch, out)  # (n h), (n p h)
+    
+    def get_node_features(self, batch: Data):
+        if self.config.generate_graphs_on_gpu:
+            batch = self._generate_graphs_goc(
+                batch,
+                cutoffs=Cutoffs.from_constant(12.0),
+                max_neighbors=MaxNeighbors.from_goc_base_proportions(30),
+                pbc=True,
+                training=self.training,
+            )
+
+        if not self.config.backbone.handles_atom_embedding():
+            h = self.embedding(batch)
+            out = self.backbone(batch, h=h)
+        else:
+            out = self.backbone(batch)
+
+        return out["h"]
 
     def _task_idx_onehot(self, task_idx: int):
         return F.one_hot(

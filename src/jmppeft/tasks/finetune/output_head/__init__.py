@@ -36,6 +36,7 @@ from .direct_graph_referenced_scalar import (
 )
 from .direct_node import NodeVectorOutputHead as NodeVectorOutputHead
 from .direct_node import NodeVectorTargetConfig as NodeVectorTargetConfig
+from .direct_node import DirectNodeFeatureOutputHead, DirectNodeFeatureTargetConfig
 from .direct_stress import DirectStressOutputHead as DirectStressOutputHead
 from .direct_stress import DirectStressTargetConfig as DirectStressTargetConfig
 from .gradient_force_stress import GradientForcesOutputHead as GradientForcesOutputHead
@@ -59,6 +60,6 @@ GraphTargetConfig: TypeAlias = Annotated[
 ]
 
 NodeTargetConfig: TypeAlias = Annotated[
-    NodeVectorTargetConfig | GradientForcesTargetConfig,
+    NodeVectorTargetConfig | GradientForcesTargetConfig | DirectNodeFeatureTargetConfig,
     ll.Field(discriminator="kind"),
 ]

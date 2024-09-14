@@ -452,7 +452,6 @@ def radius_graph_pbc(
     # (which they usually are). Changing this to sparse (scatter) operations
     # might be worth the effort if this function becomes a bottleneck.
     max_rep = [rep_a1.max().item(), rep_a2.max().item(), rep_a3.max().item()]
-
     # Tensor of unit cells
     cells_per_dim = [
         torch.arange(-rep, rep + 1, device=device, dtype=torch.float) for rep in max_rep

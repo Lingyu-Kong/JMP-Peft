@@ -5,7 +5,7 @@ LICENSE file in the root directory of this source tree.
 """
 
 from functools import partial
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict, cast, Literal
 
 import nshtrainer.ll as ll
 import nshutils.typecheck as tc
@@ -44,7 +44,7 @@ class GOCBackboneOutput(TypedDict):
     idx_t: torch.Tensor
     V_st: torch.Tensor
     D_st: torch.Tensor
-
+    h: torch.Tensor
     energy: torch.Tensor
     forces: torch.Tensor
 
@@ -302,6 +302,8 @@ class GemNetOCBackbone(nn.Module):
         self.shared_parameters: list[tuple[nn.Parameter, int]] = []
 
         print("Unrecognized arguments: ", kwargs.keys())
+        
+        self.padding_method:Literal["zero", "repeat"] = "zero"
 
         self.config = config
         self.gradient_checkpointing = gradient_checkpointing
@@ -913,7 +915,29 @@ class GemNetOCBackbone(nn.Module):
             xs_F.append(x_F)
 
         ll.ActSave({f"h_{i}": h, f"m_{i}": m, f"x_E_{i+1}": x_E, f"x_F_{i+1}": x_F})
-
+        
+        for i in range(len(self.int_blocks)-self.num_blocks):
+            if self.padding_method == "zero":
+                zero_x_E = torch.zeros_like(x_E)
+                zero_x_F = torch.zeros_like(x_F)
+                xs_E.append(zero_x_E)
+                xs_F.append(zero_x_F)
+            elif self.padding_method == "repeat":
+                xs_E.append(x_E)
+                xs_F.append(x_F)
+            else:
+                raise ValueError(f"Unknown padding method: {self.padding_method}")
+            
+        # if self.num_blocks == 4:
+        #     zero_x_E = torch.zeros_like(x_E)
+        #     zero_x_F = torch.zeros_like(x_F)
+        #     xs_E[0] = zero_x_E
+        #     xs_F[0] = zero_x_F
+        #     xs_E[1] = zero_x_E
+        #     xs_F[1] = zero_x_F
+        #     xs_E[2] = zero_x_E
+        #     xs_F[2] = zero_x_Fk
+        
         # Global output block for final predictions
         x_F = None
         if self.regress_forces:
@@ -934,7 +958,102 @@ class GemNetOCBackbone(nn.Module):
             "forces": x_F,
             "V_st": main_graph["vector"],
             "D_st": main_graph["distance"],
+            "h": h,
             "idx_s": idx_s,
             "idx_t": idx_t,
         }
         return out
+    
+    def get_node_features(
+        self,
+        data: BaseData,
+        *,
+        h: torch.Tensor,
+        num_blocks: int|None = None,
+    ):
+        if num_blocks is None:
+            num_blocks = self.num_blocks
+        pos = data.pos
+        # batch = data.batch
+        # atomic_numbers = data.atomic_numbers.long()
+        num_atoms = data.atomic_numbers.shape[0]
+
+        if self.regress_forces and not self.direct_forces:
+            pos.requires_grad_(True)
+
+        (
+            main_graph,
+            a2a_graph,
+            a2ee2a_graph,
+            qint_graph,
+            id_swap,
+            trip_idx_e2e,
+            trip_idx_a2e,
+            trip_idx_e2a,
+            quad_idx,
+        ) = self.get_graphs_and_indices(data)
+        ll.ActSave(
+            {
+                "pos": pos,
+                "batch": data.batch,
+                "natoms": data.natoms,
+                "edge_index": main_graph["edge_index"],
+            }
+        )
+        idx_s, idx_t = main_graph["edge_index"]
+
+        bases: BasesOutput = self.bases(
+            data,
+            h=h,
+            main_graph=main_graph,
+            a2a_graph=a2a_graph,
+            a2ee2a_graph=a2ee2a_graph,
+            qint_graph=qint_graph,
+            trip_idx_e2e=trip_idx_e2e,
+            trip_idx_a2e=trip_idx_a2e,
+            trip_idx_e2a=trip_idx_e2a,
+            quad_idx=quad_idx,
+            num_atoms=num_atoms,
+        )
+        m = bases.m
+
+        # Embedding block
+        # h = self.atom_emb(atomic_numbers)
+        # (nAtoms, emb_size_atom)
+        # m = self.edge_emb(h, bases.rbf_main, main_graph["edge_index"])
+        # (nEdges_main, emb_size_edge)
+
+        x_E, x_F = checkpoint(self.out_blocks[0], self.gradient_checkpointing)(
+            h, m, bases.output, idx_t
+        )
+        x_E, x_F = self._process_outblock_outputs(x_E, x_F)
+        # (nAtoms, emb_size_atom), (nEdges, emb_size_edge)
+        xs_E: list[torch.Tensor] = [x_E]
+        xs_F: list[torch.Tensor | None] = [x_F]
+        ll.ActSave({"x_E_0": x_E, "x_F_0": x_F})
+
+        if self.config.unique_basis_per_layer:
+            raise NotImplementedError
+
+        for i in range(num_blocks):
+            fn = partial(self.block, i)
+            if self.gradient_checkpointing:
+                fn = checkpoint(fn, self.gradient_checkpointing)
+            h, m, x_E, x_F = fn(
+                data,
+                idx_t,
+                h,
+                m,
+                bases,
+                main_graph,
+                a2a_graph,
+                a2ee2a_graph,
+                id_swap,
+                trip_idx_e2e,
+                trip_idx_a2e,
+                trip_idx_e2a,
+                quad_idx,
+            )
+            xs_E.append(x_E)
+            xs_F.append(x_F)
+        return h

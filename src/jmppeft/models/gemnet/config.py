@@ -2,7 +2,6 @@ from typing import Literal
 
 import nshtrainer.ll as ll
 from typing_extensions import override
-
 from .._config import AtomEmbeddingTableInfo, BackboneConfigBase
 
 

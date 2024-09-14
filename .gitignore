@@ -230,3 +230,4 @@ core
 ## Exclude all experiment directories
 */nshrunner/
 */nshtrainer/
+*/temp_data

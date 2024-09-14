@@ -313,8 +313,13 @@ class FinetuneMetrics(nn.Module):
         for key, mae in self.maes.items():
             if (mp := self.provider(key, batch, preds)) is None:
                 continue
-
-            mae(mp.predicted, mp.ground_truth)
+            if key == "y":
+                n_atoms = batch.natoms
+                predicted = mp.predicted / n_atoms
+                ground_truth = mp.ground_truth / n_atoms
+                mae(predicted, ground_truth)
+            else:
+                mae(mp.predicted, mp.ground_truth)
             metrics[f"{key}_mae"] = mae
 
         if self.config.report_rmse:

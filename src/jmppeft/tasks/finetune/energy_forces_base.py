@@ -252,6 +252,37 @@ class EnergyForcesModelBase(FinetuneModelBase[TConfig], ABC, Generic[TConfig]):
             preds.update(node_preds)
 
         return preds
+    
+    def get_node_features(self, data: BaseData, num_blocks: int):
+
+        with ExitStack() as stack:
+            # Enter all the necessary contexts for output heads.
+            # Right now, this is only for gradient forces, which
+            #   requires torch.inference_mode(False), torch.enable_grad,
+            #   and data.pos.requires_grad_(True).
+            for target in self.config.targets:
+                stack.enter_context(target.model_forward_context(data))
+
+            # Generate graphs on the GPU
+            if self.config.ignore_graph_generation_errors:
+                try:
+                    data = self.generate_graphs_transform(data, training=self.training)
+                except Exception as e:
+                    # If this is a CUDA error, rethrow it
+                    if "CUDA" in str(data):
+                        raise
+
+                    # Otherwise, log the error and skip the batch
+                    log.error(f"Error generating graphs: {e}", exc_info=True)
+                    raise SkipBatch()
+            else:
+                data = self.generate_graphs_transform(data, training=self.training)
+
+            # Run the backbone
+            atomic_numbers = data.atomic_numbers - 1
+            h = self.embedding(atomic_numbers)  # (N, d_model)
+            h = self.backbone.get_node_features(data, h=h, num_blocks=num_blocks)
+        return h
 
     @abstractmethod
     def generate_graphs_transform(self, data: BaseData, training: bool) -> BaseData: ...
