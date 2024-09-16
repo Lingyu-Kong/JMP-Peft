@@ -107,6 +107,7 @@ def main(args_dict):
     config.batch_size = BATCH_SIZE
     config.num_workers = NUM_WORKERS
     config = config.finalize()
+    id_name = config.id
     configs.append((config, M.PretrainModel)) ## TODO:Match model type in M.PretrainModel
 
 
@@ -135,6 +136,8 @@ def main(args_dict):
                 },
             )
             wandb.finish()
+            results_path = "./nshtrainer/{}".format(id_name)
+            wandb.save(results_path)
         elif args_dict["cluster"] == "nersc":
             runner.submit_slurm(
                 configs,
