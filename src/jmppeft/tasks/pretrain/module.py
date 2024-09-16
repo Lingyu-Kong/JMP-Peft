@@ -1193,6 +1193,15 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
         return dataset
 
     def collate_fn_gnn(self, data_list: list[Data]):
+        for i in range(len(data_list)):
+            data_i = data_list[i]
+            for key, value in data_i.items():
+                if not torch.is_tensor(value):
+                    try:
+                        data_i[key] = torch.tensor(value)
+                    except:
+                        pass
+            data_list[i] = data_i
         return Batch.from_data_list(data_list, exclude_keys=self.config.exclude_keys)
 
     def collate_fn(self, data_list: list[Data]):
