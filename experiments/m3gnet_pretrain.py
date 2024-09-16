@@ -144,7 +144,7 @@ def main(args_dict):
                     "qos": "preempt",
                     "constraint": "gpu",
                     "nodes": 1,
-                    "gpus_per_node": 8,
+                    "gpus_per_node": 4,
                     "time": timedelta(hours=48.0),
                 },
                 snapshot=True,
