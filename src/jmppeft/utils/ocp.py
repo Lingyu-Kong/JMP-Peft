@@ -18,7 +18,18 @@ def pyg2_data_transform(data: BaseData):
     we need to convert the data to the new format
     """
     if torch_geometric.__version__ >= "2.0" and "_store" not in data.__dict__:
-        data = Data(**{k: torch.tensor(v) for k, v in data.__dict__.items() if v is not None})
+        data_dict = {}
+        for key, value in data.__dict__.items():
+            if value is None:
+                continue
+            if isinstance(value, torch.Tensor):
+                data_dict[key] = value
+            else:
+                try:
+                    data_dict[key] = torch.tensor(value)
+                except:
+                    data_dict[key] = value
+        data = Data(**data_dict)
         data = cast(BaseData, data)
 
     return data
