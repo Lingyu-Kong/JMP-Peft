@@ -144,7 +144,9 @@ def main(args_dict):
                     "qos": "preempt",
                     "constraint": "gpu",
                     "nodes": 1,
-                    "gpus_per_node": 4,
+                    "ntasks_per_node": 4,
+                    "gpus_per_task": 1,
+                    "cpus_per_task": NUM_WORKERS,
                     "time": timedelta(hours=48.0),
                 },
                 snapshot=True,
@@ -160,9 +162,9 @@ def main(args_dict):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Pretrain m3gnet with JMP-S data')
-    parser.add_argument('--model_type', type=str, default="m3gnet_base", help='Model type to use: m3gnet_base or m3gnet_large')
+    parser.add_argument('--model_type', type=str, default="m3gnet_large", help='Model type to use: m3gnet_base or m3gnet_large')
     parser.add_argument('--use_fsdp', type=bool, default=False, help='Use fsdp for training')
-    parser.add_argument('--batch_size', type=int, default=120, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=100, help='Batch size for training')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers for data loading')
     parser.add_argument('--grad_clip', type=float, default=2.0, help='Gradient clipping value')
     parser.add_argument('--init_lr', type=float, default=1e-3, help='Initial learning rate')
