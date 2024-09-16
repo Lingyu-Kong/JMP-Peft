@@ -86,13 +86,6 @@ def main(args_dict):
     def gradient_checkpointing_config_(config: M.PretrainConfig):
         config.gradient_checkpointing = True
         config.name_parts.append("gc")
-        
-    def profiling_config_(config: M.PretrainConfig):
-        config.trainer.callbacks.append(ll.callbacks.EpochTimerConfig())
-        config.trainer.callbacks.append(
-            ll.callbacks.ThroughputMonitorConfig(batch_size=config.batch_size)
-        )
-        config.perf_metrics = True
 
     configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
     config = M.PretrainConfig.draft()
@@ -102,10 +95,9 @@ def main(args_dict):
     else:
         tasks_config_perlmutter_(config)
     backbone_config_(config)
-    gradient_checkpointing_config_(config)
+    fsdp_config_(config)
+    # gradient_checkpointing_config_(config)
     # profiling_config_(config)
-    config.batch_size = BATCH_SIZE
-    config.num_workers = NUM_WORKERS
     config = config.finalize()
     id_name = config.id
     configs.append((config, M.PretrainModel)) ## TODO:Match model type in M.PretrainModel
