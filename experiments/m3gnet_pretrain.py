@@ -124,7 +124,6 @@ def main(args_dict):
         },)
     else:
         if args_dict["cluster"] == "local":
-            raise ValueError("Local cluster not supported for pretraining")
             datetime_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
             wandb.init(project="m3gnet_pretrain", name=MODEL_TYPE+"-"+datetime_str, config=args_dict)
