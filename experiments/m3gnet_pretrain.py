@@ -104,7 +104,6 @@ def main(args_dict):
     backbone_config_(config)
     gradient_checkpointing_config_(config)
     profiling_config_(config)
-    config.runner.python_logging.log_level = "INFO"
     config.batch_size = BATCH_SIZE
     config.num_workers = NUM_WORKERS
     config = config.finalize()
