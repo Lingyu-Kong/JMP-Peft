@@ -101,7 +101,7 @@ def main(args_dict):
     if args_dict["run_test"]:
         tasks_config_oc20_4ktest_(config)
     else:
-        tasks_config_oc20_4ktest_(config)
+        tasks_config_perlmutter_(config)
     backbone_config_(config)
     # fsdp_config_(config)
     gradient_checkpointing_config_(config)
