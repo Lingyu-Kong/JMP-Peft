@@ -4,12 +4,13 @@ Script to pretrain m3gnet with JMP-S data
 from typing import Literal
 import nshtrainer.ll as ll
 import nshutils as nu
-from jmppeft.configs.pretrain.tasks import tasks_config_frontier_,tasks_config_oc20_4ktest_
+from jmppeft.configs.pretrain.tasks import tasks_config_perlmutter_,tasks_config_oc20_4ktest_
 from jmppeft.models.gemnet.config import BackboneConfig
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.pretrain import module as M
 import wandb
 from datetime import datetime
+from datetime import timedelta
 import argparse
 
 """
@@ -81,6 +82,17 @@ def main(args_dict):
         config.fsdp = M.FSDPConfig(
             gradient_checkpointing=True,
         )
+    
+    def gradient_checkpointing_config_(config: M.PretrainConfig):
+        config.gradient_checkpointing = True
+        config.name_parts.append("gc")
+        
+    def profiling_config_(config: M.PretrainConfig):
+        config.trainer.callbacks.append(ll.callbacks.EpochTimerConfig())
+        config.trainer.callbacks.append(
+            ll.callbacks.ThroughputMonitorConfig(batch_size=config.batch_size)
+        )
+        config.perf_metrics = True
 
     configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
     config = M.PretrainConfig.draft()
@@ -88,10 +100,13 @@ def main(args_dict):
     if args_dict["run_test"]:
         tasks_config_oc20_4ktest_(config)
     else:
-        tasks_config_frontier_(config)
+        tasks_config_perlmutter_(config)
     backbone_config_(config)
-    if USE_FSDP:
-        fsdp_config_(config)
+    gradient_checkpointing_config_(config)
+    profiling_config_(config)
+    config.runner.python_logging.log_level = "INFO"
+    config.batch_size = BATCH_SIZE
+    config.num_workers = NUM_WORKERS
     config = config.finalize()
     configs.append((config, M.PretrainModel)) ## TODO:Match model type in M.PretrainModel
 
@@ -109,17 +124,40 @@ def main(args_dict):
             "NSHUTILS_DISABLE_TYPECHECKING": "0", ## for debug, 0
         },)
     else:
-        datetime_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
-        wandb.init(project="m3gnet_pretrain", name=MODEL_TYPE+"-"+datetime_str, config=args_dict)
-        _ = runner.local(
-            configs,
-            env={
-                "CUDA_VISIBLE_DEVICES": args_dict["cuda_visible_devices"],
-                "NSHUTILS_DISABLE_TYPECHECKING": "1",
-            },
-        )
-        wandb.finish()
+        if args_dict["cluster"] == "local":
+            raise ValueError("Local cluster not supported for pretraining")
+            datetime_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
+            wandb.init(project="m3gnet_pretrain", name=MODEL_TYPE+"-"+datetime_str, config=args_dict)
+            _ = runner.local(
+                configs,
+                env={
+                    "CUDA_VISIBLE_DEVICES": args_dict["cuda_visible_devices"],
+                    "NSHUTILS_DISABLE_TYPECHECKING": "1",
+                },
+            )
+            wandb.finish()
+        elif args_dict["cluster"] == "nersc":
+            runner.submit_slurm(
+                configs,
+                {
+                    "account": "m3641_g",
+                    "qos": "preempt",
+                    "constraint": "gpu",
+                    "nodes": 1,
+                    "gpus_per_node": 8,
+                    "time": timedelta(hours=48.0),
+                },
+                snapshot=True,
+                setup_commands = ["wandb login 37f3de06380e350727df28b49712f8b7fe5b14aa",],
+                env={
+                    "LL_DISABLE_TYPECHECKING": "1",
+                    "CUDA_VISIBLE_DEVICES": args_dict["cuda_visible_devices"],
+                    "NSHUTILS_DISABLE_TYPECHECKING": "1",
+                }
+            )
+        else:
+            raise ValueError(f"Unknown cluster: {args_dict['cluster']}, choose from ['local', 'nersc']")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Pretrain m3gnet with JMP-S data')
@@ -129,7 +167,8 @@ if __name__ == "__main__":
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers for data loading')
     parser.add_argument('--grad_clip', type=float, default=2.0, help='Gradient clipping value')
     parser.add_argument('--init_lr', type=float, default=1e-3, help='Initial learning rate')
-    parser.add_argument('--run_test', type=bool, default=True, help='Run a test session')
-    parser.add_argument('--cuda_visible_devices', type=str, default="0", help='CUDA_VISIBLE_DEVICES')
+    parser.add_argument('--run_test', type=bool, default=False, help='Run a test session')
+    parser.add_argument('--cluster', type=str, default="nersc", help='Cluster to run the experiment')
+    parser.add_argument('--cuda_visible_devices', type=str, default="0,1,2,3", help='CUDA_VISIBLE_DEVICES')
     args_dict = vars(parser.parse_args())
     main(args_dict)
