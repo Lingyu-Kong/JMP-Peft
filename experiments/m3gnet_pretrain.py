@@ -83,9 +83,12 @@ def main(args_dict):
             gradient_checkpointing=True,
         )
     
-    def gradient_checkpointing_config_(config: M.PretrainConfig):
-        config.gradient_checkpointing = True
-        config.name_parts.append("gc")
+    def profiling_config_(config: M.PretrainConfig):
+        config.trainer.callbacks.append(ll.callbacks.EpochTimerConfig())
+        config.trainer.callbacks.append(
+            ll.callbacks.ThroughputMonitorConfig(window_size=config.batch_size)
+        )
+        config.perf_metrics = True
 
     configs: list[tuple[M.PretrainConfig, type[M.PretrainModel]]] = []
     config = M.PretrainConfig.draft()
@@ -97,7 +100,7 @@ def main(args_dict):
     backbone_config_(config)
     fsdp_config_(config)
     # gradient_checkpointing_config_(config)
-    # profiling_config_(config)
+    profiling_config_(config)
     config = config.finalize()
     id_name = config.id
     configs.append((config, M.PretrainModel)) ## TODO:Match model type in M.PretrainModel
@@ -123,6 +126,7 @@ def main(args_dict):
             _ = runner.local(
                 configs,
                 env={
+                    "LL_DISABLE_TYPECHECKING": "1",
                     "CUDA_VISIBLE_DEVICES": args_dict["cuda_visible_devices"],
                     "NSHUTILS_DISABLE_TYPECHECKING": "1",
                 },
