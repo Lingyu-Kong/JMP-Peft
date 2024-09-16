@@ -33,6 +33,9 @@ from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetCo
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig as GOCBackboneConfig
+from ...models.m3gnet.config import BackboneConfig as M3GNetBackboneConfig
+from ...models.m3gnet.backbone import M3GNet, M3GNetBackboneOutput
+from ...models.m3gnet.modules.message_passing import MainBlock
 from ...models.gemnet.layers.base_layers import ScaledSiLU
 from ...models.graphormer.config import Graphormer3DConfig
 from ...models.torchmdnet.config import TorchMDNetBackboneConfig
@@ -118,7 +121,7 @@ class TaskConfig(C.Config):
 
 
 BackboneConfig: TypeAlias = Annotated[
-    GOCBackboneConfig | Graphormer3DConfig | TorchMDNetBackboneConfig,
+    GOCBackboneConfig | Graphormer3DConfig | TorchMDNetBackboneConfig | M3GNetBackboneConfig,
     C.Field(discriminator="name"),
 ]
 
@@ -261,6 +264,8 @@ class PretrainConfig(nt.BaseConfig):
             case GOCBackboneConfig() as config:
                 config.dropout = self.dropout
                 config.edge_dropout = self.edge_dropout
+            case M3GNetBackboneConfig() as config:
+                pass
             case TorchMDNetBackboneConfig() as config:
                 if self.dropout or self.edge_dropout:
                     raise NotImplementedError(
@@ -395,7 +400,7 @@ class Output(nt.Base[PretrainConfig], nn.Module):
         )
 
     @override
-    def forward(self, data: Data, backbone_out: GOCBackboneOutput):
+    def forward(self, data: Data, backbone_out: GOCBackboneOutput | M3GNetBackboneOutput):
         energy = backbone_out["energy"]
         forces = backbone_out["forces"]
         V_st = backbone_out["V_st"]
@@ -506,6 +511,12 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
                         # GOCOutput,
                     }
                 )
+            case M3GNetBackboneConfig():
+                layers.update(
+                    {
+                        MainBlock,
+                    }
+                )
             case TorchMDNetBackboneConfig():
                 from ...models.torchmdnet.backbone import EquivariantMultiHeadAttention
 
@@ -582,6 +593,8 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
                 return GemNetOCBackbone(
                     self.config.backbone, **dict(self.config.backbone)
                 )
+            case M3GNetBackboneConfig():
+                return M3GNet(**dict(self.config.backbone))
             case TorchMDNetBackboneConfig():
                 return self.config.backbone.create_backbone()
             case _:
@@ -869,6 +882,8 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
 
         match self.config.backbone:
             case GOCBackboneConfig():
+                raise NotImplementedError
+            case M3GNetBackboneConfig():
                 raise NotImplementedError
             case Graphormer3DConfig():
                 from ...models.graphormer.model import (
@@ -1350,6 +1365,50 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
                 graph["num_neighbors"] = graph["edge_index"].shape[1]
 
         return data
+    
+    def _generate_graphs_m3gnet(
+        self,
+        data: BaseData,
+        cutoffs: Cutoffs,
+        max_neighbors: MaxNeighbors,
+        pbc: bool,
+        *,
+        training: bool,
+    ):
+        aint_graph = generate_graph(
+            data, cutoff=cutoffs.aint, max_neighbors=max_neighbors.aint, pbc=pbc
+        )
+        aint_graph = self._process_aint_graph(aint_graph, training=training)
+        subselect = partial(
+            subselect_graph,
+            data,
+            aint_graph,
+            cutoff_orig=cutoffs.aint,
+            max_neighbors_orig=max_neighbors.aint,
+        )
+        main_graph = subselect(cutoffs.main, max_neighbors.main)
+        aeaint_graph = subselect(cutoffs.aeaint, max_neighbors.aeaint)
+
+        # We can't do this at the data level: This is because the batch collate_fn doesn't know
+        # that it needs to increment the "id_swap" indices as it collates the data.
+        # So we do this at the graph level (which is done in the GemNetOC `get_graphs_and_indices` method).
+        # main_graph = symmetrize_edges(main_graph, num_atoms=data.pos.shape[0])
+
+        graphs = {
+            "main": main_graph,
+            "a2a": aint_graph,
+            "a2ee2a": aeaint_graph,
+        }
+
+        for graph_type, graph in graphs.items():
+            for key, value in graph.items():
+                setattr(data, f"{graph_type}_{key}", value)
+
+        if not self.config.generate_graphs_on_gpu:
+            for graph_type, graph in graphs.items():
+                graph["num_neighbors"] = graph["edge_index"].shape[1]
+
+        return data
 
     def _generate_graphs_graphormer(
         self,
@@ -1401,6 +1460,16 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
             case GOCBackboneConfig():
                 if not self.config.generate_graphs_on_gpu:
                     data = self._generate_graphs_goc(
+                        data,
+                        cutoffs=cutoffs,
+                        max_neighbors=max_neighbors,
+                        pbc=pbc,
+                        training=training,
+                    )
+                return data
+            case M3GNetBackboneConfig():
+                if not self.config.generate_graphs_on_gpu:
+                    data = self._generate_graphs_m3gnet(
                         data,
                         cutoffs=cutoffs,
                         max_neighbors=max_neighbors,

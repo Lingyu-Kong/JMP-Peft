@@ -381,9 +381,6 @@ def main(args_dict:dict):
         config = M.MatbenchDiscoveryConfig.draft()
         config.trainer.precision = "16-mixed-auto"
         config.trainer.set_float32_matmul_precision = "medium"
-        config.trainer.early_stopping = nt.model.EarlyStoppingConfig(
-            patience=100, min_lr=1.0e-8
-        )
         config.project = "jmp_mptrj"
         config.name = "mptrj"
         config_fn(config)
@@ -438,7 +435,10 @@ def main(args_dict:dict):
     # pos_aug_(config, std=0.01)
     config.per_graph_radius_graph = True
     config.ignore_graph_generation_errors = True
-    
+    config.trainer.early_stopping = nt.model.EarlyStoppingConfig(
+            patience=args_dict["earlystop_patience"], min_lr=1e-08
+        )
+    config.trainer.max_epochs = args_dict["max_epochs"]
     config = config.finalize()
     configs.append((config, M.MatbenchDiscoveryModel))
     
@@ -494,6 +494,8 @@ if __name__=="__main__":
     parser.add_argument("--reference", type=str, default="ridge", help="Reference")
     parser.add_argument("--xyz_path", type=str, default="./temp_data/water_processed.xyz", help="Path to xyz files")
     parser.add_argument("--gpu", type=str, default="3", help="GPU ID")
+    parser.add_argument("--earlystop_patience", type=int, default=500, help="Early Stop Patience")
+    parser.add_argument("--max_epochs", type=int, default=1000, help="Max Epoch")
     parser.add_argument("--direct_forces", type=bool, default=False, help="Direct Forces")
     parser.add_argument("--run_as_test", type=bool, default=False, help="Run as Test")
     args = parser.parse_args()

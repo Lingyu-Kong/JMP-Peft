@@ -138,7 +138,7 @@ def run(config: M.PretrainConfig, model_cls: type[M.PretrainModel]):
 
 
 runner = ll.Runner(run)
-runner.fast_dev_run_session(configs, snapshot=False, n_batches=128, env={
+runner.fast_dev_run(configs, n_batches=128, env={
         "CUDA_VISIBLE_DEVICES": "0,1",
         "NSHUTILS_DISABLE_TYPECHECKING": "0", ## for debug, 0
     },) ## snapshot=True, then we can change code without affecting the running jobs
