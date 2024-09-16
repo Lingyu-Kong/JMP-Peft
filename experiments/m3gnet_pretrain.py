@@ -4,6 +4,7 @@ Script to pretrain m3gnet with JMP-S data
 from typing import Literal
 import nshtrainer.ll as ll
 import nshutils as nu
+import nshtrainer as nt
 from jmppeft.configs.pretrain.tasks import tasks_config_perlmutter_,tasks_config_oc20_4ktest_
 from jmppeft.models.gemnet.config import BackboneConfig
 from jmppeft.tasks.config import AdamWConfig
@@ -83,6 +84,10 @@ def main(args_dict):
             gradient_checkpointing=True,
         )
     
+    def gradient_checkpointing_config_(config: M.PretrainConfig):
+        config.gradient_checkpointing = True
+        config.name_parts.append("gc")
+    
     def profiling_config_(config: M.PretrainConfig):
         config.trainer.callbacks.append(ll.callbacks.EpochTimerConfig())
         config.trainer.callbacks.append(
@@ -96,11 +101,14 @@ def main(args_dict):
     if args_dict["run_test"]:
         tasks_config_oc20_4ktest_(config)
     else:
-        tasks_config_perlmutter_(config)
+        tasks_config_oc20_4ktest_(config)
     backbone_config_(config)
-    fsdp_config_(config)
-    # gradient_checkpointing_config_(config)
+    # fsdp_config_(config)
+    gradient_checkpointing_config_(config)
     profiling_config_(config)
+    config.primary_metric = nt.MetricConfig(
+            name="matbench_discovery/force_mae", mode="min"
+        )
     config = config.finalize()
     id_name = config.id
     configs.append((config, M.PretrainModel)) ## TODO:Match model type in M.PretrainModel
@@ -167,7 +175,7 @@ if __name__ == "__main__":
     parser.add_argument('--grad_clip', type=float, default=2.0, help='Gradient clipping value')
     parser.add_argument('--init_lr', type=float, default=1e-3, help='Initial learning rate')
     parser.add_argument('--run_test', type=bool, default=False, help='Run a test session')
-    parser.add_argument('--cluster', type=str, default="nersc", help='Cluster to run the experiment')
+    parser.add_argument('--cluster', type=str, default="local", help='Cluster to run the experiment')
     parser.add_argument('--cuda_visible_devices', type=str, default="0,1,2,3", help='CUDA_VISIBLE_DEVICES')
     args_dict = vars(parser.parse_args())
     main(args_dict)

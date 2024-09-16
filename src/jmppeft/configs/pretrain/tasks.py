@@ -139,12 +139,12 @@ def tasks_config_generic_(
             name="oc20",
             train_dataset=M.PretrainDatasetConfig(
                 src=base_dir / "oc20/s2ef/2M/train/",
-                metadata_path=None,
+                metadata_path=metadatas_dir / "oc20-2M-train.npz",
                 lin_ref=base_dir / "oc20/lin_ref_coeffs.npz",
             ),
             val_dataset=M.PretrainDatasetConfig(
                 src=base_dir / "oc20/s2ef/all/val_id/",
-                metadata_path=None,
+                metadata_path=metadatas_dir / "oc20-val_id.npz",
                 first_n=DatasetFirstNConfig(first_n=20_000),
                 lin_ref=base_dir / "oc20/lin_ref_coeffs.npz",
             ),
@@ -160,14 +160,14 @@ def tasks_config_generic_(
             train_dataset=M.PretrainDatasetConfig(
                 src=base_dir
                 / "oc22/s2ef_total_train_val_test_lmdbs/data/oc22/s2ef-total/train/",
-                metadata_path=None,
+                metadata_path=metadatas_dir / "oc22-train.npz",
                 sample_ratio=sample_ratio,
                 lin_ref=base_dir / "oc22/oc22_linfit_coeffs.npz",
             ),
             val_dataset=M.PretrainDatasetConfig(
                 src=base_dir
                 / "oc22/s2ef_total_train_val_test_lmdbs/data/oc22/s2ef-total/val_id/",
-                metadata_path=None,
+                metadata_path=metadatas_dir / "oc22-val_id.npz",
                 first_n=DatasetFirstNConfig(first_n=10_000),
                 lin_ref=base_dir / "oc22/oc22_linfit_coeffs.npz",
             ),
