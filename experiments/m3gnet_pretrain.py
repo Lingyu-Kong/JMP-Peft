@@ -101,14 +101,15 @@ def main(args_dict):
     if args_dict["run_test"]:
         tasks_config_oc20_4ktest_(config)
     else:
-        tasks_config_perlmutter_(config)
+        tasks_config_oc20_4ktest_(config)
     backbone_config_(config)
     # fsdp_config_(config)
     gradient_checkpointing_config_(config)
     profiling_config_(config)
     config.primary_metric = nt.MetricConfig(
-            name="matbench_discovery/force_mae", mode="min"
+            name="oc20/forces_mae", mode="min"
         )
+    config.trainer.max_epochs = 2
     config = config.finalize()
     id_name = config.id
     configs.append((config, M.PretrainModel)) ## TODO:Match model type in M.PretrainModel
@@ -131,6 +132,7 @@ def main(args_dict):
             datetime_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
             wandb.init(project="m3gnet_pretrain", name=MODEL_TYPE+"-"+datetime_str, config=args_dict)
+            nu.display(configs)
             _ = runner.local(
                 configs,
                 env={
@@ -141,7 +143,7 @@ def main(args_dict):
             )
             wandb.finish()
             results_path = "./nshtrainer/{}".format(id_name)
-            wandb.save(results_path)
+            # wandb.save(results_path)
         elif args_dict["cluster"] == "nersc":
             runner.submit_slurm(
                 configs,
@@ -170,12 +172,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Pretrain m3gnet with JMP-S data')
     parser.add_argument('--model_type', type=str, default="m3gnet_large", help='Model type to use: m3gnet_base or m3gnet_large')
     parser.add_argument('--use_fsdp', type=bool, default=False, help='Use fsdp for training')
-    parser.add_argument('--batch_size', type=int, default=100, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers for data loading')
     parser.add_argument('--grad_clip', type=float, default=2.0, help='Gradient clipping value')
     parser.add_argument('--init_lr', type=float, default=1e-3, help='Initial learning rate')
     parser.add_argument('--run_test', type=bool, default=False, help='Run a test session')
     parser.add_argument('--cluster', type=str, default="local", help='Cluster to run the experiment')
-    parser.add_argument('--cuda_visible_devices', type=str, default="0,1,2,3", help='CUDA_VISIBLE_DEVICES')
+    parser.add_argument('--cuda_visible_devices', type=str, default="2,3", help='CUDA_VISIBLE_DEVICES')
     args_dict = vars(parser.parse_args())
     main(args_dict)

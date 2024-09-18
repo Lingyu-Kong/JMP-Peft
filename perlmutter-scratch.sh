@@ -10,7 +10,7 @@ export HF_DATASETS_CACHE="/global/cfs/cdirs/m3641/Nima/hf-datasets-cache" # in ~
 # conda create -n jmp-310-pytorch230 python=3.10 -y
 # conda activate jmp-310-pytorch230
 conda activate jmp
-# conda install mamba -n base -c conda-forge
+# conda install mamba -n base -c conda-forge -y
 
 # Install PyTorch
 mamba install -c pytorch -c nvidia "pytorch==2.2.*" torchvision torchaudio pytorch-cuda=12.1 -y
