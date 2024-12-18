@@ -13,7 +13,7 @@ conda activate jmp
 # conda install mamba -n base -c conda-forge -y
 
 # Install PyTorch
-mamba install -c pytorch -c nvidia "pytorch==2.2.*" torchvision torchaudio pytorch-cuda=12.1 -y
+mamba install -c pytorch -c nvidia "pytorch==2.4.0" torchvision torchaudio pytorch-cuda=12.1 -y
 
 # Install PyG
 mamba install -c pyg pyg pytorch-scatter pytorch-sparse pytorch-cluster -y
@@ -27,6 +27,6 @@ mamba install -y -c conda-forge \
     frozendict wrapt varname typing-extensions lovely-tensors lovely-numpy requests pytest nbval
 
 # Rich for better terminal output
-pip install rich lmdb ase pymatgen matbench-discovery beartype jaxtyping e3nn tabulate pysnooper matplotlib
-pip install nshtrainer==0.29.1 ==0.17.0
+pip install rich lmdb ase pymatgen matbench-discovery beartype jaxtyping e3nn tabulate pysnooper matplotlib datasets
+pip install nshtrainer==0.30.1 nshsnap==0.4.3 nshrunner==0.17.0 nshconfig==0.8.0
 pip install -e .

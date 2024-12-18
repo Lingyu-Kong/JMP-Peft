@@ -7,10 +7,11 @@ import nshconfig as C
 import nshutils.typecheck as tc
 import numpy as np
 import torch
+from ase import Atoms
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from typing_extensions import final, override
-from ase import Atoms
+
 from ..modules.dataset.common import CommonDatasetConfig
 
 log = logging.getLogger(__name__)
@@ -125,10 +126,6 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
                 self.dataset["composition"].numpy(),
                 self.dataset[self.config.energy_column_mapping.get(key, key)].numpy(),
             )
-            print(dataset["composition"].numpy()[0])
-            print(dataset[self.config.energy_column_mapping.get(key, key)].numpy().shape)
-            print(key)
-            exit()
             log.critical(f"Computed atom references for {key}.")
             log.debug(f"Atom references for {key}: {self.atom_references}")
 
@@ -172,15 +169,16 @@ class FinetuneMPTrjHuggingfaceDataset(Dataset[Data]):
         data = Data.from_dict(dict_)
 
         return data
-    
-    
+
+
 class MPTrjDatasetFromXYZConfig(CommonDatasetConfig):
     name: Literal["mp_trj_xyz"] = "mp_trj_xyz"
-    file_path: str|list[str]
+    file_path: str | list[str]
     split: Literal["train", "val", "test", "all"]
     split_ratio: list[float] = [0.8, 0.1, 0.1]
     references: dict[str, ReferenceConfig] = {}
     filter_small_systems: bool = True
+
     def create_dataset(self):
         return MPTrjDatasetFromXYZ(self)
 
@@ -198,41 +196,57 @@ class MPTrjDatasetFromXYZ(Dataset[Data]):
         self.atoms_list: list[Atoms] = []
         for xyz_file in self.xyz_files:
             from ase.io import read
+
             atoms = read(xyz_file, index=":")
             self.atoms_list.extend(atoms)
-        
+
         ## Discard structures under 4 atoms
         if config.filter_small_systems:
             self.atoms_list = [atoms for atoms in self.atoms_list if len(atoms) >= 4]
-        
+
         ## Split the dataset
         if config.split == "train":
-            self.atoms_list = self.atoms_list[:int(config.split_ratio[0] * len(self.atoms_list))]
+            self.atoms_list = self.atoms_list[
+                : int(config.split_ratio[0] * len(self.atoms_list))
+            ]
         elif config.split == "val":
-            self.atoms_list = self.atoms_list[int(config.split_ratio[0] * len(self.atoms_list)):int((config.split_ratio[0]+config.split_ratio[1]) * len(self.atoms_list))]
+            self.atoms_list = self.atoms_list[
+                int(config.split_ratio[0] * len(self.atoms_list)) : int(
+                    (config.split_ratio[0] + config.split_ratio[1])
+                    * len(self.atoms_list)
+                )
+            ]
         elif config.split == "test":
-            self.atoms_list = self.atoms_list[int((config.split_ratio[0]+config.split_ratio[1]) * len(self.atoms_list)):]
+            self.atoms_list = self.atoms_list[
+                int(
+                    (config.split_ratio[0] + config.split_ratio[1])
+                    * len(self.atoms_list)
+                ) :
+            ]
         elif config.split == "all":
             pass
         else:
             raise ValueError(f"Invalid split: {config.split}")
-        
+
         ## Meta data for num_atoms
         self.atoms_metadata = np.array([len(atoms) for atoms in self.atoms_list])
-        
+
         ## Compute atom references
         def get_chemical_composition(atoms: Atoms) -> np.ndarray:
             chemical_numbers = np.array(atoms.get_atomic_numbers()) - 1
             return np.bincount(chemical_numbers, minlength=120)
+
         self.atom_references: dict[str, np.ndarray] = {}
         for key, reference_config in config.references.items():
             self.atom_references[key] = reference_config.compute_references(
-                np.array([get_chemical_composition(atoms) for atoms in self.atoms_list]),
+                np.array(
+                    [get_chemical_composition(atoms) for atoms in self.atoms_list]
+                ),
                 np.array([atoms.get_total_energy() for atoms in self.atoms_list]),
             )
             log.critical(f"Computed atom references for {key}.")
             log.debug(f"Atom references for {key}: {self.atom_references}")
-    
+
     def data_sizes(self, indices: list[int]) -> np.ndarray:
         return self.atoms_metadata[indices]
 
@@ -242,20 +256,31 @@ class MPTrjDatasetFromXYZ(Dataset[Data]):
     @override
     def __getitem__(self, idx: int) -> Data:
         from ase import Atoms
-        atoms:Atoms = self.atoms_list[idx]
+
+        atoms: Atoms = self.atoms_list[idx]
         dict_ = {
             "idx": idx,
-            "atomic_numbers": torch.tensor(np.array(atoms.get_atomic_numbers()), dtype=torch.long),
+            "atomic_numbers": torch.tensor(
+                np.array(atoms.get_atomic_numbers()), dtype=torch.long
+            ),
             "pos": torch.tensor(np.array(atoms.get_positions()), dtype=torch.float),
-            "tags": torch.zeros_like(torch.tensor(np.array(atoms.get_atomic_numbers()))),
-            "fixed": torch.zeros_like(torch.tensor(np.array(atoms.get_atomic_numbers())), dtype=torch.bool),
+            "tags": torch.zeros_like(
+                torch.tensor(np.array(atoms.get_atomic_numbers()))
+            ),
+            "fixed": torch.zeros_like(
+                torch.tensor(np.array(atoms.get_atomic_numbers())), dtype=torch.bool
+            ),
             "force": torch.tensor(np.array(atoms.get_forces()), dtype=torch.float),
-            "cell": torch.tensor(np.array(atoms.get_cell()), dtype=torch.float).unsqueeze(dim=0),
-            "stress": torch.tensor(np.array(atoms.get_stress(voigt=False)), dtype=torch.float).unsqueeze(dim=0),
+            "cell": torch.tensor(
+                np.array(atoms.get_cell()), dtype=torch.float
+            ).unsqueeze(dim=0),
+            "stress": torch.tensor(
+                np.array(atoms.get_stress(voigt=False)), dtype=torch.float
+            ).unsqueeze(dim=0),
             "y": torch.tensor(atoms.get_total_energy(), dtype=torch.float),
             "natoms": torch.tensor(len(atoms), dtype=torch.long),
         }
-        
+
         for key, reference in self.atom_references.items():
             if (unreferenced_value := dict_.get(key)) is None:
                 raise ValueError(f"Missing key {key} in data_dict")

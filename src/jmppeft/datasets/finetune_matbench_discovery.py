@@ -220,11 +220,8 @@ def _radius_graph(
         try:
             cutoff += cutoff_extra
             g, u, v, r = temp_graph(cutoff)
-            print("cutoff", id, cutoff)
-            print(atoms)
 
         except Exception as exp:
-            print("Graph exp", exp)
             pass
         return u, v, r
 

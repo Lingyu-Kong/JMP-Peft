@@ -14,7 +14,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchmetrics
 from einops import pack, rearrange, reduce
-from jmppeft.modules.torch_scatter_polyfill import scatter
 from lightning.fabric.utilities.apply_func import move_data_to_device
 from lightning.pytorch.utilities.types import (
     LRSchedulerConfigType,
@@ -29,15 +28,17 @@ from torch_geometric.utils import dropout_edge
 from torchmetrics import SumMetric
 from typing_extensions import TypeVar, assert_never, override
 
+from jmppeft.modules.torch_scatter_polyfill import scatter
+
 from ...datasets.pretrain_lmdb import PretrainDatasetConfig as PretrainDatasetConfigBase
 from ...datasets.pretrain_lmdb import PretrainLmdbDataset
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig as GOCBackboneConfig
-from ...models.m3gnet.config import BackboneConfig as M3GNetBackboneConfig
-from ...models.m3gnet.backbone import M3GNet, M3GNetBackboneOutput
-from ...models.m3gnet.modules.message_passing import MainBlock
 from ...models.gemnet.layers.base_layers import ScaledSiLU
 from ...models.graphormer.config import Graphormer3DConfig
+from ...models.m3gnet.backbone import M3GNet, M3GNetBackboneOutput
+from ...models.m3gnet.config import BackboneConfig as M3GNetBackboneConfig
+from ...models.m3gnet.modules.message_passing import MainBlock
 from ...models.torchmdnet.config import TorchMDNetBackboneConfig
 from ...modules import transforms as T
 from ...modules.dataset import dataset_transform as DT
@@ -121,7 +122,10 @@ class TaskConfig(C.Config):
 
 
 BackboneConfig: TypeAlias = Annotated[
-    GOCBackboneConfig | Graphormer3DConfig | TorchMDNetBackboneConfig | M3GNetBackboneConfig,
+    GOCBackboneConfig
+    | Graphormer3DConfig
+    | TorchMDNetBackboneConfig
+    | M3GNetBackboneConfig,
     C.Field(discriminator="name"),
 ]
 
@@ -400,7 +404,9 @@ class Output(nt.Base[PretrainConfig], nn.Module):
         )
 
     @override
-    def forward(self, data: Data, backbone_out: GOCBackboneOutput | M3GNetBackboneOutput):
+    def forward(
+        self, data: Data, backbone_out: GOCBackboneOutput | M3GNetBackboneOutput
+    ):
         energy = backbone_out["energy"]
         forces = backbone_out["forces"]
         V_st = backbone_out["V_st"]
@@ -714,7 +720,7 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
             out = self.backbone(batch)
 
         return self.output(batch, out)  # (n h), (n p h)
-    
+
     def get_node_features(self, batch: Data):
         if self.config.generate_graphs_on_gpu:
             batch = self._generate_graphs_goc(
@@ -1369,7 +1375,7 @@ class PretrainModel(nt.LightningModuleBase[PretrainConfig]):
                 graph["num_neighbors"] = graph["edge_index"].shape[1]
 
         return data
-    
+
     def _generate_graphs_m3gnet(
         self,
         data: BaseData,

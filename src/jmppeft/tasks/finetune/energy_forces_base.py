@@ -234,7 +234,6 @@ class EnergyForcesModelBase(FinetuneModelBase[TConfig], ABC, Generic[TConfig]):
             atomic_numbers = data.atomic_numbers - 1
             h = self.embedding(atomic_numbers)  # (N, d_model)
             out = cast(GOCBackboneOutput, self.backbone(data, h=h))
-
             graph_preds: dict[str, torch.Tensor] = {}
             node_preds: dict[str, torch.Tensor] = {}
             output_head_input = {

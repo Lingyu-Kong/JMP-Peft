@@ -62,6 +62,10 @@ from ...datasets.mptrj_hf import (
     MPTrjDatasetFromXYZ,
     MPTrjDatasetFromXYZConfig,
 )
+from ...datasets.matbench import(
+    MatBenchDatasetConfig,
+    MatBenchDataset,
+)
 from ...models.gemnet.backbone import GemNetOCBackbone, GOCBackboneOutput
 from ...models.gemnet.config import BackboneConfig
 from ...models.gemnet.layers.base_layers import ScaledSiLU
@@ -357,7 +361,8 @@ FinetuneDatasetConfig: TypeAlias = Annotated[
     | FinetuneMatbenchDiscoveryMegNet133kDatasetConfig
     | FinetuneMatBenchDiscoveryIS2REDatasetConfig
     | FinetuneMPTrjHuggingfaceDatasetConfig
-    | MPTrjDatasetFromXYZConfig,
+    | MPTrjDatasetFromXYZConfig
+    | MatBenchDatasetConfig,
     Field(discriminator="name"),
 ]
 
@@ -522,6 +527,7 @@ DatasetType: TypeAlias = (
     | datasets.Dataset
     | FinetuneMPTrjHuggingfaceDataset
     | MPTrjDatasetFromXYZ
+    | MatBenchDataset
 )
 
 

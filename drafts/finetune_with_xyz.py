@@ -1,52 +1,59 @@
+import argparse
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 import nshtrainer as nt
 import nshutils as nu
+import wandb
+
 from jmppeft.configs.finetune.jmp_l import jmp_l_ft_config_
 from jmppeft.configs.finetune.jmp_s import jmp_s_ft_config_
+from jmppeft.datasets import mptrj_hf
+from jmppeft.datasets.mptrj_hf import MPTrjDatasetFromXYZ, MPTrjDatasetFromXYZConfig
 from jmppeft.modules import loss
 from jmppeft.tasks.config import AdamWConfig
 from jmppeft.tasks.finetune import base, output_head
-from jmppeft.datasets.mptrj_hf import MPTrjDatasetFromXYZ, MPTrjDatasetFromXYZConfig
-from jmppeft.datasets import mptrj_hf
 from jmppeft.tasks.finetune import matbench_discovery as M
 from jmppeft.utils.param_specific_util import (
     make_parameter_specific_optimizer_config,
     parameter_specific_optimizer_config,
 )
-import argparse
-import wandb
-from datetime import datetime
 
 
-def main(args_dict:dict):
+def main(args_dict: dict):
     ## BackBone Model Config
     def jmp_(config: base.FinetuneConfigBase):
-        if args_dict["model"]=="jmp_l":
-            ckpt_path = Path("/nethome/lkong88/workspace/jmp-peft/checkpoints/jmp-l.pt")
+        if args_dict["model"] == "jmp_l":
+            ckpt_path = Path(
+                "/net/csefiles/coc-fung-cluster/lingyu/checkpoints/jmp-l.pt"
+            )
             jmp_l_ft_config_(config)
             config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
                 path=ckpt_path, ema=True
             )
             config.meta["jmp_kind"] = "l"
-        elif args_dict["model"]=="jmp_s":
-            ckpt_path = Path("/nethome/lkong88/workspace/jmp-peft/checkpoints/jmp-s.pt")
+        elif args_dict["model"] == "jmp_s":
+            ckpt_path = Path(
+                "/net/csefiles/coc-fung-cluster/lingyu/checkpoints/jmp-s.pt"
+            )
             jmp_s_ft_config_(config)
             config.ckpt_load.checkpoint = base.PretrainedCheckpointConfig(
                 path=ckpt_path, ema=True
             )
             config.meta["jmp_kind"] = "s"
         else:
-            raise ValueError("Invalid Model Name, Please choose between jmp_l and jmp_s")
-    
+            raise ValueError(
+                "Invalid Model Name, Please choose between jmp_l and jmp_s"
+            )
+
     ## Predict Forces Directly
     def direct_(config: base.FinetuneConfigBase):
         config.backbone.regress_forces = True
         config.backbone.direct_forces = True
         config.backbone.regress_energy = True
-    
+
     ## Predict Forces with Gradient Method
     def grad_(config: base.FinetuneConfigBase):
         config.backbone.regress_forces = True
@@ -54,7 +61,7 @@ def main(args_dict:dict):
         config.backbone.regress_energy = True
 
         config.trainer.inference_mode = False
-        
+
     ## Data Config
     def data_config_(
         config: M.MatbenchDiscoveryConfig,
@@ -85,7 +92,7 @@ def main(args_dict:dict):
         # Balanced batch sampler
         config.use_balanced_batch_sampler = True
         config.trainer.use_distributed_sampler = False
-    
+
     ## Output Head Config
     def output_heads_config_direct_(
         config: M.MatbenchDiscoveryConfig,
@@ -142,7 +149,7 @@ def main(args_dict:dict):
         config.tags.append(f"ec{energy_coefficient}")
         config.tags.append(f"fc{force_coefficient}")
         config.tags.append(f"sc{stress_coefficient}")
-    
+
     def output_heads_config_grad_(
         config: M.MatbenchDiscoveryConfig,
         *,
@@ -201,7 +208,7 @@ def main(args_dict:dict):
         config.name_parts.append(f"fc{force_coefficient}")
         config.name_parts.append(f"sc{stress_coefficient}")
         return config
-    
+
     ## Optimizer Config
     def optimization_config_(
         config: M.MatbenchDiscoveryConfig,
@@ -269,7 +276,7 @@ def main(args_dict:dict):
                 )
             case _:
                 raise ValueError(f"Invalid jmp_kind: {config.meta['jmp_kind']}")
-    
+
     ## Energy Reference Optimization Config
     def parameter_specific_optimizers_energy_references_(
         config: base.FinetuneConfigBase,
@@ -334,7 +341,7 @@ def main(args_dict:dict):
             )
         else:
             raise ValueError("No energy reference or allegro heads found")
-        
+
     ## Layer Norm
     def ln_(
         config: base.FinetuneConfigBase,
@@ -389,7 +396,7 @@ def main(args_dict:dict):
             name="matbench_discovery/force_mae", mode="min"
         )
         return config
-    
+
     configs: list[tuple[M.MatbenchDiscoveryConfig, type[M.MatbenchDiscoveryModel]]] = []
 
     config = create_config(jmp_)
@@ -436,12 +443,12 @@ def main(args_dict:dict):
     config.per_graph_radius_graph = True
     config.ignore_graph_generation_errors = True
     config.trainer.early_stopping = nt.model.EarlyStoppingConfig(
-            patience=args_dict["earlystop_patience"], min_lr=1e-08
-        )
+        patience=args_dict["earlystop_patience"], min_lr=1e-08
+    )
     config.trainer.max_epochs = args_dict["max_epochs"]
     config = config.finalize()
     configs.append((config, M.MatbenchDiscoveryModel))
-    
+
     def run(
         config: M.MatbenchDiscoveryConfig, model_cls: type[M.MatbenchDiscoveryModel]
     ) -> None:
@@ -457,18 +464,22 @@ def main(args_dict:dict):
         trainer = nt.Trainer(config)
         trainer.fit(model)
         ## Save the model
-        
+
     runner = nt.Runner(run)
     if args_dict["run_as_test"]:
         nu.display(configs)
-        runner.fast_dev_run(configs, n_batches=128, env={
-            "CUDA_VISIBLE_DEVICES": args_dict["gpu"],
-            "NSHUTILS_DISABLE_TYPECHECKING": "1", ## for debug, 0
-        },) ## snapshot=True, then we can change code without affecting the running jobs
+        runner.fast_dev_run(
+            configs,
+            n_batches=128,
+            env={
+                "CUDA_VISIBLE_DEVICES": args_dict["gpu"],
+                "NSHUTILS_DISABLE_TYPECHECKING": "1",  ## for debug, 0
+            },
+        )  ## snapshot=True, then we can change code without affecting the running jobs
     else:
         datetime_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
-        wandb.init(project="jmp_mptrj", name="mptrj_"+datetime_str, config=args_dict)
+        wandb.init(project="jmp_mptrj", name="mptrj_" + datetime_str, config=args_dict)
         nu.display(configs)
         _ = runner.local(
             configs,
@@ -478,25 +489,47 @@ def main(args_dict:dict):
             },
         )
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="jmp_s", help="Model Name")
-    parser.add_argument("--freeze_backbone", type=bool, default=True, help="Freeze Backbone")
-    parser.add_argument("--num_blocks", type=int, default=1, help="Number of Blocks used for Backbone")
-    parser.add_argument("--padding_method", type=str, default="zero", help="Padding Method")
+    parser.add_argument(
+        "--freeze_backbone", type=bool, default=True, help="Freeze Backbone"
+    )
+    parser.add_argument(
+        "--num_blocks", type=int, default=4, help="Number of Blocks used for Backbone"
+    )
+    parser.add_argument(
+        "--padding_method", type=str, default="zero", help="Padding Method"
+    )
     parser.add_argument("--cutoff", type=float, default=12.0, help="Cutoff")
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch Size")
-    parser.add_argument("--split_ratio", type=list, default=[0.03, 0.97, 0.97], help="Split Ratio")
+    parser.add_argument("--batch_size", type=int, default=4, help="Batch Size")
+    parser.add_argument(
+        "--split_ratio", type=list, default=[0.03, 0.97, 0.0], help="Split Ratio"
+    )
     parser.add_argument("--lr", type=float, default=8.0e-5, help="Learning Rate")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight Decay")
-    parser.add_argument("--include_stress", type=bool, default=False, help="Include Stress")
-    parser.add_argument("--coefficients", type=list, default=[1.0, 1.0, 0.01], help="Coefficients")
+    parser.add_argument(
+        "--include_stress", type=bool, default=False, help="Include Stress"
+    )
+    parser.add_argument(
+        "--coefficients", type=list, default=[1.0, 10.0, 0.00], help="Coefficients"
+    )
     parser.add_argument("--reference", type=str, default="ridge", help="Reference")
-    parser.add_argument("--xyz_path", type=str, default="./temp_data/water_processed.xyz", help="Path to xyz files")
-    parser.add_argument("--gpu", type=str, default="3", help="GPU ID")
-    parser.add_argument("--earlystop_patience", type=int, default=500, help="Early Stop Patience")
-    parser.add_argument("--max_epochs", type=int, default=1000, help="Max Epoch")
-    parser.add_argument("--direct_forces", type=bool, default=False, help="Direct Forces")
+    parser.add_argument(
+        "--xyz_path",
+        type=str,
+        default="./temp_data/water_ef.xyz",
+        help="Path to xyz files",
+    )
+    parser.add_argument("--gpu", type=str, default="0,1,2", help="GPU ID")
+    parser.add_argument(
+        "--earlystop_patience", type=int, default=1000, help="Early Stop Patience"
+    )
+    parser.add_argument("--max_epochs", type=int, default=2000, help="Max Epoch")
+    parser.add_argument(
+        "--direct_forces", type=bool, default=False, help="Direct Forces"
+    )
     parser.add_argument("--run_as_test", type=bool, default=False, help="Run as Test")
     args = parser.parse_args()
     args_dict = vars(args)
